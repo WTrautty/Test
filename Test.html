@@ -1,1 +1,27 @@
-new
+def search_circuit(Service_ID):
+    results = []
+    for sheet_name, config in SEARCH_LASER.items():
+        if sheet_name in wb_laser.sheetnames:
+            ws = wb_laser[sheet_name]
+            # Find the header row dynamically
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue  # Skip if no valid header is found
+            # Replace newline characters in headers with spaces
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            # Use the correct key for search columns (supports both keys)
+            search_key = config.get("service_match", config.get("search_columns", []))
+            # Use case-insensitive comparison for headers
+            search_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in search_key)]
+            extract_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in config["extract_columns"])]
+            if not search_cols:
+                continue  # Skip sheet if search columns are missing
+            # Search for the Service ID using a case-insensitive partial match
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for col_name in search_cols:
+                    col_idx = headers[col_name]
+                    cell_value = str(row[col_idx]) if row[col_idx] is not None else ""
+                    if Service_ID.lower() in cell_value.lower():
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+    return results
