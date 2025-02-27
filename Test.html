@@ -1,22 +1,24 @@
+# --- Now search the LASER file using the Service ID from the main file ---
+try: 
+    wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True) 
+except FileNotFoundError: 
+    print(f"Error: The file '{LASER_FILE}' was not found.") 
+    exit() 
+
 def search_circuit(Service_ID):
     results = []
     for sheet_name, config in SEARCH_LASER.items():
         if sheet_name in wb_laser.sheetnames:
             ws = wb_laser[sheet_name]
-            # Find the header row dynamically
             header_row, header_row_idx = find_header_row(ws)
             if not header_row:
                 continue  # Skip if no valid header is found
-            # Replace newline characters in headers with spaces
             headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
-            # Use the correct key for search columns (supports both keys)
             search_key = config.get("service_match", config.get("search_columns", []))
-            # Use case-insensitive comparison for headers
             search_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in search_key)]
             extract_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in config["extract_columns"])]
             if not search_cols:
                 continue  # Skip sheet if search columns are missing
-            # Search for the Service ID using a case-insensitive partial match
             for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
                 for col_name in search_cols:
                     col_idx = headers[col_name]
@@ -25,3 +27,30 @@ def search_circuit(Service_ID):
                         data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
                         results.append({"Sheet": sheet_name, "Data": data})
     return results
+
+if matches:
+    service_id = str(matches[0]["Data"].get("Service ID", "")).strip()
+    laser_matches = search_circuit(service_id)
+    wb_laser.close()
+    print("Laser search results:", laser_matches)
+else:
+    wb_laser.close()
+
+# Export all LASER matches to a text file
+if laser_matches:
+    output_directory = r"C:\Users\AD39644"
+    output_filename_laser = 'laser_output_file.txt'
+    output_path_laser = os.path.join(output_directory, output_filename_laser)
+    
+    with open(output_path_laser, 'w') as f:
+        f.write("Laser Matches:\n\n")
+        for match in laser_matches:
+            sheet = match["Sheet"]
+            data = match["Data"]
+            f.write(f"Sheet: {sheet}\n")
+            for key, value in data.items():
+                f.write(f"{key}: {value}\n")
+            f.write("\n-----------------\n\n")
+    print(f"Laser matches exported to '{output_path_laser}'")
+else:
+    print("No Laser matches found to export.")
