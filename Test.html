@@ -1,59 +1,346 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
-    <title>ABC Fitness Studio</title>
-</head>
-<body>
-    <header>
-        <h1>ABC Fitness Studio</h1>
-    </header>
+import openpyxl 
 
-    <div class="center-container">
-        <div class="logo">
-            <img src="ITWD.png" alt="ABC Fitness Studio Logo">
-        </div>
-        <nav>
-            <ul>
-                <li><a href="#">Home</a></li>
-                <li><a href="#">About</a></li>
-                <li><a href="#">Membership</a></li>
-                <li><a href="#">Instructors</a></li>
-            </ul>
-        </nav>
-    </div>
+import numpy as np 
 
-    <main>
-        <section id="about">
-            <p>Our mission is to provide a comprehensive fitness experience for all levels.</p>
-        </section>
+import warnings 
 
-        <section id="classes">
-            <h2>Classes to Take</h2>
-            <div class="class-item">Yoga</div>
-            <div class="class-item">Pilates</div>
-            <div class="class-item">Cardio</div>
-            <div class="class-item">Strength Training</div>
-        </section>
+from openpyxl import Workbook 
 
-        <section id="membership">
-            <h2>Membership Tiers</h2>
-            <p>We offer various membership tiers to suit your needs.</p>
-            <div class="tier-comparison">Basic</div>
-            <div class="tier-comparison">Premium</div>
-        </section>
+import os 
 
-        <section id="testimonials">
-            <p>"The best gym experience"
-      </main>
+"""
 
-    <footer>
-        <p>&copy; 2024 ABC Fitness Studio</p>
-    </footer>
+# Function to extract user ID from the current working directory
+def extract_user_id_from_path():
+    cwd = os.getcwd()
+    try:
+        user_id = cwd.split("Users\\")[1][:7]
+        return user_id
+    except IndexError:
+        return None
 
-    <script src="scripts.js"></script>
-</body>
-</html>
+# Extract the user ID from the current working directory
+user_id = extract_user_id_from_path()
+
+if user_id:
+    print(f"User ID '{user_id}' has been set.")
+else:
+    print("User ID could not be extracted from the current working directory.")
+
+ """
+
+# Now the user_id is available for dynamic file paths 
+
+EXCEL_FILE = fr"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
+LASER_FILE = fr"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+
+
+# Debugging output to verify correct file path usage 
+
+print(f"Using file path: {EXCEL_FILE}") 
+
+
+# Suppress openpyxl warnings about cell errors 
+
+warnings.simplefilter("ignore", category=UserWarning) 
+
+
+ 
+
+# Define the sheets and columns to search for the order number 
+
+SEARCH_CONFIG = { 
+
+    "Main": { 
+
+        "search_columns": ["Ops Console Ticket"],  # Columns where we search for the order number 
+
+        "extract_columns": ["Ops Console Ticket"
+                            "IPv6 Status",
+                            "Service ID",
+                            "IPv6 WAN",
+                            "IPv6 LAN",
+                            "IPv6 Loopback",
+                            "DOI_Bureau",
+                            "WHD_Location",
+                            "Node Name",
+                            "IP Address",
+                            "Address",
+                            "City",
+                            "State",
+                            "Vendor",]  # Columns to extract data from 
+
+    }, 
+
+} 
+
+SEARCH_LASER = { 
+
+    "Sheet1": { 
+
+        "service_match": ["circuitID"],  # Columns where we search for the order number 
+
+        "extract_columns": ["device",
+                            "interface" ]  # Columns to extract data from 
+
+    }, 
+
+} 
+
+# Prompt the user for the order number 
+
+order_number = input("Enter the order number: ").strip() 
+
+def identify_region(wan_ipv6):
+    try:
+            return wan_ipv6.split(":")[2][1]
+    except IndexError:
+        return None
+
+def lan_subnet_fix(lan_ipv6):
+    try:
+        address, subnet = lan_ipv6.split("/")
+        hex_groups = address.split(":")
+        hex_groups[3] = "0" + hex_groups[3]
+        return ":".join(hex_groups) + "/56"
+    except Exception:
+        return None
+    
+def ce_wan_address(ce_wan_ipv6):
+    try:
+        address, subnet = ce_wan_ipv6.split("/")
+        hex_groups = address.split(":")
+        hex_groups[-1] = format(int(hex_groups[-1],16)+1,"x")
+        return ":".join(hex_groups) + f"/{subnet}"
+    except Exception:
+        return None
+
+def ipv6_region_map(ipv6_region):
+    mapping = {
+        "1":"East",
+        "2":"North",
+        "3":"Central",
+        "4":"West",
+        "5":"Alaska"
+    }
+
+    return mapping.get(ipv6_region,"unknown")
+
+def md_pw_map(ipv6_region):
+    mapping = {
+    "1":"5CB60CDAE77980D14277994BB",
+    "2":"17A75FE44D8F532715E369E86",
+    "3":"A78BA5E3FFFB4F9FE4DDEFC2D",
+    "4":"38CE4A74D0004E037471A27B9",
+    "5":"D4196D7DF1087CA41E8B5CF72"
+    }
+
+    return mapping.get(ipv6_region,"unknown")
+
+
+
+
+# Open the workbook in read-only mode 
+
+try: 
+
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True) 
+
+except FileNotFoundError: 
+
+    print(f"Error: The file '{EXCEL_FILE}' was not found.") 
+
+    exit() 
+
+
+
+
+# Function to find the header row dynamically using NumPy 
+
+def find_header_row(sheet): 
+
+    """Find the first row with valid column headers using NumPy for efficiency.""" 
+
+     
+
+    # Convert sheet data into a NumPy array for fast operations 
+
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object) 
+
+ 
+
+    for row_idx, row in enumerate(data, start=1): 
+
+        non_empty_cells = np.count_nonzero(row)  # Count non-empty cells 
+
+ 
+
+        if non_empty_cells > 2:  # Assuming a valid header has at least 3 non-empty columns 
+
+
+            return list(row), row_idx  # Convert NumPy array row back to list 
+
+ 
+
+
+    return None, None  # Return None if no header row is found 
+
+ 
+
+ 
+
+ 
+
+def search_order(order_num):
+    results = []
+
+    for sheet_name, config in SEARCH_CONFIG.items():
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+
+            # Find the header row dynamically
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue  # Skip if no valid header is found
+
+            # Replace newline characters in headers with spaces
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+
+            # Ensure search and extract columns exist
+            search_cols = [header for header in headers if any(header.startswith(col) for col in config["search_columns"])]
+            extract_cols = [header for header in headers if any(header.startswith(col) for col in config["extract_columns"])]
+
+            if not search_cols:
+                continue  # Skip sheet if search columns are missing
+
+            # Search for the order number using partial match
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):  # Start after header
+                for col_name in search_cols:
+                    col_idx = headers[col_name]  # Get the integer index of the column name
+                    cell_value = str(row[col_idx]) if row[col_idx] is not None else ""  # Ensure it's a string
+                    if order_num in cell_value:  # Partial match instead of exact match
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+
+    return results
+
+ 
+
+# Perform the search 
+
+matches = search_order(order_number) 
+
+ 
+
+# Close the workbook 
+
+wb.close() 
+
+
+try: 
+
+    wb = openpyxl.load_workbook(LASER_FILE, read_only=True) 
+
+except FileNotFoundError: 
+
+    print(f"Error: The file '{LASER_FILE}' was not found.") 
+
+    exit() 
+
+
+
+def search_circuit(Service_ID):
+    results = []
+
+    for sheet_name, config in SEARCH_LASER.items():
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+
+            # Find the header row dynamically
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue  # Skip if no valid header is found
+
+            # Replace newline characters in headers with spaces
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+
+            # Ensure search and extract columns exist
+            search_cols = [header for header in headers if any(header.startswith(col) for col in config["search_columns"])]
+            extract_cols = [header for header in headers if any(header.startswith(col) for col in config["extract_columns"])]
+
+            if not search_cols:
+                continue  # Skip sheet if search columns are missing
+
+            # Search for the order number using partial match
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):  # Start after header
+                for col_name in search_cols:
+                    col_idx = headers[col_name]  # Get the integer index of the column name
+                    cell_value = str(row[col_idx]) if row[col_idx] is not None else ""  # Ensure it's a string
+                    if matched in cell_value:  # Partial match instead of exact match
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+
+    return results
+
+ 
+
+# Perform the search 
+
+matched = search_circuit(data.get("Service ID", "")) 
+
+ 
+
+# Close the workbook 
+
+wb.close() 
+
+if matches:
+    for match in matches:
+        sheet_name = match["Sheet"]
+        data = match.get("Data", {})  # Ensure 'data' is always a dictionary
+        ipv6_region = (identify_region(data.get("IPv6 WAN", "")))
+        fixed_lan = (lan_subnet_fix(data.get("IPv6 LAN", "")))
+        ce_wan = (ce_wan_address(data.get("IPv6 WAN", "")))
+        Area = ipv6_region_map(ipv6_region)
+        md_pw = md_pw_map(ipv6_region)
+
+        # Custom output format based on sheet name
+        if sheet_name == "Main":
+            # Read the template file
+            with open(r"C:\Users\AD39644\Service Information.txt", 'r') as file:
+                template = file.read()
+
+            # Replace placeholders in the template
+            template = template.replace('{Ops Console Ticket}', order_number)
+            template = template.replace('{Region}', ipv6_region)
+            template = template.replace('{Lan (Data 1)}', fixed_lan)
+            template = template.replace('{WAN/126 CE}', ce_wan)
+            template = template.replace('{md_pw}', md_pw)
+            template = template.replace('{IPv6 Status}', data.get("IPv6 Status", ""))
+            template = template.replace('{Service ID}', data.get("Service ID", ""))
+            template = template.replace('{IPv6 WAN}', data.get("IPv6 WAN", ""))
+            template = template.replace('{IPv6 LAN}', data.get("IPv6 LAN", ""))
+            template = template.replace('{IPv6 Loopback}', data.get("IPv6 Loopback", ""))
+            template = template.replace('{DOI_Bureau}', data.get("DOI_Bureau", ""))
+            template = template.replace('{WHD_Location}', data.get("WHD_Location", ""))
+            template = template.replace('{Node Name}', data.get("Node Name", ""))
+            template = template.replace('{IP Address}', data.get("IP Address", ""))
+            template = template.replace('{Address}', data.get("Address", ""))
+            template = template.replace('{City}', data.get("City", ""))
+            template = template.replace('{State}', data.get("State", ""))
+            template = template.replace('{Vendor}', data.get("Vendor", ""))
+            template = template.capitalize('{device}', data.get("device",""))
+
+            # Specify the desired output directory
+            output_directory = r"C:\Users\AD39644"
+            output_filename = 'specific_output_file.txt'
+            output_path = os.path.join(output_directory, output_filename)
+
+            # Write the new text file
+            with open(output_path, 'w') as file:
+                file.write(template)
+
+            print(f"New text file '{output_path}' created successfully!")
+
+else:
+    print(f"Order number {order_number} not found in any sheet.")
