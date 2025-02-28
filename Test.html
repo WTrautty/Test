@@ -1,11 +1,1 @@
-    # Sanitize the order number to remove any slashes or invalid characters
-    sanitized_order_number = order_number.replace("/", "_").replace("\\", "_").strip()
-    
-    # Create the output filename and path
-    output_filename = f"{sanitized_order_number} - {current_date} - Pre-Checks.txt"
-    output_path = os.path.join(output_directory, output_filename)
 
-    # Write the final text file
-    with open(output_path, 'w') as file:
-        file.write(template)
-    print(f"New text file '{output_path}' created successfully!")
