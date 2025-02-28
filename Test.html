@@ -60,7 +60,7 @@ SEARCH_CONFIG = {
 SEARCH_LASER = { 
     "Sheet1": { 
         "service_match": ["circuitID"],  # Key used to search for the Service ID 
-        "extract_columns": ["device", "interface", "scid"]  # Columns to extract data from 
+        "extract_columns": ["device", "interface", "scid","location"]  # Columns to extract data from 
     }, 
 } 
 
@@ -77,7 +77,8 @@ def lan_subnet_fix(lan_ipv6):
     try:
         address, subnet = lan_ipv6.split("/")
         hex_groups = address.split(":")
-        hex_groups[3] = "0" + hex_groups[3]
+        if len(hex_groups[3]) == 3:
+            hex_groups[3] = "0" + hex_groups[3]
         return ":".join(hex_groups) + "/56"
     except Exception:
         return None
@@ -88,6 +89,13 @@ def ce_wan_address(ce_wan_ipv6):
         hex_groups = address.split(":")
         hex_groups[-1] = format(int(hex_groups[-1],16)+1, "x")
         return ":".join(hex_groups) + f"/{subnet}"
+    except Exception:
+        return None
+
+def j_barton(lan_ipv6):
+    try:
+        address = lan_ipv6.split("/")[0]
+        return address + "[0-3]"
     except Exception:
         return None
 
@@ -108,6 +116,26 @@ def md_pw_map(ipv6_region):
         "3": "A78BA5E3FFFB4F9FE4DDEFC2D",
         "4": "38CE4A74D0004E037471A27B9",
         "5": "D4196D7DF1087CA41E8B5CF72"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def juniper_RI_map(ipv6_region):
+    mapping = {
+       "1": "8192-1-EIS0176-2006932628-L3VPN",
+       "2": "8193-1-EIS0176-2006932629-L3VPN",
+       "3": "8194-1-EIS0176-2006932623-L3VPN",
+       "4": "8195-1-EIS0176-2006932630-L3VPN",
+       "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def Nokia_vprn_map(ipv6_region):
+    mapping = {
+       "1": "22826008",
+       "2": "22826009",
+       "3": "22826010",
+       "4": "22826011",
+       "5": "UNKNOWN"
     }
     return mapping.get(ipv6_region, "unknown")
 
@@ -188,7 +216,6 @@ if matches:
     service_id = str(matches[0]["Data"].get("Service ID", "")).strip()
     laser_matches = search_circuit(service_id)
     wb_laser.close()
-    print("Laser search results:", laser_matches)
 else:
     wb_laser.close()
 
@@ -202,6 +229,7 @@ def get_default_interface(laser_matches, ipv6_region):
     default_interface = ""
     default_device = ""
     default_scid = ""
+    default_location = ""
     target_suffix = f"80{ipv6_region}"
     for lm in laser_matches:
         interface_val = str(lm["Data"].get("interface", "")).strip()
@@ -209,8 +237,9 @@ def get_default_interface(laser_matches, ipv6_region):
             default_interface = interface_val
             default_device = str(lm["Data"].get("device", "")).strip()
             default_scid = str(lm["Data"].get("scid", "")).strip()
+            default_location = str(lm["Data"].get("location", "")).strip()
             break
-    return default_interface, default_device, default_scid
+    return default_interface, default_device, default_scid, default_location
 
 # Process the main match(es) and generate output
 if matches:
@@ -218,66 +247,85 @@ if matches:
         sheet_name = match["Sheet"]
         data = match.get("Data", {})  # Ensure 'data' is always a dictionary
         ipv6_region = identify_region(data.get("IPv6 WAN", ""))
+        jRI = juniper_RI_map(ipv6_region)
+        vprn = Nokia_vprn_map(ipv6_region)
         fixed_lan = lan_subnet_fix(data.get("IPv6 LAN", ""))
         ce_wan = ce_wan_address(data.get("IPv6 WAN", ""))
-        Area = ipv6_region_map(ipv6_region)
+        area = ipv6_region_map(ipv6_region)
         md_pw = md_pw_map(ipv6_region)
+        j_bar = j_barton(data.get("IPv6 LAN", ""))
 
         # Custom output format based on sheet name
-        if sheet_name == "Main":
-            # Read the template file
-            with open(r"C:\Users\AD39644\Service Information.txt", 'r') as file:
+        default_interface, default_device, default_scid, default_location = get_default_interface(laser_matches, ipv6_region)
+        if default_device[:3] == "ESP":
+            with open(r"C:\Users\AD39644\Service Information ESP.txt", 'r') as file:
+                template = file.read()
+        else:
+            with open(r"C:\Users\AD39644\Service Information Juno.txt", 'r') as file:
                 template = file.read()
 
-            # Replace placeholders in the template from the main file
-            template = template.replace('{Ops Console Ticket}', order_number)
-            template = template.replace('{Region}', ipv6_region)
-            template = template.replace('{Lan (Data 1)}', fixed_lan)
-            template = template.replace('{WAN/126 CE}', ce_wan)
-            template = template.replace('{md_pw}', md_pw)
-            template = template.replace('{IPv6 Status}', data.get("IPv6 Status", ""))
-            template = template.replace('{Service ID}', data.get("Service ID", ""))
-            template = template.replace('{IPv6 WAN}', data.get("IPv6 WAN", ""))
-            template = template.replace('{IPv6 LAN}', data.get("IPv6 LAN", ""))
-            template = template.replace('{IPv6 Loopback}', data.get("IPv6 Loopback", ""))
-            template = template.replace('{DOI_Bureau}', data.get("DOI_Bureau", ""))
-            template = template.replace('{WHD_Location}', data.get("WHD_Location", ""))
-            template = template.replace('{Node Name}', data.get("Node Name", ""))
-            template = template.replace('{IP Address}', data.get("IP Address", ""))
-            template = template.replace('{Address}', data.get("Address", ""))
-            template = template.replace('{City}', data.get("City", ""))
-            template = template.replace('{State}', data.get("State", ""))
-            template = template.replace('{Vendor}', data.get("Vendor", ""))
-            template = template.replace('{device}', data.get("device", ""))
-            template = template.replace('{interface}', data.get("interface", ""))
+        # Replace placeholders in the template from the main file
+        template = template.replace('{Ops Console Ticket}', order_number)
+        template = template.replace('{Region}', ipv6_region)
+        template = template.replace('{Lan (Data 1)}', fixed_lan)
+        template = template.replace('{WAN/126 CE}', ce_wan)
+        template = template.replace('{WAN/126 CEnoSub}', ce_wan.split('/')[0])
+        template = template.replace('{md_pw}', md_pw)
+        template = template.replace('{j_bar}', j_bar)
+        template = template.replace('{jRI}', jRI)
+        template = template.replace('{vprn}', vprn)
+        template = template.replace('{area}', area)
+        template = template.replace('{IPv6_wan_noSub}', data.get("IPv6 WAN", "").split('/')[0])
+        template = template.replace('{IPv6_lan_noSub}', data.get("IPv6 LAN", "").split('/')[0])
+        template = template.replace('{IPv6_lan_noSuband1}', data.get("IPv6 LAN", "").split('/')[0] + "1")
+        template = template.replace('{IPv6_lan_Sub64and1}', data.get("IPv6 LAN", "").split('/')[0] + "1/64")
+        template = template.replace('{WAN_CE}', data.get("IPv6 WAN", "").split('/')[0])
+        template = template.replace('{Node_Only}', data.get("Node Name", "").split('.')[0])
+        template = template.replace('{regional_vlan}', "80" + ipv6_region)
+        template = template.replace('{IPv6 Status}', data.get("IPv6 Status", ""))
+        template = template.replace('{IPv6 Loopback_andone}', data.get("IPv6 Loopback", "").split('/')[0] + "/" + data.get("IPv6 Loopback", "").split('/')[1])
+        template = template.replace('{Service ID}', data.get("Service ID", ""))
+        template = template.replace('{IPv6 WAN}', data.get("IPv6 WAN", ""))
+        template = template.replace('{IPv6 LAN}', data.get("IPv6 LAN", ""))
+        template = template.replace('{IPv6 Loopback}', data.get("IPv6 Loopback", ""))
+        template = template.replace('{DOI_Bureau}', data.get("DOI_Bureau", ""))
+        template = template.replace('{WHD_Location}', data.get("WHD_Location", ""))
+        template = template.replace('{Node Name}', data.get("Node Name", ""))
+        template = template.replace('{IP Address}', data.get("IP Address", ""))
+        template = template.replace('{Address}', data.get("Address", ""))
+        template = template.replace('{City}', data.get("City", ""))
+        template = template.replace('{State}', data.get("State", ""))
+        template = template.replace('{Vendor}', data.get("Vendor", ""))
 
-            # Use the new function to get default interface details from laser_matches
-            default_interface, default_device, default_scid = get_default_interface(laser_matches, ipv6_region)
-            # Replace new placeholders in the template
-            template = template.replace('{default_interface}', default_interface)
-            template = template.replace('{default_device}', default_device)
-            template = template.replace('{default_scid}', default_scid)
+        
+        # Replace new placeholders in the template
+        template = template.replace('{default_interface}', default_interface)
+        template = template.replace('{default_device}', default_device)
+        template = template.replace('{default_scid}', default_scid)
+        template = template.replace('{default_location}', default_location)
+        template = template.replace('{def_int_noSub}', default_interface.split('.')[0])
+        
 
-            # Append network match details from LASER search
-            network_info = ""
-            if laser_matches:
-                network_info += "\n\nNetwork Matches:\n\n"
-                for lm in laser_matches:
-                    lm_data = lm["Data"]
-                    for key, value in lm_data.items():
-                        network_info += f"{key}: {value}\n"
-                    network_info += "\n-----------------\n\n"
-            template += network_info
+        # Append network match details from LASER search
+        network_info = ""
+        if laser_matches:
+            network_info += "\n\nNetwork Matches:\n\n"
+            for lm in laser_matches:
+                lm_data = lm["Data"]
+                for key, value in lm_data.items():
+                    network_info += f"{key}: {value}\n"
+                network_info += "\n-----------------\n\n"
+        template += network_info
 
-            # Specify the desired output directory
-            output_directory = r"C:\Users\AD39644"
-            output_filename = 'specific_output_file.txt'
-            output_path = os.path.join(output_directory, output_filename)
+        # Specify the desired output directory
+        output_directory = r"C:\Users\AD39644"
+        output_filename = 'specific_output_file.txt'
+        output_path = os.path.join(output_directory, output_filename)
 
-            # Write the final text file
-            with open(output_path, 'w') as file:
-                file.write(template)
-            print(f"New text file '{output_path}' created successfully!")
+        # Write the final text file
+        with open(output_path, 'w') as file:
+            file.write(template)
+        print(f"New text file '{output_path}' created successfully!")
 
 else:
     print(f"Order number {order_number} not found in any sheet.")
