@@ -11,8 +11,8 @@ def load_commands_from_file(file_path: str, delimiter: str = "&!") -> List[str]:
     
     Args:
         file_path: The path to the file containing commands.
-        delimiter: The delimiter used to separate commands (default is two newlines).
-    
+        delimiter: The delimiter used to separate commands.
+        
     Returns:
         A list of command strings.
     """
@@ -26,9 +26,30 @@ def load_commands_from_file(file_path: str, delimiter: str = "&!") -> List[str]:
         print(f"Error reading {file_path}: {e}")
         return []
 
+def load_commands_from_folder(folder_path: str, delimiter: str = "&!") -> List[str]:
+    """
+    Reads all .txt files in the given folder, splits their content into individual commands
+    using the specified delimiter, and returns a list of commands.
+    
+    Args:
+        folder_path: The path to the folder containing .txt files.
+        delimiter: The delimiter used to separate commands within each file.
+    
+    Returns:
+        A list of command strings from all files.
+    """
+    commands = []
+    for filename in os.listdir(folder_path):
+        if filename.lower().endswith('.txt'):
+            file_path = os.path.join(folder_path, filename)
+            file_commands = load_commands_from_file(file_path, delimiter)
+            commands.extend(file_commands)
+    return commands
+
 def run_commands_on_bastion(hostname: str, username: str, commands: List[str]) -> List[Dict[str, str]]:
     """
-    Connects to the bastion host using MFA code as the password and executes commands.
+    Connects to the bastion host using an MFA code as the password and executes commands sequentially.
+    It waits for each command to complete before sending the next command.
     
     Args:
         hostname: The bastion host's address.
@@ -36,7 +57,7 @@ def run_commands_on_bastion(hostname: str, username: str, commands: List[str]) -
         commands: A list of commands to execute.
     
     Returns:
-        A list of dictionaries containing each command's output and error.
+        A list of dictionaries containing each command's output, exit status, and error output.
     """
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -51,6 +72,8 @@ def run_commands_on_bastion(hostname: str, username: str, commands: List[str]) -
         for cmd in commands:
             print(f"\nExecuting command: {cmd}")
             stdin, stdout, stderr = ssh.exec_command(cmd)
+            # Wait for the command to complete by retrieving its exit status
+            exit_status = stdout.channel.recv_exit_status()
             output = stdout.read().decode().strip()
             error = stderr.read().decode().strip()
             if output:
@@ -59,6 +82,7 @@ def run_commands_on_bastion(hostname: str, username: str, commands: List[str]) -
                 print(f"Error: {error}")
             results.append({
                 "command": cmd,
+                "exit_status": exit_status,
                 "output": output,
                 "error": error,
             })
@@ -77,7 +101,7 @@ def run_commands_on_bastion(hostname: str, username: str, commands: List[str]) -
 
 def main() -> None:
     """
-    Main function to prompt the user for connection details, load commands from files,
+    Main function to prompt the user for connection details, load commands from text files,
     and execute those commands on the bastion host.
     """
     hostname = input("Enter bastion hostname: ").strip()
@@ -88,7 +112,7 @@ def main() -> None:
         print("Provided folder path does not exist or is not a directory.")
         sys.exit(1)
     
-    commands = load_commands_from_file(folder)
+    commands = load_commands_from_folder(folder)
     if not commands:
         print("No commands found in the specified folder.")
         sys.exit(1)
