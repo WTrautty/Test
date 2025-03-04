@@ -2,7 +2,6 @@
 # $interface = "1.0"
 
 import os
-import time
 
 def main():
     # Prompt the user for the full path to the command file.
@@ -26,13 +25,26 @@ def main():
     # Split the file contents into commands using the delimiter "&new&".
     commands = [cmd.strip() for cmd in content.split("&new&") if cmd.strip()]
 
+    # Prompt the user for the prompt string to wait for and an optional timeout value.
+    prompt_str = crt.Dialog.Prompt("Enter the prompt string to wait for:", "Prompt String", ">", False)
+    timeout_str = crt.Dialog.Prompt("Enter timeout in seconds (default 10):", "Timeout", "10", False)
+    try:
+        timeout = int(timeout_str)
+    except:
+        timeout = 10
+
     # Iterate over the commands, sending each to the session.
     for cmd in commands:
         # Update the status bar with the command being executed.
         crt.Session.SetStatusText("Executing command: " + cmd)
         # Send the command followed by a carriage return.
         crt.Screen.Send(cmd + "\r")
-        # Optionally, wait for the command to complete; adjust delay or implement wait-for-prompt as needed.
-        time.sleep(1)
+        # Wait for the expected prompt to appear before sending the next command.
+        result = crt.Screen.WaitForString(prompt_str, timeout)
+        if not result:
+            crt.Dialog.MessageBox("Timeout waiting for prompt after command: " + cmd)
+            # Optionally, you could break here or continue to the next command.
+        else:
+            crt.Session.SetStatusText("Prompt detected. Continuing...")
 
 main()
