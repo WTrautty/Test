@@ -28,7 +28,7 @@ def process_file(filepath):
     else:
         print(f"No conditions met for {filename}")
         target_folder = os.path.join(base_dir, "Clean")
-        return
+        new_filename = filename  # Keep the original name, or modify if desired
 
     # Create the target folder if it doesn't exist.
     os.makedirs(target_folder, exist_ok=True)
@@ -41,8 +41,9 @@ def process_file(filepath):
     print(f"Moved {filename} to {target_folder} as {new_filename}")
 
 def main():
-    # Find all .txt files in the current directory.
+    # Specify the directory you want to search.
     directory = r"C:\Users\AD39644\IPv6_Test_Files\2025-03-04"
+    # Find all .txt files in the specified directory.
     txt_files = glob.glob(os.path.join(directory, "*.txt"))
     for filepath in txt_files:
         process_file(filepath)
