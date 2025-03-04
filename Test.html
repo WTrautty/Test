@@ -2,6 +2,28 @@
 # $interface = "1.0"
 
 import os
+import time
+
+def wait_for_any(prompts, total_timeout):
+    """
+    Waits until one of the prompts in the list appears on the screen,
+    or until total_timeout seconds have elapsed.
+    
+    Args:
+        prompts: A list of strings to wait for.
+        total_timeout: Maximum time (in seconds) to wait.
+        
+    Returns:
+        The prompt string that was detected, or None if no prompt was found.
+    """
+    start_time = time.time()
+    while (time.time() - start_time) < total_timeout:
+        for prompt in prompts:
+            # A zero-second timeout does an immediate check
+            if crt.Screen.WaitForString(prompt, 0):
+                return prompt
+        time.sleep(0.1)
+    return None
 
 def main():
     # Prompt the user for the full path to the command file.
@@ -25,26 +47,25 @@ def main():
     # Split the file contents into commands using the delimiter "&new&".
     commands = [cmd.strip() for cmd in content.split("&new&") if cmd.strip()]
 
-    # Prompt the user for the prompt string to wait for and an optional timeout value.
-    prompt_str = crt.Dialog.Prompt("Enter the prompt string to wait for:", "Prompt String", ">", False)
+    # Prompt for timeout (seconds)
     timeout_str = crt.Dialog.Prompt("Enter timeout in seconds (default 10):", "Timeout", "10", False)
     try:
         timeout = int(timeout_str)
     except:
         timeout = 10
 
-    # Iterate over the commands, sending each to the session.
+    # Define the two prompt strings we want to detect (you can adjust these as needed)
+    prompts_to_wait_for = ["(", "@"]
+    
     for cmd in commands:
-        # Update the status bar with the command being executed.
         crt.Session.SetStatusText("Executing command: " + cmd)
-        # Send the command followed by a carriage return.
         crt.Screen.Send(cmd + "\r")
-        # Wait for the expected prompt to appear before sending the next command.
-        result = crt.Screen.WaitForString(prompt_str, timeout)
-        if not result:
-            crt.Dialog.MessageBox("Timeout waiting for prompt after command: " + cmd)
-            # Optionally, you could break here or continue to the next command.
+        detected = wait_for_any(prompts_to_wait_for, timeout)
+        if detected:
+            crt.Session.SetStatusText("Detected prompt: " + detected + " -- continuing")
         else:
-            crt.Session.SetStatusText("Prompt detected. Continuing...")
+            crt.Dialog.MessageBox("Timeout waiting for prompt after command: " + cmd)
+            # Optionally, you could break here if a prompt is not detected.
+            # break
 
 main()
