@@ -5,7 +5,7 @@ import os
 import time
 
 def main():
-    # Prompt user for the full path to the command file.
+    # Prompt the user for the full path to the command file.
     command_file = crt.Dialog.Prompt("Enter full path to command file:", "Command File", "", False)
     if not command_file:
         crt.Dialog.MessageBox("No file specified. Exiting.")
@@ -28,10 +28,11 @@ def main():
 
     # Iterate over the commands, sending each to the session.
     for cmd in commands:
-        crt.Session.Output("Executing command: " + cmd + "\n")
+        # Update the status bar with the command being executed.
+        crt.Session.SetStatusText("Executing command: " + cmd)
+        # Send the command followed by a carriage return.
         crt.Screen.Send(cmd + "\r")
-        # Optionally, wait for the command to complete.
-        # You might replace the fixed sleep with a wait for a known prompt:
+        # Optionally, wait for the command to complete; adjust delay or implement wait-for-prompt as needed.
         time.sleep(1)
 
 main()
