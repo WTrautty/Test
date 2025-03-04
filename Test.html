@@ -22,11 +22,12 @@ def process_file(filepath):
     if "0 packets received" in section:
         target_folder = os.path.join(base_dir, "unreachable")
         new_filename = "Unpingable " + filename
-    elif "/126" in section or "/56" in section:
+    elif section.count("(tunneled)") < 3 or section.count("::/0") < 3:
         target_folder = os.path.join(base_dir, "Routes Found")
         new_filename = "Routes Found " + filename
     else:
         print(f"No conditions met for {filename}")
+        target_folder = os.path.join(base_dir, "Clean")
         return
 
     # Create the target folder if it doesn't exist.
@@ -41,7 +42,8 @@ def process_file(filepath):
 
 def main():
     # Find all .txt files in the current directory.
-    txt_files = glob.glob("*.txt")
+    directory = r"C:\Users\AD39644\IPv6_Test_Files\2025-03-04"
+    txt_files = glob.glob(os.path.join(directory, "*.txt"))
     for filepath in txt_files:
         process_file(filepath)
 
