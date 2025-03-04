@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 import os
 import sys
@@ -95,7 +94,8 @@ def process_file(file_path: str, ssh: paramiko.SSHClient, delimiter: str = "&NEW
 def process_folder(folder_path: str, ssh: paramiko.SSHClient, delimiter: str = "&NEW&") -> None:
     """
     Iterates over all .txt files in the folder. For each file that contains the
-    required marker lines, it processes the file to execute its commands and update it.
+    required marker lines and non-blank "PE TID:" and "PE INTERFACE:" lines, 
+    it processes the file to execute its commands and update it.
     """
     for filename in os.listdir(folder_path):
         if filename.lower().endswith('.txt'):
@@ -105,6 +105,23 @@ def process_folder(folder_path: str, ssh: paramiko.SSHClient, delimiter: str = "
                     content = f.read()
             except IOError as e:
                 print(f"Error reading {file_path}: {e}")
+                continue
+
+            # Check for non-blank "PE TID:" and "PE INTERFACE:" lines.
+            lines = content.splitlines()
+            pe_tid_found = False
+            pe_interface_found = False
+            for line in lines:
+                if line.startswith("PE TID:"):
+                    # Check if there's any non-whitespace text after the colon.
+                    if line[len("PE TID:"):].strip():
+                        pe_tid_found = True
+                if line.startswith("PE INTERFACE:"):
+                    if line[len("PE INTERFACE:"):].strip():
+                        pe_interface_found = True
+
+            if not pe_tid_found or not pe_interface_found:
+                print(f"Skipping {file_path} due to blank or missing 'PE TID:' or 'PE INTERFACE:'")
                 continue
 
             if "AUTOMATED COMMANDS START:" in content and "AUTOMATED COMMANDS STOP:" in content:
