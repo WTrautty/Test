@@ -1,1 +1,153 @@
 
+#!/usr/bin/env python3
+import os
+import sys
+import paramiko
+import getpass
+
+def process_file(file_path: str, ssh: paramiko.SSHClient, delimiter: str = "&NEW&") -> None:
+    """
+    Processes a file by:
+      - Finding the lines with "AUTOMATED COMMANDS START:" and "AUTOMATED COMMANDS STOP:"
+      - Extracting the commands in between (split by the given delimiter)
+      - Executing the commands over the provided SSH connection
+      - Replacing the original commands block with a block containing the outputs
+    """
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+    except IOError as e:
+        print(f"Error reading {file_path}: {e}")
+        return
+
+    start_idx = None
+    end_idx = None
+    for i, line in enumerate(lines):
+        if "AUTOMATED COMMANDS START:" in line:
+            start_idx = i
+        if "AUTOMATED COMMANDS STOP:" in line:
+            end_idx = i
+            break  # Assume one block per file
+
+    if start_idx is None or end_idx is None or end_idx <= start_idx:
+        print(f"Markers not found or improperly placed in {file_path}. Skipping file.")
+        return
+
+    # Extract the block of commands between the markers.
+    commands_block = "".join(lines[start_idx + 1:end_idx]).strip()
+    if not commands_block:
+        print(f"No commands found between markers in {file_path}. Skipping file.")
+        return
+
+    # Split commands using the delimiter.
+    commands = [cmd.strip() for cmd in commands_block.split(delimiter) if cmd.strip()]
+    if not commands:
+        print(f"No valid commands extracted in {file_path}. Skipping file.")
+        return
+
+    results = []
+    for cmd in commands:
+        print(f"Executing command from file {file_path}: {cmd}")
+        try:
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            exit_status = stdout.channel.recv_exit_status()
+            output = stdout.read().decode().strip()
+            error = stderr.read().decode().strip()
+            results.append({
+                "command": cmd,
+                "exit_status": exit_status,
+                "output": output,
+                "error": error,
+            })
+        except Exception as e:
+            print(f"Error executing command '{cmd}' in {file_path}: {e}")
+            results.append({
+                "command": cmd,
+                "exit_status": -1,
+                "output": "",
+                "error": str(e),
+            })
+
+    # Build a replacement block with the command results.
+    output_lines = ["AUTOMATED COMMANDS OUTPUT:"]
+    for res in results:
+        output_lines.append(f"COMMAND: {res['command']}")
+        output_lines.append(f"Exit Status: {res['exit_status']}")
+        if res['output']:
+            output_lines.append("Output:")
+            output_lines.append(res['output'])
+        if res['error']:
+            output_lines.append("Error:")
+            output_lines.append(res['error'])
+        output_lines.append("-" * 20)
+    output_lines.append("END OF AUTOMATED OUTPUT")
+    output_block = "\n".join(output_lines) + "\n"
+
+    # Replace the section (markers and in-between content) with the output block.
+    new_lines = lines[:start_idx] + [output_block] + lines[end_idx + 1:]
+    try:
+        with open(file_path, 'w') as f:
+            f.writelines(new_lines)
+        print(f"Processed and updated file: {file_path}")
+    except IOError as e:
+        print(f"Error writing to {file_path}: {e}")
+
+def process_folder(folder_path: str, ssh: paramiko.SSHClient, delimiter: str = "&NEW&") -> None:
+    """
+    Iterates over all .txt files in the folder. For each file that contains the
+    required marker lines, it processes the file to execute its commands and update it.
+    """
+    for filename in os.listdir(folder_path):
+        if filename.lower().endswith('.txt'):
+            file_path = os.path.join(folder_path, filename)
+            try:
+                with open(file_path, 'r') as f:
+                    content = f.read()
+            except IOError as e:
+                print(f"Error reading {file_path}: {e}")
+                continue
+
+            if "AUTOMATED COMMANDS START:" in content and "AUTOMATED COMMANDS STOP:" in content:
+                process_file(file_path, ssh, delimiter)
+            else:
+                print(f"Markers not found in {file_path}. Skipping file.")
+
+def main() -> None:
+    """
+    Main function that:
+      - Prompts the user for bastion host details and the folder containing .txt files.
+      - Establishes an SSH connection using MFA.
+      - Processes each file to execute and replace the automated commands block.
+    """
+    hostname = input("Enter bastion hostname: ").strip()
+    username = input("Enter username: ").strip()
+    folder = input("Enter folder path containing command .txt files: ").strip()
+
+    if not os.path.isdir(folder):
+        print("Provided folder path does not exist or is not a directory.")
+        sys.exit(1)
+
+    mfa_code = getpass.getpass(prompt="Enter MFA code: ").strip()
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        print("Attempting to connect to bastion...")
+        ssh.connect(hostname, username=username, password=mfa_code)
+        print("Successfully connected to bastion.")
+    except paramiko.AuthenticationException:
+        print("Authentication failed. Please check your MFA code.")
+        sys.exit(1)
+    except paramiko.SSHException as e:
+        print(f"SSH error occurred: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Connection failed: {e}")
+        sys.exit(1)
+
+    process_folder(folder, ssh)
+    ssh.close()
+    print("SSH connection closed.")
+
+if __name__ == "__main__":
+    main()
