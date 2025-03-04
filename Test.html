@@ -1,91 +1,101 @@
-
 #!/usr/bin/env python3
-import paramiko
-import sys
-import getpass
 import os
+import sys
+import paramiko
+import getpass
+from typing import List, Dict
 
-def load_commands_from_folder(folder_path):
+def load_commands_from_folder(folder_path: str) -> List[str]:
     """
     Reads all .txt files in the given folder and returns a list of command strings.
+    
+    Args:
+        folder_path: The path to the folder containing .txt command files.
+        
+    Returns:
+        A list of command strings.
     """
     commands = []
     for filename in os.listdir(folder_path):
         if filename.lower().endswith('.txt'):
             file_path = os.path.join(folder_path, filename)
-            with open(file_path, 'r') as f:
-                cmd = f.read().strip()
-                if cmd:
-                    commands.append(cmd)
+            try:
+                with open(file_path, 'r') as file:
+                    command = file.read().strip()
+                    if command:
+                        commands.append(command)
+            except IOError as e:
+                print(f"Error reading {file_path}: {e}")
     return commands
 
-def run_commands_on_bastion(hostname, username, commands):
+def run_commands_on_bastion(hostname: str, username: str, commands: List[str]) -> List[Dict[str, str]]:
     """
-    Connect to bastion host and execute commands using MFA code as password.
+    Connects to the bastion host using MFA code as the password and executes commands.
+    
+    Args:
+        hostname: The bastion host's address.
+        username: The username to log in as.
+        commands: A list of commands to execute.
+    
+    Returns:
+        A list of dictionaries containing each command's output and error.
     """
-    ssh = None
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        # Initialize SSH client
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        
-        # Get the current MFA code
-        mfa_code = input('Enter MFA code: ').strip()
-        
-        # Connect using the MFA code as password
+        # Prompt for MFA code securely
+        mfa_code = getpass.getpass(prompt="Enter MFA code: ").strip()
         print("Attempting to connect to bastion...")
         ssh.connect(hostname, username=username, password=mfa_code)
-        print("Successfully connected to bastion")
+        print("Successfully connected to bastion.")
         
-        # Execute each command and collect results
         results = []
         for cmd in commands:
             print(f"\nExecuting command: {cmd}")
             stdin, stdout, stderr = ssh.exec_command(cmd)
-            # Get command output
             output = stdout.read().decode().strip()
-            error_output = stderr.read().decode().strip()
+            error = stderr.read().decode().strip()
             if output:
                 print(f"Output: {output}")
-            if error_output:
-                print(f"Error: {error_output}")
+            if error:
+                print(f"Error: {error}")
             results.append({
-                'command': cmd,
-                'output': output,
-                'error': error_output
+                "command": cmd,
+                "output": output,
+                "error": error,
             })
-            
         return results
-            
     except paramiko.AuthenticationException:
         print("Authentication failed. Please check your MFA code.")
-        return None
-    except paramiko.SSHException as ssh_error:
-        print(f"SSH error occurred: {str(ssh_error)}")
-        return None
+        sys.exit(1)
+    except paramiko.SSHException as e:
+        print(f"SSH error occurred: {e}")
+        sys.exit(1)
     except Exception as e:
-        print(f"Connection failed: {str(e)}")
-        return None
+        print(f"Connection failed: {e}")
+        sys.exit(1)
     finally:
-        if ssh:
-            ssh.close()
+        ssh.close()
 
-def main():
-    # Prompt for connection details
+def main() -> None:
+    """
+    Main function to prompt the user for connection details, load commands from files,
+    and execute those commands on the bastion host.
+    """
     hostname = input("Enter bastion hostname: ").strip()
     username = input("Enter username: ").strip()
+    folder = input("Enter folder path containing command .txt files: ").strip()
     
-    # Prompt for folder containing command text files
-    folder = input("Enter folder path containing command txt files: ").strip()
+    if not os.path.isdir(folder):
+        print("Provided folder path does not exist or is not a directory.")
+        sys.exit(1)
     
-    # Load commands from the specified folder
     commands = load_commands_from_folder(folder)
     if not commands:
         print("No commands found in the specified folder.")
         sys.exit(1)
     
-    # Run commands on bastion
-    results = run_commands_on_bastion(hostname, username, commands)
-    
+    run_commands_on_bastion(hostname, username, commands)
+
 if __name__ == "__main__":
     main()
