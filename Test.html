@@ -1,1 +1,91 @@
 
+#!/usr/bin/env python3
+import paramiko
+import sys
+import getpass
+import os
+
+def load_commands_from_folder(folder_path):
+    """
+    Reads all .txt files in the given folder and returns a list of command strings.
+    """
+    commands = []
+    for filename in os.listdir(folder_path):
+        if filename.lower().endswith('.txt'):
+            file_path = os.path.join(folder_path, filename)
+            with open(file_path, 'r') as f:
+                cmd = f.read().strip()
+                if cmd:
+                    commands.append(cmd)
+    return commands
+
+def run_commands_on_bastion(hostname, username, commands):
+    """
+    Connect to bastion host and execute commands using MFA code as password.
+    """
+    ssh = None
+    try:
+        # Initialize SSH client
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        
+        # Get the current MFA code
+        mfa_code = input('Enter MFA code: ').strip()
+        
+        # Connect using the MFA code as password
+        print("Attempting to connect to bastion...")
+        ssh.connect(hostname, username=username, password=mfa_code)
+        print("Successfully connected to bastion")
+        
+        # Execute each command and collect results
+        results = []
+        for cmd in commands:
+            print(f"\nExecuting command: {cmd}")
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            # Get command output
+            output = stdout.read().decode().strip()
+            error_output = stderr.read().decode().strip()
+            if output:
+                print(f"Output: {output}")
+            if error_output:
+                print(f"Error: {error_output}")
+            results.append({
+                'command': cmd,
+                'output': output,
+                'error': error_output
+            })
+            
+        return results
+            
+    except paramiko.AuthenticationException:
+        print("Authentication failed. Please check your MFA code.")
+        return None
+    except paramiko.SSHException as ssh_error:
+        print(f"SSH error occurred: {str(ssh_error)}")
+        return None
+    except Exception as e:
+        print(f"Connection failed: {str(e)}")
+        return None
+    finally:
+        if ssh:
+            ssh.close()
+
+def main():
+    # Prompt for connection details
+    hostname = input("Enter bastion hostname: ").strip()
+    username = input("Enter username: ").strip()
+    
+    # Prompt for folder containing command text files
+    folder = input("Enter folder path containing command txt files: ").strip()
+    
+    # Load commands from the specified folder
+    commands = load_commands_from_folder(folder)
+    if not commands:
+        print("No commands found in the specified folder.")
+        sys.exit(1)
+    
+    # Run commands on bastion
+    results = run_commands_on_bastion(hostname, username, commands)
+    
+if __name__ == "__main__":
+    main()
