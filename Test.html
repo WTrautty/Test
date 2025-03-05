@@ -7,17 +7,26 @@ def process_file(filepath):
     with open(filepath, 'r') as file:
         content = file.read()
 
-    # Use a regex to extract text between the delimiters.
-    pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
-    match = pattern.search(content)
-    if not match:
-        print(f"Delimiters not found in {filepath}")
-        return
-
-    section = match.group(1)
     base_dir = os.path.dirname(filepath)
     filename = os.path.basename(filepath)
 
+    # Use a regex to extract text between the delimiters.
+    pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
+    match = pattern.search(content)
+    
+    # If the delimiters are not found, move file to "Scripting Error" folder
+    if not match:
+        target_folder = os.path.join(base_dir, "Scripting Error")
+        new_filename = "Script Error " + filename
+        os.makedirs(target_folder, exist_ok=True)
+        target_path = os.path.join(target_folder, new_filename)
+        shutil.move(filepath, target_path)
+        print(f"Moved {filename} to {target_folder} as {new_filename}")
+        return
+
+    # If delimiters are found, extract the section between them.
+    section = match.group(1)
+    
     # Check for conditions and create target folder and new filename accordingly.
     if "0 packets received" in section:
         target_folder = os.path.join(base_dir, "unreachable")
@@ -30,13 +39,8 @@ def process_file(filepath):
         target_folder = os.path.join(base_dir, "Clean")
         new_filename = filename  # Keep the original name, or modify if desired
 
-    # Create the target folder if it doesn't exist.
     os.makedirs(target_folder, exist_ok=True)
-    
-    # Construct the new file path.
     target_path = os.path.join(target_folder, new_filename)
-    
-    # Move (and rename) the file.
     shutil.move(filepath, target_path)
     print(f"Moved {filename} to {target_folder} as {new_filename}")
 
