@@ -1,4 +1,3 @@
-
 import os
 import re
 import shutil
@@ -7,6 +6,7 @@ import glob
 def process_file(filepath):
     with open(filepath, 'r') as file:
         content = file.read()
+    # Remove the specific error message.
     content = content.replace(r'Error:\s*stty: standard input: Inappropriate ioctl for device', '')
 
     base_dir = os.path.dirname(filepath)
@@ -26,20 +26,26 @@ def process_file(filepath):
         print(f"Moved {filename} to {target_folder} as {new_filename}")
         return
 
-    # If delimiters are found, extract the section between them.
+    # Extract the section between delimiters.
     section = match.group(1)
     
-    # Check for conditions and create target folder and new filename accordingly.
+    # Check for conditions and set target folder and filename accordingly.
     if "0 packets received" in section:
         target_folder = os.path.join(base_dir, "unreachable")
         new_filename = "Unpingable " + filename
     elif section.count("(tunneled)") < 3 or section.count("::/0") < 3:
-        target_folder = os.path.join(base_dir, "Routes Found")
-        new_filename = "Routes Found " + filename
+        # Now further subdivide within the "Routes Found" folder.
+        # Check if exactly two "5 packets received" occur.
+        if section.count("5 packets received") == 2:
+            target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
+            new_filename = "Routes - IPv6 Pinged - " + filename
+        else:
+            target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
+            new_filename = "Routes - IPv6 Unreached - " + filename
     else:
         print(f"No conditions met for {filename}")
         target_folder = os.path.join(base_dir, "Clean")
-        new_filename = filename  # Keep the original name, or modify if desired
+        new_filename = filename  # Keep the original name.
 
     os.makedirs(target_folder, exist_ok=True)
     target_path = os.path.join(target_folder, new_filename)
