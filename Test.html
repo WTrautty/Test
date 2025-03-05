@@ -1,4 +1,4 @@
-template = template.replace('{Ops Console Ticket}', order_number)
+        template = template.replace('{Ops Console Ticket}', order_number)
         template = template.replace('{Region}', (ipv6_region if ipv6_region else "").strip)
         template = template.replace('{Lan (Data 1)}', (fixed_lan if fixed_lan else "").strip)
         template = template.replace('{WAN/126 CE}', (ce_wan if ce_wan else "").strip)
