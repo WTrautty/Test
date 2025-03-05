@@ -1,16 +1,14 @@
-
 import os
 import re
 import shutil
 import glob
 
-def process_file(filepath):
+def process_file(filepath, new_dir):
     with open(filepath, 'r') as file:
         content = file.read()
     # Remove the specific error message.
     content = content.replace(r'Error:\s*stty: standard input: Inappropriate ioctl for device', '')
 
-    base_dir = os.path.dirname(filepath)
     filename = os.path.basename(filepath)
 
     # Use a regex to extract text between the delimiters.
@@ -19,7 +17,7 @@ def process_file(filepath):
     
     # If the delimiters are not found, move file to "Scripting Error" folder
     if not match:
-        target_folder = os.path.join(base_dir, "Scripting Error")
+        target_folder = os.path.join(new_dir, "Scripting Error")
         new_filename = "Script Error " + filename
         os.makedirs(target_folder, exist_ok=True)
         target_path = os.path.join(target_folder, new_filename)
@@ -32,25 +30,25 @@ def process_file(filepath):
     
     # Check for conditions and set target folder and filename accordingly.
     if section.count("5 packets received") == 0:
-        target_folder = os.path.join(base_dir, "Unpingable")
+        target_folder = os.path.join(new_dir, "Unpingable")
         new_filename = "Unpingable " + filename
     elif section.count("(tunneled)") < 3 or section.count("::/0") < 3:
         # Now further subdivide within the "Routes Found" folder.
         # Check if exactly two "5 packets received" occur.
         if section.count("5 packets received") == 2:
-            target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
+            target_folder = os.path.join(new_dir, "Routes Found", "IPv6 Pingable")
             new_filename = "Routes - IPv6 Pinged - " + filename
         else:
-            target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
+            target_folder = os.path.join(new_dir, "Routes Found", "IPv6 Not Reachable")
             new_filename = "Routes - IPv6 Unreached - " + filename
     elif section.count("5 packets received") == 1:
         print(f"No conditions met for {filename}")
-        target_folder = os.path.join(base_dir, "Clean")
+        target_folder = os.path.join(new_dir, "Clean")
         new_filename = filename  # Keep the original name.
     else:
         print(f"More or Less than one pingable {filename}")
-        target_folder = os.path.join(base_dir, "Ping Check")
-        new_filename = "Ping Check - " + filename  # Keep the original name.
+        target_folder = os.path.join(new_dir, "Ping Check")
+        new_filename = "Ping Check - " + filename
 
     os.makedirs(target_folder, exist_ok=True)
     target_path = os.path.join(target_folder, new_filename)
@@ -58,13 +56,14 @@ def process_file(filepath):
     print(f"Moved {filename} to {target_folder} as {new_filename}")
 
 def main():
-    # Specify the directory you want to search.
+    # Specify the original directory containing the .txt files.
     directory = r"C:\Users\AD39644\IPv6_Test_Files\2025-03-04"
+    # Specify the new directory where files will be moved.
     new_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
-    # Find all .txt files in the specified directory.
+    # Find all .txt files in the specified original directory.
     txt_files = glob.glob(os.path.join(directory, "*.txt"))
     for filepath in txt_files:
-        process_file(filepath)
+        process_file(filepath, new_dir)
 
 if __name__ == '__main__':
     main()
