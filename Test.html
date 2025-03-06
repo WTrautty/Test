@@ -2,7 +2,7 @@ import os
 import glob
 import pandas as pd
 
-# Set the folder containing your CSV files (using a raw string for Windows paths)
+# Set the folder containing your CSV files
 folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
 
 # List to hold names of CSV files that fail the condition (with folder path)
@@ -10,59 +10,61 @@ failed_files = []
 
 # Recursively get list of all CSV files in the folder and its subfolders
 csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
-print(f"Found {len(csv_files)} CSV files.")
+print(f"Found {len(csv_files)} CSV files in total.")
 
-for file_path in csv_files:
+# Filter to only files with "inet" in the filename (case-insensitive)
+inet_csv_files = [file for file in csv_files if "inet" in os.path.basename(file).lower()]
+print(f"Found {len(inet_csv_files)} CSV files with 'inet' in the filename.")
+
+# Define the target key to look for
+target_key = "/0/vpn0_wan1_if_name/interface/tunnel-interface/allow-service/icmp"
+
+for file_path in inet_csv_files:
     try:
-        # Try reading with UTF-8 encoding first
-        df = pd.read_csv(file_path, encoding='utf-8')
-    except UnicodeDecodeError:
+        # Try reading the CSV using UTF-8, fallback to Latin-1 if needed
         try:
-            # If UTF-8 fails, try with Latin-1 encoding
+            df = pd.read_csv(file_path, encoding='utf-8')
+        except UnicodeDecodeError:
             df = pd.read_csv(file_path, encoding='latin1')
-        except Exception as e:
-            print(f"Could not read {file_path} with Latin-1: {e}")
-            failed_files.append(f"{os.path.basename(file_path)} - {file_path}")
-            continue
     except Exception as e:
         print(f"Could not read {file_path}: {e}")
         failed_files.append(f"{os.path.basename(file_path)} - {file_path}")
         continue
 
-    # Check if there are at least 2 columns (assuming first is key, second is value)
+    # Check if the CSV has at least 2 columns (assuming first is key, second is value)
     if len(df.columns) < 2:
-        print(f"File {file_path} does not have the expected format (requires at least 2 columns).")
+        print(f"File {file_path} does not have at least 2 columns.")
         failed_files.append(f"{os.path.basename(file_path)} - {file_path}")
         continue
 
     key_col = df.columns[0]
     value_col = df.columns[1]
+    
     file_failed = False
-
-    # Iterate through each row in the CSV
-    for _, row in df.iterrows():
-        key = str(row[key_col]).strip()
-        # Only process rows that match the pattern:
-        # They should start with "/1/vpn_lan_subif" and end with "_name/interface/shutdown"
-        if key.startswith("/1/vpn_lan_subif") and key.endswith("_name/interface/shutdown"):
-            # Skip the exception key
-            if key == "/1/vpn_lan_subif200_name/interface/shutdown":
-                continue
-            # Check if the corresponding value is "TRUE" (case insensitive)
-            value = str(row[value_col]).strip().upper()
-            if value != "TRUE":
+    found_target = False
+    
+    # Iterate through rows by index so we can check the following row
+    for i in range(len(df) - 1):
+        key = str(df.iloc[i][key_col]).strip()
+        if key == target_key:
+            found_target = True
+            # Check the next row's value in the value column
+            next_value = str(df.iloc[i+1][value_col]).strip().upper()
+            if next_value != "FALSE":
+                print(f"File {os.path.basename(file_path)}: Found target key at row {i} but next value is '{next_value}' (expected 'FALSE').")
                 file_failed = True
                 break
 
+    # Only mark as failing if the target key was found and the next value wasn't "FALSE"
     if file_failed:
         failed_files.append(f"{os.path.basename(file_path)} - {file_path}")
 
-# Write the names of CSV files that failed the condition to a text file
-output_file = r'C:\Users\AD39644\Desktop\output.txt'
+# Write the names and paths of CSV files that failed the condition to a text file
+output_file = r'C:\Users\AD39644\Desktop\inet_output.txt'
 with open(output_file, "w") as f:
     for entry in failed_files:
         f.write(entry + "\n")
 
-print(f"Script completed. {len(failed_files)} files did not meet the condition. See '{output_file}' for details.")
+print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
 
         
