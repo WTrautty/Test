@@ -1,121 +1,18 @@
-import os
-import re
-import shutil
-import glob
+  File "C:\Users\AD39644\AppData\Local\Programs\Python\Python312\Lib\shutil.py", line 847, in move
+    os.rename(src, real_dst)
+FileNotFoundError: [WinError 3] The system cannot find the path specified: 'C:\\Users\\AD39644\\OneDrive - Lumen\\Python Version\\Clean\\29165065 - 2025-03-06 - Pre-Checks.txt' -> 'C:\\Users\\AD39644\\OneDrive - Lumen\\Python Version\\Region\\IP Mismatch\\Region/IP Mismatch 29165065 - 2025-03-06 - Pre-Checks.txt'
 
-def get_original_filename(filename):
-    """
-    Remove any known prefixes from the filename.
-    """
-    prefixes = [
-        "Script Error ",
-        "Unpingable ",
-        "Routes - IPv6 Pinged - ",
-        "Routes - IPv6 Unreached - ",
-        "Ping Check - ",
-        "Region/IP Mismatch "  # include previous mismatch prefix if any
-    ]
-    for prefix in prefixes:
-        if filename.startswith(prefix):
-            return filename[len(prefix):]
-    return filename
+During handling of the above exception, another exception occurred:
 
-def process_file(filepath, base_dir):
-    with open(filepath, 'r') as file:
-        content = file.read()
-    
-    # Remove error messages using regex for flexible matching.
-    content = re.sub(r'stty:\s*standard input:\s*Inappropriate ioctl for device', '\n', content)
-    content = re.sub(r'Exit Status:\s*0', '\n', content)
-
-    # Get the original file name (if renamed previously, remove the old prefix)
-    original_filename = get_original_filename(os.path.basename(filepath))
-    
-    # --- Region / PE INTERFACE Check ---
-    # Search for a line with "Region:" and a line with "PE INTERFACE:" anywhere in the file.
-    region_match = re.search(r'^.*Region:.*$', content, re.MULTILINE)
-    pe_interface_match = re.search(r'^.*PE INTERFACE:.*$', content, re.MULTILINE)
-    
-    if not (region_match and pe_interface_match):
-        # If one (or both) of the lines is missing, treat as a mismatch.
-        target_folder = os.path.join(base_dir, "Region", "IP Mismatch")
-        new_filename = "Region/IP Mismatch " + original_filename
-        os.makedirs(target_folder, exist_ok=True)
-        target_path = os.path.join(target_folder, new_filename)
-        if os.path.abspath(filepath) != os.path.abspath(target_path):
-            shutil.move(filepath, target_path)
-            print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}' (missing Region/PE INTERFACE line)")
-        else:
-            print(f"'{original_filename}' is already in the correct location.")
-        return
-
-    # Extract the full matching lines.
-    region_line = region_match.group(0).strip()
-    pe_interface_line = pe_interface_match.group(0).strip()
-
-    # Extract the last two digits from each line.
-    region_digits_match = re.search(r'(\d{2})\s*$', region_line)
-    pe_digits_match = re.search(r'(\d{2})\s*$', pe_interface_line)
-    
-    # If either two-digit value is not found or they do not match, move to mismatch folder.
-    if not (region_digits_match and pe_digits_match) or (region_digits_match.group(1) != pe_digits_match.group(1)):
-        target_folder = os.path.join(base_dir, "Region", "IP Mismatch")
-        new_filename = "Region/IP Mismatch " + original_filename
-        os.makedirs(target_folder, exist_ok=True)
-        target_path = os.path.join(target_folder, new_filename)
-        if os.path.abspath(filepath) != os.path.abspath(target_path):
-            shutil.move(filepath, target_path)
-            print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}' (Region/IP mismatch)")
-        else:
-            print(f"'{original_filename}' is already in the correct location.")
-        return
-    # --- End Region / PE INTERFACE Check ---
-
-    # Use regex to extract text between the delimiters.
-    pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
-    match = pattern.search(content)
-    
-    if not match:
-        # If delimiters aren't found, classify as a script error.
-        target_folder = os.path.join(base_dir, "Scripting Error")
-        new_filename = "Script Error " + original_filename
-    else:
-        section = match.group(1)
-        # Apply your ping logic.
-        # Note: This sample logic uses occurrences of "0 packets received" as a proxy.
-        if section.count("0 packets received") == 2:
-            target_folder = os.path.join(base_dir, "Unpingable")
-            new_filename = "Unpingable " + original_filename
-        elif section.count("::/0") < 3:
-            if section.count("0 packets received") == 0:
-                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
-                new_filename = "Routes - IPv6 Pinged - " + original_filename
-            else:
-                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
-                new_filename = "Routes - IPv6 Unreached - " + original_filename
-        elif section.count("0 packets received") == 1:
-            target_folder = os.path.join(base_dir, "Clean")
-            new_filename = original_filename
-        else:
-            target_folder = os.path.join(base_dir, "Ping Check")
-            new_filename = "Ping Check - " + original_filename
-
-    os.makedirs(target_folder, exist_ok=True)
-    target_path = os.path.join(target_folder, new_filename)
-    # Only move if the file is not already in the target location.
-    if os.path.abspath(filepath) != os.path.abspath(target_path):
-        shutil.move(filepath, target_path)
-        print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}'")
-    else:
-        print(f"'{original_filename}' is already in the correct location.")
-
-def main():
-    # Set your new base directory where the files have been moved.
-    base_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
-    # Recursively find all .txt files in base_dir.
-    txt_files = glob.glob(os.path.join(base_dir, '**', '*.txt'), recursive=True)
-    for filepath in txt_files:
-        process_file(filepath, base_dir)
-
-if __name__ == '__main__':
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\CRT IPv6 Check.py", line 121, in <module>
     main()
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\CRT IPv6 Check.py", line 118, in main
+    process_file(filepath, base_dir)
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\CRT IPv6 Check.py", line 67, in process_file
+    shutil.move(filepath, target_path)
+  File "C:\Users\AD39644\AppData\Local\Programs\Python\Python312\Lib\shutil.py", line 867, in move
+    copy_function(src, real_dst)
+  File "C:\Users\AD39644\AppData\Local\Programs\Python\Python312\Lib\shutil.py", line 460, in copy2
+    _winapi.CopyFile2(src_, dst_, flags)
+FileNotFoundError: [WinError 3] The system cannot find the path specified
