@@ -41,29 +41,20 @@ def process_file(filepath, base_dir):
     else:
         section = match.group(1)
         # List of expected ping messages.
-        packets = [
-            "1 packets received",
-            "2 packets received",
-            "3 packets received",
-            "4 packets received",
-            "5 packets received"
-        ]
-        # Count total pings from 1 to 5.
-        total_pings = sum(section.count(packet) for packet in packets)
         
-        if total_pings == 0:
+        if section.count("0 packets received") == 2:
             # Only mark as Unpingable if no ping messages are found.
             target_folder = os.path.join(base_dir, "Unpingable")
             new_filename = "Unpingable " + original_filename
         elif section.count("::/0") < 3:
             # Routes Found condition.
-            if section.count("5 packets received") == 2:
+            if section.count("0 packets received") == 0:
                 target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
                 new_filename = "Routes - IPv6 Pinged - " + original_filename
             else:
                 target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
                 new_filename = "Routes - IPv6 Unreached - " + original_filename
-        elif total_pings == 1:
+        elif section.count("0 packets received") == 1:
             target_folder = os.path.join(base_dir, "Clean")
             new_filename = original_filename
         else:
