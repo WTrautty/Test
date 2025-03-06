@@ -5,7 +5,7 @@ import glob
 
 def get_original_filename(filename):
     """
-    Remove any known prefixes from the filename.
+    Remove any known prefixes and unwanted words/characters from the filename.
     """
     prefixes = [
         "Script Error ",
@@ -18,7 +18,13 @@ def get_original_filename(filename):
     ]
     for prefix in prefixes:
         if filename.startswith(prefix):
-            return filename[len(prefix):]
+            filename = filename[len(prefix):]
+    # Remove the words "Region", "IP", "Mismatch" (case-insensitive) as whole words,
+    # and remove all underscores.
+    filename = re.sub(r'\b(?:Region|IP|Mismatch)\b', '', filename, flags=re.IGNORECASE)
+    filename = filename.replace('_', '')
+    # Remove extra whitespace
+    filename = ' '.join(filename.split())
     return filename
 
 def process_file(filepath, base_dir):
@@ -29,22 +35,20 @@ def process_file(filepath, base_dir):
     content = re.sub(r'stty:\s*standard input:\s*Inappropriate ioctl for device', '\n', content)
     content = re.sub(r'Exit Status:\s*0', '\n', content)
 
-    # Get the original file name (if renamed previously, remove the old prefix)
+    # Get the original file name (cleaned up)
     original_filename = get_original_filename(os.path.basename(filepath))
     
     # --- Automated Commands Output Check ---
-    # Use regex to extract text between the delimiters.
     pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
     match = pattern.search(content)
     
     if not match:
-        # If delimiters aren't found, classify as a script error.
+        # Classify as a script error if the delimiters aren't found.
         target_folder = os.path.join(base_dir, "Scripting Error")
         new_filename = "Script Error " + original_filename
     else:
         section = match.group(1)
-        # Apply your ping logic.
-        # Note: This sample logic uses occurrences of "0 packets received" as a proxy.
+        # Apply ping logic based on occurrences of specific phrases.
         if section.count("0 packets received") == 2:
             target_folder = os.path.join(base_dir, "Unpingable")
             new_filename = "Unpingable " + original_filename
@@ -62,9 +66,15 @@ def process_file(filepath, base_dir):
             target_folder = os.path.join(base_dir, "Ping Check")
             new_filename = "Ping Check - " + original_filename
 
+    # Clean up the new filename to remove the unwanted words and underscores.
+    new_filename = re.sub(r'\b(?:Region|IP|Mismatch)\b', '', new_filename, flags=re.IGNORECASE)
+    new_filename = new_filename.replace('_', '')
+    new_filename = ' '.join(new_filename.split())
+
     os.makedirs(target_folder, exist_ok=True)
     target_path = os.path.join(target_folder, new_filename)
-    # Only move if the file is not already in the target location.
+    
+    # Move the file only if it's not already at the target location.
     if os.path.abspath(filepath) != os.path.abspath(target_path):
         shutil.move(filepath, target_path)
         print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}'")
@@ -72,7 +82,7 @@ def process_file(filepath, base_dir):
         print(f"'{original_filename}' is already in the correct location.")
 
 def main():
-    # Set your new base directory where the files have been moved.
+    # Base directory where the files are located.
     base_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
     # Recursively find all .txt files in base_dir.
     txt_files = glob.glob(os.path.join(base_dir, '**', '*.txt'), recursive=True)
