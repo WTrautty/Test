@@ -1,5 +1,4 @@
 import os
-import glob
 import pandas as pd
 
 # Set the folder containing your CSV files
@@ -8,15 +7,19 @@ folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWA
 # List to hold names of CSV files that match the condition (with folder path)
 matched_files = []
 
-# Recursively get list of all CSV files in the folder and its subfolders
-csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
+# Use os.walk to search for CSV files in all subdirectories (including nested ones)
+csv_files = []
+for root, dirs, files in os.walk(folder_path):
+    for file in files:
+        if file.lower().endswith('.csv'):
+            csv_files.append(os.path.join(root, file))
 print(f"Found {len(csv_files)} CSV files in total.")
 
 # Filter to only files with "inet" in the filename (case-insensitive)
 inet_csv_files = [file for file in csv_files if "inet" in os.path.basename(file).lower()]
 print(f"Found {len(inet_csv_files)} CSV files with 'INET' in the filename.")
 
-# Define the target key (we'll compare case-insensitively)
+# Define the target key (case-insensitive comparison)
 target_key = "/0/vpn0_wan1_if_name/interface/tunnel-interface/allow-service/icmp"
 
 for file_path in inet_csv_files:
@@ -42,10 +45,8 @@ for file_path in inet_csv_files:
     # Iterate through rows by index so we can check the following row
     for i in range(len(df) - 1):
         key = str(df.iloc[i][key_col]).strip()
-        # Compare target key case-insensitively
         if key.lower() == target_key.lower():
             next_value = str(df.iloc[i+1][value_col]).strip().upper()
-            # Debug print: show the key and next value
             print(f"In file {os.path.basename(file_path)}, found target key at row {i} with next value '{next_value}'.")
             if next_value == "TRUE":
                 file_matches = True
