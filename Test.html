@@ -44,6 +44,7 @@ def clean_filename(name):
     return name
 
 def process_file(filepath, base_dir):
+    # Read the entire file content to process automated output
     with open(filepath, 'r') as file:
         content = file.read()
     
@@ -86,11 +87,36 @@ def process_file(filepath, base_dir):
     os.makedirs(target_folder, exist_ok=True)
     target_path = os.path.join(target_folder, new_filename)
     
+    # Move the file if it isn't already in the target location.
     if os.path.abspath(filepath) != os.path.abspath(target_path):
         shutil.move(filepath, target_path)
         print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}'")
+        final_path = target_path
     else:
         print(f"'{original_filename}' is already in the correct location.")
+        final_path = filepath
+
+    # --- Region Check ---
+    # Reopen the file from its final location to check for region mismatch.
+    try:
+        with open(final_path, 'r') as f:
+            file_content = f.read()
+        # Find the lines starting with "PE INTERFACE:" and "Region:" (case-insensitive, line by line)
+        pe_match = re.search(r'^PE INTERFACE:.*?(\d)\s*$', file_content, re.IGNORECASE | re.MULTILINE)
+        region_match = re.search(r'^Region:.*?(\d)\s*$', file_content, re.IGNORECASE | re.MULTILINE)
+        if pe_match and region_match:
+            pe_digit = pe_match.group(1)
+            region_digit = region_match.group(1)
+            if pe_digit != region_digit:
+                mismatch_folder = os.path.join(base_dir, "Region Mismatch")
+                os.makedirs(mismatch_folder, exist_ok=True)
+                # Prepend "Region Check " to the file's base name.
+                new_name = "Region Check " + os.path.basename(final_path)
+                new_mismatch_path = os.path.join(mismatch_folder, new_name)
+                shutil.move(final_path, new_mismatch_path)
+                print(f"Region mismatch in '{os.path.basename(final_path)}'. Moved to '{mismatch_folder}' as '{new_name}'.")
+    except Exception as e:
+        print(f"Error during Region check for file {final_path}: {e}")
 
 def main():
     # Set your base directory.
@@ -102,3 +128,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+            
