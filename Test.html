@@ -5,7 +5,7 @@ import pandas as pd
 # Set the folder containing your CSV files (using a raw string for Windows paths)
 folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
 
-# List to hold names of CSV files that fail the condition, with the failing line details
+# List to hold names and details of CSV files that fail the condition (with folder path and failing lines)
 failed_files = []
 
 # Recursively get list of all CSV files in the folder and its subfolders
@@ -14,16 +14,11 @@ print(f"Found {len(csv_files)} CSV files.")
 
 for file_path in csv_files:
     try:
-        # Try reading with UTF-8 encoding first
-        df = pd.read_csv(file_path, encoding='utf-8')
-    except UnicodeDecodeError:
+        # Try reading with UTF-8 encoding first; if that fails, try Latin-1
         try:
-            # If UTF-8 fails, try with Latin-1 encoding
+            df = pd.read_csv(file_path, encoding='utf-8')
+        except UnicodeDecodeError:
             df = pd.read_csv(file_path, encoding='latin1')
-        except Exception as e:
-            print(f"Could not read {file_path} with Latin-1: {e}")
-            failed_files.append(f"Latin-1 Error: {os.path.basename(file_path)} \n {file_path}\n\n")
-            continue
     except Exception as e:
         print(f"Could not read {file_path}: {e}")
         failed_files.append(f"Read Error: {os.path.basename(file_path)} \n {file_path}\n\n")
@@ -31,33 +26,35 @@ for file_path in csv_files:
 
     # Check if there are at least 2 columns (assuming first is key, second is value)
     if len(df.columns) < 2:
-        print(f"File {file_path} does not have the expected format (requires at least 2 columns).")
+        print(f"File {file_path} does not have at least 2 columns.")
         failed_files.append(f"Column Check Fail: {os.path.basename(file_path)} \n {file_path}\n\n")
         continue
 
     key_col = df.columns[0]
     value_col = df.columns[1]
-    file_failed = False
-    failing_line = None
+    
+    # List to collect details of every failing row in this file
+    failing_lines = []
 
     # Iterate through each row in the CSV
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
         key = str(row[key_col]).strip()
-        # Process rows that match the pattern:
+        # Only process rows that match the pattern:
         # They should start with "/1/vpn_lan_subif" and end with "_name/interface/shutdown"
         if key.startswith("/1/vpn_lan_subif") and key.endswith("_name/interface/shutdown"):
             # Skip the exception key
             if key == "/1/vpn_lan_subif200_name/interface/shutdown":
                 continue
-            # Check if the corresponding value is "TRUE" (case insensitive)
+            # Check if the corresponding value is "TRUE" (case insensitive) 
+            # and here we flag if the value is "FALSE"
             value = str(row[value_col]).strip().upper()
             if value == "FALSE":
-                failing_line = f"Key: {key}, Value: {value}"
-                file_failed = True
-                break
+                failing_lines.append(f"Row {idx}: Key: {key}, Value: {value}")
 
-    if file_failed:
-        failed_files.append(f"{os.path.basename(file_path)} \n {file_path}\n{failing_line}\n\n")
+    # If any failing lines were found, record them with the file details
+    if failing_lines:
+        file_info = f"{os.path.basename(file_path)} \n {file_path}\n" + "\n".join(failing_lines) + "\n\n"
+        failed_files.append(file_info)
 
 # Write the names and details of CSV files that failed the condition to a text file
 output_file = r'C:\Users\AD39644\Desktop\output.txt'
@@ -66,5 +63,3 @@ with open(output_file, "w") as f:
         f.write(entry + "\n")
 
 print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
-
-    
