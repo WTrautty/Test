@@ -12,7 +12,8 @@ def get_original_filename(filename):
         "Unpingable ",
         "Routes - IPv6 Pinged - ",
         "Routes - IPv6 Unreached - ",
-        "Ping Check - "
+        "Ping Check - ",
+        "Region/IP Mismatch "  # include previous mismatch prefix if any
     ]
     for prefix in prefixes:
         if filename.startswith(prefix):
@@ -30,6 +31,46 @@ def process_file(filepath, base_dir):
     # Get the original file name (if renamed previously, remove the old prefix)
     original_filename = get_original_filename(os.path.basename(filepath))
     
+    # --- Region / PE INTERFACE Check ---
+    # Search for a line with "Region:" and a line with "PE INTERFACE:" anywhere in the file.
+    region_match = re.search(r'^.*Region:.*$', content, re.MULTILINE)
+    pe_interface_match = re.search(r'^.*PE INTERFACE:.*$', content, re.MULTILINE)
+    
+    if not (region_match and pe_interface_match):
+        # If one (or both) of the lines is missing, treat as a mismatch.
+        target_folder = os.path.join(base_dir, "Region", "IP Mismatch")
+        new_filename = "Region/IP Mismatch " + original_filename
+        os.makedirs(target_folder, exist_ok=True)
+        target_path = os.path.join(target_folder, new_filename)
+        if os.path.abspath(filepath) != os.path.abspath(target_path):
+            shutil.move(filepath, target_path)
+            print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}' (missing Region/PE INTERFACE line)")
+        else:
+            print(f"'{original_filename}' is already in the correct location.")
+        return
+
+    # Extract the full matching lines.
+    region_line = region_match.group(0).strip()
+    pe_interface_line = pe_interface_match.group(0).strip()
+
+    # Extract the last two digits from each line.
+    region_digits_match = re.search(r'(\d{2})\s*$', region_line)
+    pe_digits_match = re.search(r'(\d{2})\s*$', pe_interface_line)
+    
+    # If either two-digit value is not found or they do not match, move to mismatch folder.
+    if not (region_digits_match and pe_digits_match) or (region_digits_match.group(1) != pe_digits_match.group(1)):
+        target_folder = os.path.join(base_dir, "Region", "IP Mismatch")
+        new_filename = "Region/IP Mismatch " + original_filename
+        os.makedirs(target_folder, exist_ok=True)
+        target_path = os.path.join(target_folder, new_filename)
+        if os.path.abspath(filepath) != os.path.abspath(target_path):
+            shutil.move(filepath, target_path)
+            print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}' (Region/IP mismatch)")
+        else:
+            print(f"'{original_filename}' is already in the correct location.")
+        return
+    # --- End Region / PE INTERFACE Check ---
+
     # Use regex to extract text between the delimiters.
     pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
     match = pattern.search(content)
@@ -40,14 +81,12 @@ def process_file(filepath, base_dir):
         new_filename = "Script Error " + original_filename
     else:
         section = match.group(1)
-        # List of expected ping messages.
-        
+        # Apply your ping logic.
+        # Note: This sample logic uses occurrences of "0 packets received" as a proxy.
         if section.count("0 packets received") == 2:
-            # Only mark as Unpingable if no ping messages are found.
             target_folder = os.path.join(base_dir, "Unpingable")
             new_filename = "Unpingable " + original_filename
         elif section.count("::/0") < 3:
-            # Routes Found condition.
             if section.count("0 packets received") == 0:
                 target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
                 new_filename = "Routes - IPv6 Pinged - " + original_filename
