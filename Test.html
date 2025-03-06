@@ -2,7 +2,7 @@ import os
 import glob
 import pandas as pd
 
-# Set the folder containing your CSV files (using a raw string for Windows paths)
+# Set the folder containing your CSV files
 folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
 
 # List to hold names of CSV files that match the condition (with folder path)
@@ -12,16 +12,16 @@ matched_files = []
 csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
 print(f"Found {len(csv_files)} CSV files in total.")
 
-# Filter to only files with "INET" in the filename (case-insensitive)
-inet_csv_files = [file for file in csv_files if "INET" in os.path.basename(file).upper()]
+# Filter to only files with "inet" in the filename (case-insensitive)
+inet_csv_files = [file for file in csv_files if "inet" in os.path.basename(file).lower()]
 print(f"Found {len(inet_csv_files)} CSV files with 'INET' in the filename.")
 
-# Define the target key to look for
+# Define the target key (we'll compare case-insensitively)
 target_key = "/0/vpn0_wan1_if_name/interface/tunnel-interface/allow-service/icmp"
 
 for file_path in inet_csv_files:
     try:
-        # Try reading the CSV using UTF-8, fallback to Latin-1 if needed
+        # Try reading with UTF-8 encoding first; fallback to Latin-1 if needed
         try:
             df = pd.read_csv(file_path, encoding='utf-8')
         except UnicodeDecodeError:
@@ -30,34 +30,36 @@ for file_path in inet_csv_files:
         print(f"Could not read {file_path}: {e}")
         continue
 
-    # Check if the CSV has at least 2 columns (assuming first is key, second is value)
+    # Ensure the CSV has at least 2 columns (assuming first is key, second is value)
     if len(df.columns) < 2:
         print(f"File {file_path} does not have at least 2 columns.")
         continue
 
     key_col = df.columns[0]
     value_col = df.columns[1]
-    
     file_matches = False
 
     # Iterate through rows by index so we can check the following row
     for i in range(len(df) - 1):
         key = str(df.iloc[i][key_col]).strip()
-        if key == target_key:
-            # Check the next row's value in the value column
+        # Compare target key case-insensitively
+        if key.lower() == target_key.lower():
             next_value = str(df.iloc[i+1][value_col]).strip().upper()
+            # Debug print: show the key and next value
+            print(f"In file {os.path.basename(file_path)}, found target key at row {i} with next value '{next_value}'.")
             if next_value == "TRUE":
-                print(f"File {os.path.basename(file_path)}: Found target key at row {i} with next value 'TRUE'.")
                 file_matches = True
                 break
 
     if file_matches:
         matched_files.append(f"{os.path.basename(file_path)} - {file_path}")
 
-# Write the names and paths of CSV files that match the condition to a text file
+# Write the names and paths of CSV files that matched the condition to a text file
 output_file = r'C:\Users\AD39644\Desktop\inet_output.txt'
 with open(output_file, "w") as f:
     for entry in matched_files:
         f.write(entry + "\n")
 
 print(f"Script completed. {len(matched_files)} file(s) matched the condition. See '{output_file}' for details.")
+
+        
