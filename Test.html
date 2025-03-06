@@ -12,8 +12,9 @@ def get_original_filename(filename):
         "Unpingable ",
         "Routes - IPv6 Pinged - ",
         "Routes - IPv6 Unreached - ",
-        "Ping Check ",
-        "Region_IP Mismatch "  # remove this prefix if it exists
+        "Ping Check - ",
+        "Region_IP_Mismatch ",
+        "Region_IP_"
     ]
     for prefix in prefixes:
         if filename.startswith(prefix):
