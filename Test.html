@@ -5,7 +5,7 @@ import pandas as pd
 # Set the folder containing your CSV files (using a raw string for Windows paths)
 folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
 
-# List to hold names of CSV files that fail the condition (with folder path)
+# List to hold names of CSV files that fail the condition, with the failing line details
 failed_files = []
 
 # Recursively get list of all CSV files in the folder and its subfolders
@@ -22,27 +22,28 @@ for file_path in csv_files:
             df = pd.read_csv(file_path, encoding='latin1')
         except Exception as e:
             print(f"Could not read {file_path} with Latin-1: {e}")
-            failed_files.append(f"Latin-1: {os.path.basename(file_path)} \n {file_path}\n\n")
+            failed_files.append(f"Latin-1 Error: {os.path.basename(file_path)} \n {file_path}\n\n")
             continue
     except Exception as e:
         print(f"Could not read {file_path}: {e}")
-        failed_files.append(f"Latin-1: {os.path.basename(file_path)} \n {file_path}\n\n")
+        failed_files.append(f"Read Error: {os.path.basename(file_path)} \n {file_path}\n\n")
         continue
 
     # Check if there are at least 2 columns (assuming first is key, second is value)
     if len(df.columns) < 2:
         print(f"File {file_path} does not have the expected format (requires at least 2 columns).")
-        failed_files.append(f"Failed Column Check: {os.path.basename(file_path)} \n {file_path}\n\n")
+        failed_files.append(f"Column Check Fail: {os.path.basename(file_path)} \n {file_path}\n\n")
         continue
 
     key_col = df.columns[0]
     value_col = df.columns[1]
     file_failed = False
+    failing_line = None
 
     # Iterate through each row in the CSV
     for _, row in df.iterrows():
         key = str(row[key_col]).strip()
-        # Only process rows that match the pattern:
+        # Process rows that match the pattern:
         # They should start with "/1/vpn_lan_subif" and end with "_name/interface/shutdown"
         if key.startswith("/1/vpn_lan_subif") and key.endswith("_name/interface/shutdown"):
             # Skip the exception key
@@ -51,18 +52,19 @@ for file_path in csv_files:
             # Check if the corresponding value is "TRUE" (case insensitive)
             value = str(row[value_col]).strip().upper()
             if value == "FALSE":
+                failing_line = f"Key: {key}, Value: {value}"
                 file_failed = True
                 break
 
     if file_failed:
-        failed_files.append(f"{os.path.basename(file_path)} \n {file_path}\n\n")
+        failed_files.append(f"{os.path.basename(file_path)} \n {file_path}\n{failing_line}\n\n")
 
-# Write the names of CSV files that failed the condition to a text file
+# Write the names and details of CSV files that failed the condition to a text file
 output_file = r'C:\Users\AD39644\Desktop\output.txt'
 with open(output_file, "w") as f:
     for entry in failed_files:
         f.write(entry + "\n")
 
-print(f"Script completed. {len(failed_files)} files did not meet the condition. See '{output_file}' for details.")
+print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
 
-        
+    
