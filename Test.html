@@ -1,73 +1,91 @@
-
 import os
 import re
 import shutil
 import glob
 
-def process_file(filepath, new_dir):
+def get_original_filename(filename):
+    """
+    Remove any known prefixes from the filename.
+    """
+    prefixes = [
+        "Script Error ",
+        "Unpingable ",
+        "Routes - IPv6 Pinged - ",
+        "Routes - IPv6 Unreached - ",
+        "Ping Check - "
+    ]
+    for prefix in prefixes:
+        if filename.startswith(prefix):
+            return filename[len(prefix):]
+    return filename
+
+def process_file(filepath, base_dir):
     with open(filepath, 'r') as file:
         content = file.read()
-    # Remove the specific error message.
-    content = content.replace(r'stty: standard input: Inappropriate ioctl for device', '\n')
-    content = content.replace(r'Exit Status: 0', '\n')
-    packets_received = ["1 packets received", "2 packets received", "3 packets received", "4 packets received", "5 packets received"] 
+    
+    # Remove error messages using regex for flexible matching.
+    content = re.sub(r'stty:\s*standard input:\s*Inappropriate ioctl for device', '\n', content)
+    content = re.sub(r'Exit Status:\s*0', '\n', content)
 
-
-    filename = os.path.basename(filepath)
-
-    # Use a regex to extract text between the delimiters.
+    # Get the original file name (if renamed previously, remove the old prefix)
+    original_filename = get_original_filename(os.path.basename(filepath))
+    
+    # Use regex to extract text between the delimiters.
     pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
     match = pattern.search(content)
     
-    # If the delimiters are not found, move file to "Scripting Error" folder
     if not match:
-        target_folder = os.path.join(new_dir, "Scripting Error")
-        new_filename = "Script Error " + filename
-        os.makedirs(target_folder, exist_ok=True)
-        target_path = os.path.join(target_folder, new_filename)
-        shutil.move(filepath, target_path)
-        print(f"Moved {filename} to {target_folder} as {new_filename}")
-        return
-
-    # Extract the section between delimiters.
-    section = match.group(1)
-    
-    # Check for conditions and set target folder and filename accordingly.
-    if any(section.count(packet) == 0 for packet in packets_received):
-        target_folder = os.path.join(new_dir, "Unpingable")
-        new_filename = "Unpingable " + filename
-    elif section.count("::/0") < 3:
-        # Now further subdivide within the "Routes Found" folder.
-        # Check if exactly two "[1-5] packets received" occur.
-        if any(section.count(packet) == 2 for packet in packets_received):
-            target_folder = os.path.join(new_dir, "Routes Found", "IPv6 Pingable")
-            new_filename = "Routes - IPv6 Pinged - " + filename
-        else:
-            target_folder = os.path.join(new_dir, "Routes Found", "IPv6 Not Reachable")
-            new_filename = "Routes - IPv6 Unreached - " + filename
-    elif any(section.count(packet) == 1 for packet in packets_received):
-        print(f"No conditions met for {filename}")
-        target_folder = os.path.join(new_dir, "Clean")
-        new_filename = filename  # Keep the original name.
+        # If delimiters aren't found, classify as a script error.
+        target_folder = os.path.join(base_dir, "Scripting Error")
+        new_filename = "Script Error " + original_filename
     else:
-        print(f"More or Less than one pingable {filename}")
-        target_folder = os.path.join(new_dir, "Ping Check")
-        new_filename = "Ping Check - " + filename
+        section = match.group(1)
+        # List of expected ping messages.
+        packets = [
+            "1 packets received",
+            "2 packets received",
+            "3 packets received",
+            "4 packets received",
+            "5 packets received"
+        ]
+        # Count total pings from 1 to 5.
+        total_pings = sum(section.count(packet) for packet in packets)
+        
+        if total_pings == 0:
+            # Only mark as Unpingable if no ping messages are found.
+            target_folder = os.path.join(base_dir, "Unpingable")
+            new_filename = "Unpingable " + original_filename
+        elif section.count("::/0") < 3:
+            # Routes Found condition.
+            if section.count("5 packets received") == 2:
+                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
+                new_filename = "Routes - IPv6 Pinged - " + original_filename
+            else:
+                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
+                new_filename = "Routes - IPv6 Unreached - " + original_filename
+        elif total_pings == 1:
+            target_folder = os.path.join(base_dir, "Clean")
+            new_filename = original_filename
+        else:
+            target_folder = os.path.join(base_dir, "Ping Check")
+            new_filename = "Ping Check - " + original_filename
 
     os.makedirs(target_folder, exist_ok=True)
     target_path = os.path.join(target_folder, new_filename)
-    shutil.move(filepath, target_path)
-    print(f"Moved {filename} to {target_folder} as {new_filename}")
+    # Only move if the file is not already in the target location.
+    if os.path.abspath(filepath) != os.path.abspath(target_path):
+        shutil.move(filepath, target_path)
+        print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}'")
+    else:
+        print(f"'{original_filename}' is already in the correct location.")
 
 def main():
-    # Specify the original directory containing the .txt files.
-    directory = r"C:\Users\AD39644\IPv6_Test_Files\2025-03-05"
-    # Specify the new directory where files will be moved.
-    new_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
-    # Find all .txt files in the specified original directory.
-    txt_files = glob.glob(os.path.join(directory, "*.txt"))
+    # Set your new base directory where the files have been moved.
+    base_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
+    # Recursively find all .txt files in base_dir.
+    txt_files = glob.glob(os.path.join(base_dir, '**', '*.txt'), recursive=True)
     for filepath in txt_files:
-        process_file(filepath, new_dir)
+        process_file(filepath, base_dir)
 
 if __name__ == '__main__':
     main()
