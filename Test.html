@@ -36,27 +36,38 @@ for file_path in csv_files:
     # List to collect details of every failing row in this file
     failing_lines = []
 
-    # Iterate through each row in the CSV
-    for idx, row in df.iterrows():
-        key = str(row[key_col]).strip()
-        # Only process rows that match the pattern:
-        # They should start with "/1/vpn_lan_subif" and end with "_name/interface/shutdown"
-        if ("_lan_subif") in key and key.endswith("_name/interface/shutdown"):
-            # Skip the exception key
-            if "vpn_lan_subif200_name" in key :
-                continue
-            # Check if the corresponding value is "TRUE" (case insensitive) 
-            # and here we flag if the value is "FALSE"
-            value = str(row[value_col]).strip().upper()
-            if value == "FALSE":
-                failing_lines.append(f"Row {idx}: Key: {key}, Value: {value}")
+    # If the CSV filename has "xyzxyz" in it, perform the sister check.
+    if "xyzxyz" in os.path.basename(file_path).lower():
+        # Iterate using index so we can look at the "sister" row (next row)
+        for i in range(len(df) - 1):
+            key = str(df.iloc[i][key_col]).strip()
+            # Process rows that contain "_lan_subif" and end with "_name/interface/shutdown"
+            if ("_lan_subif" in key) and key.endswith("_name/interface/shutdown"):
+                # Skip the exception key
+                if "vpn_lan_subif200_name" in key:
+                    continue
+                # Get the sister row's value (from the next row)
+                sister_value = str(df.iloc[i+1][value_col]).strip()
+                # Check if the sister_value has at least 4 characters and its 4th digit is "1"
+                if len(sister_value) < 4 or sister_value[3] != "1":
+                    failing_lines.append(f"Row {i+1}: Sister value '{sister_value}' does not have '1' as the 4th digit.")
+    else:
+        # Otherwise, perform the original check: flag if the value is "FALSE"
+        for idx, row in df.iterrows():
+            key = str(row[key_col]).strip()
+            if ("_lan_subif" in key) and key.endswith("_name/interface/shutdown"):
+                if "vpn_lan_subif200_name" in key:
+                    continue
+                value = str(row[value_col]).strip().upper()
+                if value == "FALSE":
+                    failing_lines.append(f"Row {idx}: Key: {key}, Value: {value}")
 
-    # If any failing lines were found, record them with the file details
+    # If any failing lines were found, record the file's details along with each failing line.
     if failing_lines:
         file_info = f"{os.path.basename(file_path)} \n {file_path}\n" + "\n".join(failing_lines) + "\n\n"
         failed_files.append(file_info)
 
-# Write the names and details of CSV files that failed the condition to a text file
+# Write the names and details of CSV files that failed the condition to a text file.
 output_file = r'C:\Users\AD39644\Desktop\output.txt'
 with open(output_file, "w") as f:
     for entry in failed_files:
