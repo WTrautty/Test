@@ -1,74 +1,132 @@
-
 import os
-import glob
 import re
-import pandas as pd
+import shutil
+import glob
 
-# Set the folder containing your CSV files.
-folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
+def get_original_filename(filename):
+    """
+    Remove any known prefixes and unwanted words/characters from the filename.
+    """
+    prefixes = [
+        "Script Error ",
+        "Unpingable ",
+        "Routes - IPv6 Pinged - ",
+        "Routes - IPv6 Unreached - ",
+        "Ping Check - ",
+        "Region_IP_Mismatch ",
+        "Region_IP_"
+    ]
+    for prefix in prefixes:
+        if filename.startswith(prefix):
+            filename = filename[len(prefix):]
+    # Remove "Mismatch" regardless of boundaries (case-insensitive)
+    filename = re.sub(r'(?i)mismatch', '', filename)
+    # Remove whole words "Region" and "IP" (case-insensitive)
+    filename = re.sub(r'\b(?:Region|IP)\b', '', filename, flags=re.IGNORECASE)
+    # Remove underscores
+    filename = filename.replace('_', '')
+    # Collapse multiple spaces
+    filename = ' '.join(filename.split())
+    return filename
 
-# List to hold details of CSV files that fail the condition.
-failed_files = []
+def clean_filename(name):
+    """
+    Remove unwanted words and underscores from the filename.
+    """
+    # Remove "Mismatch" regardless of boundaries (case-insensitive)
+    name = re.sub(r'(?i)mismatch', '', name)
+    # Remove whole words "Region" and "IP" (case-insensitive)
+    name = re.sub(r'\b(?:Region|IP)\b', '', name, flags=re.IGNORECASE)
+    # Remove underscores
+    name = name.replace('_', '')
+    # Collapse extra whitespace
+    name = ' '.join(name.split())
+    return name
 
-# Recursively get a list of all CSV files.
-csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
-print(f"Found {len(csv_files)} CSV files.")
+def process_file(filepath, base_dir):
+    # Read the entire file content to process automated output
+    with open(filepath, 'r') as file:
+        content = file.read()
+    
+    # Remove error messages using regex for flexible matching.
+    content = re.sub(r'stty:\s*standard input:\s*Inappropriate ioctl for device', '\n', content)
+    content = re.sub(r'Exit Status:\s*0', '\n', content)
 
-# Filter to only files with "xyzxyz" in the filename (case-insensitive).
-target_csv_files = [f for f in csv_files if "xyzxyz" in os.path.basename(f).lower()]
-print(f"Processing {len(target_csv_files)} CSV files with 'xyzxyz' in the name.")
+    # Clean up the original file name.
+    original_filename = get_original_filename(os.path.basename(filepath))
+    
+    # --- Automated Commands Output Check ---
+    pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
+    match = pattern.search(content)
+    
+    if not match:
+        target_folder = os.path.join(base_dir, "Scripting Error")
+        new_filename = "Script Error " + original_filename
+    else:
+        section = match.group(1)
+        if section.count("0 packets received") == 2:
+            target_folder = os.path.join(base_dir, "Unpingable")
+            new_filename = "Unpingable " + original_filename
+        elif section.count("::/0") < 3:
+            if section.count("0 packets received") == 0:
+                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
+                new_filename = "Routes - IPv6 Pinged - " + original_filename
+            else:
+                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
+                new_filename = "Routes - IPv6 Unreached - " + original_filename
+        elif section.count("0 packets received") == 1:
+            target_folder = os.path.join(base_dir, "Clean")
+            new_filename = original_filename
+        else:
+            target_folder = os.path.join(base_dir, "Ping Check")
+            new_filename = "Ping Check - " + original_filename
 
-# Regex pattern to match exactly 9 digits.
-pattern = re.compile(r'^\d{9}$')
+    # Clean the new filename to remove unwanted words/underscores.
+    new_filename = clean_filename(new_filename)
 
-for file_path in target_csv_files:
+    os.makedirs(target_folder, exist_ok=True)
+    target_path = os.path.join(target_folder, new_filename)
+    
+    # Move the file if it isn't already in the target location.
+    if os.path.abspath(filepath) != os.path.abspath(target_path):
+        shutil.move(filepath, target_path)
+        print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}'")
+        final_path = target_path
+    else:
+        print(f"'{original_filename}' is already in the correct location.")
+        final_path = filepath
+
+    # --- Region Check ---
+    # Reopen the file from its final location to check for region mismatch.
     try:
-        # Try reading with UTF-8 encoding first; if that fails, try Latin-1.
-        try:
-            df = pd.read_csv(file_path, encoding='utf-8', header=None)
-        except UnicodeDecodeError:
-            df = pd.read_csv(file_path, encoding='latin1', header=None)
+        with open(final_path, 'r') as f:
+            file_content = f.read()
+        # Find the lines starting with "PE INTERFACE:" and "Region:" (case-insensitive, line by line)
+        pe_match = re.search(r'^PE INTERFACE:.*?(\d)\s*$', file_content, re.IGNORECASE | re.MULTILINE)
+        region_match = re.search(r'^Region:.*?(\d)\s*$', file_content, re.IGNORECASE | re.MULTILINE)
+        if pe_match and region_match:
+            pe_digit = pe_match.group(1)
+            region_digit = region_match.group(1)
+            if pe_digit != region_digit:
+                mismatch_folder = os.path.join(base_dir, "Region Mismatch")
+                os.makedirs(mismatch_folder, exist_ok=True)
+                # Prepend "Region Check " to the file's base name.
+                new_name = "Region Check " + os.path.basename(final_path)
+                new_mismatch_path = os.path.join(mismatch_folder, new_name)
+                shutil.move(final_path, new_mismatch_path)
+                print(f"Region mismatch in '{os.path.basename(final_path)}'. Moved to '{mismatch_folder}' as '{new_name}'.")
     except Exception as e:
-        print(f"Error reading {file_path}: {e}")
-        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
-        continue
+        print(f"Error during Region check for file {final_path}: {e}")
 
-    # Check if the file contains the value "rxxp" somewhere (case-insensitive).
-    has_rxxp = df.astype(str).apply(lambda col: col.str.contains("rxxp", case=False, na=False)).any().any()
+def main():
+    # Set your base directory.
+    base_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
+    # Recursively find all .txt files in base_dir.
+    txt_files = glob.glob(os.path.join(base_dir, '**', '*.txt'), recursive=True)
+    for filepath in txt_files:
+        process_file(filepath, base_dir)
 
-    file_flagged = False
-    candidate_details = []
+if __name__ == '__main__':
+    main()
 
-    # Iterate over every cell in the DataFrame.
-    for row in df.itertuples(index=False):
-        for cell in row:
-            cell_value = str(cell).strip()
-            # Check if the cell value is exactly 9 digits.
-            if pattern.fullmatch(cell_value):
-                print(f"File {os.path.basename(file_path)}: Found candidate value: '{cell_value}'")
-                if len(cell_value) >= 4:
-                    if cell_value[3] != "1":
-                        candidate_details.append(
-                            f"Candidate value '{cell_value}' fails: 4th digit is '{cell_value[3]}' (expected '1')."
-                        )
-                        file_flagged = True
-                    else:
-                        print(f"Candidate value '{cell_value}' passes (4th digit is '1').")
-                else:
-                    candidate_details.append(f"Candidate value '{cell_value}' is too short.")
-                    file_flagged = True
-
-    # Only export (flag the file) if a candidate fails the condition AND the file contains "rxxp".
-    if file_flagged and has_rxxp:
-        details = "\n".join(candidate_details)
-        failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
-    elif file_flagged and not has_rxxp:
-        print(f"File {os.path.basename(file_path)} flagged candidate issues but does not contain 'rxxp'; skipping export.")
-
-# Write the details of CSV files that failed the condition to an output text file.
-output_file = r'C:\Users\AD39644\Desktop\output.txt'
-with open(output_file, "w") as f:
-    for entry in failed_files:
-        f.write(entry + "\n")
-
-print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
+            
