@@ -13,6 +13,7 @@ import traceback
 
 EXCEL_FILE = r"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
 LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+SCHEDULER_EXCEL = r"C:\Path\To\Your\Scheduler.xlsx"  # <-- Replace with your scheduler file path
 
 # CSV file to store processed orders
 PROCESSED_CSV = r"C:\Users\AD39644\IPv6_Test_Files\processed_orders.csv"
@@ -138,8 +139,6 @@ def find_header_row(sheet):
     return None, None
 
 # Returns all orders (rows) from the main sheet that have a value in the "Ops Console Ticket" column
-
-# In get_all_orders(), modify the condition to ignore rows with an empty string or "0" in the order number
 def get_all_orders():
     results = []
     for sheet_name, config in SEARCH_CONFIG.items():
@@ -161,7 +160,6 @@ def get_all_orders():
                         results.append({"Sheet": sheet_name, "Data": data})
                         break
     return results
-
 
 # Searches the LASER file for a given Service ID
 def search_circuit(Service_ID):
@@ -247,6 +245,23 @@ try:
 except FileNotFoundError:
     print(f"Error [E002]: The LASER file '{LASER_FILE}' was not found. Please verify the file path and try again.")
     exit()
+
+# Load the scheduler workbook (if it exists) and create a lookup dictionary keyed by OPS Ticket#
+if os.path.exists(SCHEDULER_EXCEL):
+    try:
+        scheduler_df = pd.read_excel(SCHEDULER_EXCEL, sheet_name="IPV6", dtype=str)
+        scheduler_lookup = {}
+        for idx, row in scheduler_df.iterrows():
+            ticket = str(row.get("OPS Ticket#", "")).strip()
+            scheduler_lookup[ticket] = {
+                "Activation Technician": row.get("Activation Technician", "").strip() if pd.notnull(row.get("Activation Technician", "")) else "",
+                "Status": row.get("Status", "").strip() if pd.notnull(row.get("Status", "")) else ""
+            }
+    except Exception as e:
+        print(f"Error loading scheduler file: {e}")
+        scheduler_lookup = {}
+else:
+    scheduler_lookup = {}
 
 # Load the persistent CSV (if it exists) that stores processed orders
 if os.path.exists(PROCESSED_CSV):
@@ -377,6 +392,7 @@ for order in all_orders:
         else:
             template = template.replace('{def_int_noSub}', "")
         template = template.replace('{lsq_int}', default_interface.split('.')[0].replace(':', '.').strip())
+        
         # Append network match details from LASER search
         network_info = "\n\nNetwork Matches:\n\n"
         for lm in laser_matches:
@@ -385,6 +401,19 @@ for order in all_orders:
                 network_info += f"{key}: {value}\n"
             network_info += "\n-----------------\n\n"
         template += network_info
+
+        # --- New Scheduler Replacement ---
+        # Look up the order number in the scheduler lookup dictionary (matching "OPS Ticket#")
+        if order_number in scheduler_lookup:
+            activation_technician_val = scheduler_lookup[order_number].get("Activation Technician", "")
+            scheduler_status_val = scheduler_lookup[order_number].get("Status", "")
+        else:
+            activation_technician_val = ""
+            scheduler_status_val = "Did not Find in Schedule"
+        # Replace placeholders in the template
+        template = template.replace('{Activation Technician}', activation_technician_val)
+        template = template.replace('{scheduler}', scheduler_status_val)
+        # --- End Scheduler Replacement ---
 
         sanitized_order_number = order_number.replace("/", "_").replace("\\", "_").strip()
         output_filename = f"{sanitized_order_number} - {current_date} - Pre-Checks.txt"
@@ -418,3 +447,5 @@ for order in all_orders:
 updated_df = pd.DataFrame(list(processed_orders.items()), columns=["Ops Console Ticket", "order_hash"])
 updated_df.to_csv(PROCESSED_CSV, index=False)
 print("Processed orders CSV updated.")
+
+                    
