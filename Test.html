@@ -1,1 +1,133 @@
 
+import os
+import re
+import shutil
+import glob
+
+def get_original_filename(filename):
+    """
+    Remove any known prefixes and unwanted words/characters from the filename.
+    """
+    prefixes = [
+        "Script Error ",
+        "Unpingable ",
+        "Routes - IPv6 Pinged - ",
+        "Routes - IPv6 Unreached - ",
+        "Ping Check - ",
+        "Region_IP_Mismatch ",
+        "Region_IP_"
+    ]
+    for prefix in prefixes:
+        if filename.startswith(prefix):
+            filename = filename[len(prefix):]
+    # Remove "Mismatch" regardless of boundaries (case-insensitive)
+    filename = re.sub(r'(?i)mismatch', '', filename)
+    # Remove whole words "Region" and "IP" (case-insensitive)
+    filename = re.sub(r'\b(?:Region|IP)\b', '', filename, flags=re.IGNORECASE)
+    # Remove underscores
+    filename = filename.replace('_', '')
+    # Collapse multiple spaces
+    filename = ' '.join(filename.split())
+    return filename
+
+def clean_filename(name):
+    """
+    Remove unwanted words and underscores from the filename.
+    """
+    # Remove "Mismatch" regardless of boundaries (case-insensitive)
+    name = re.sub(r'(?i)mismatch', '', name)
+    # Remove whole words "Region" and "IP" (case-insensitive)
+    name = re.sub(r'\b(?:Region|IP)\b', '', name, flags=re.IGNORECASE)
+    # Remove underscores
+    name = name.replace('_', '')
+    # Collapse extra whitespace
+    name = ' '.join(name.split())
+    return name
+
+def process_file(filepath, base_dir):
+    # Read the entire file content to process automated output
+    with open(filepath, 'r') as file:
+        content = file.read()
+    
+    # Remove error messages using regex for flexible matching.
+    content = re.sub(r'stty:\s*standard input:\s*Inappropriate ioctl for device', '\n', content)
+    content = re.sub(r'Exit Status:\s*0', '\n', content)
+
+    # Clean up the original file name.
+    original_filename = get_original_filename(os.path.basename(filepath))
+    
+    # --- Automated Commands Output Check ---
+    pattern = re.compile(r'AUTOMATED COMMANDS OUTPUT:(.*?)END OF AUTOMATED OUTPUT', re.DOTALL)
+    match = pattern.search(content)
+    
+    if not match:
+        target_folder = os.path.join(base_dir, "Scripting Error")
+        new_filename = "Script Error " + original_filename
+    else:
+        section = match.group(1)
+        if (section.count("0 packets received") == 2 and section.count("5 packets transmitted") == 2) or section.count("0 packets received") == 1 and section.count("5 packets transmitted") == 1:
+            target_folder = os.path.join(base_dir, "Unpingable")
+            new_filename = "Unpingable " + original_filename
+        elif section.count("::/0") < 3:
+            if section.count("0 packets received") == 0:
+                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Pingable")
+                new_filename = "Routes - IPv6 Pinged - " + original_filename
+            else:
+                target_folder = os.path.join(base_dir, "Routes Found", "IPv6 Not Reachable")
+                new_filename = "Routes - IPv6 Unreached - " + original_filename
+        elif section.count("0 packets received") == 1:
+            target_folder = os.path.join(base_dir, "Clean")
+            new_filename = original_filename
+        else:
+            target_folder = os.path.join(base_dir, "Ping Check")
+            new_filename = "Ping Check - " + original_filename
+
+    # Clean the new filename to remove unwanted words/underscores.
+    new_filename = clean_filename(new_filename)
+
+    os.makedirs(target_folder, exist_ok=True)
+    target_path = os.path.join(target_folder, new_filename)
+    
+    # Move the file if it isn't already in the target location.
+    if os.path.abspath(filepath) != os.path.abspath(target_path):
+        shutil.move(filepath, target_path)
+        print(f"Moved '{original_filename}' to '{target_folder}' as '{new_filename}'")
+        final_path = target_path
+    else:
+        print(f"'{original_filename}' is already in the correct location.")
+        final_path = filepath
+
+    # --- Region Check ---
+    # Reopen the file from its final location to check for region mismatch.
+    try:
+        with open(final_path, 'r') as f:
+            file_content = f.read()
+        # Find the lines starting with "PE INTERFACE:" and "Region:" (case-insensitive, line by line)
+        pe_match = re.search(r'^PE INTERFACE:.*?(\d)\s*$', file_content, re.IGNORECASE | re.MULTILINE)
+        region_match = re.search(r'^Region:.*?(\d)\s*$', file_content, re.IGNORECASE | re.MULTILINE)
+        if pe_match and region_match:
+            pe_digit = pe_match.group(1)
+            region_digit = region_match.group(1)
+            if pe_digit != region_digit:
+                mismatch_folder = os.path.join(base_dir, "Region Mismatch")
+                os.makedirs(mismatch_folder, exist_ok=True)
+                # Prepend "Region Check " to the file's base name.
+                new_name = "Region Check " + os.path.basename(final_path)
+                new_mismatch_path = os.path.join(mismatch_folder, new_name)
+                shutil.move(final_path, new_mismatch_path)
+                print(f"Region mismatch in '{os.path.basename(final_path)}'. Moved to '{mismatch_folder}' as '{new_name}'.")
+    except Exception as e:
+        print(f"Error during Region check for file {final_path}: {e}")
+
+def main():
+    # Set your base directory.
+    base_dir = r"C:\Users\AD39644\OneDrive - Lumen\Python Version"
+    # Recursively find all .txt files in base_dir.
+    txt_files = glob.glob(os.path.join(base_dir, '**', '*.txt'), recursive=True)
+    for filepath in txt_files:
+        process_file(filepath, base_dir)
+
+if __name__ == '__main__':
+    main()
+
+            
