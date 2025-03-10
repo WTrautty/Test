@@ -4,11 +4,25 @@ import csv
 
 # Define the mapping: extracted value from the /64 cell -> expected first digit of the 9-digit cell.
 expected_mapping = {
-    "1": "3",  # means: if /64 cell yields "1" (east) then the 9-digit cell should start with "3"
+    "1": "3",  # if /64 cell yields "1" (east) then the 9-digit cell should start with "3"
     "2": "1",  # if /64 cell yields "2" (west) then the 9-digit cell should start with "1"
     "3": "2",  # if /64 cell yields "3" (north) then the 9-digit cell should start with "2"
     "4": "4"   # if /64 cell yields "4" (south) then the 9-digit cell should start with "4"
 }
+
+def read_csv_with_fallback(file_path):
+    """
+    Try reading the CSV file using 'utf-8' first. If it fails, try 'latin-1'.
+    Returns a tuple (rows, used_encoding) where rows is a list of lists (each row) and used_encoding is the encoding that worked.
+    """
+    for encoding in ["utf-8", "latin-1"]:
+        try:
+            with open(file_path, newline='', encoding=encoding) as csvfile:
+                reader = csv.reader(csvfile)
+                return list(reader), encoding
+        except Exception as e:
+            print(f"Error reading {file_path} with {encoding}: {e}")
+    return None, None
 
 def process_csv(file_path):
     """
@@ -22,33 +36,30 @@ def process_csv(file_path):
     extracted_value = None
     nine_digit_first = None
 
-    try:
-        with open(file_path, newline='', encoding='utf-8') as csvfile:
-            reader = csv.reader(csvfile)
-            for row in reader:
-                for cell in row:
-                    # If not already found, check for cell with "/64"
-                    if extracted_value is None and "/64" in cell:
-                        # Find the first occurrence of ":"
-                        colon_pos = cell.find(":")
-                        if colon_pos != -1 and len(cell) >= colon_pos + 4:
-                            # Extract the 3rd character after the colon.
-                            extracted_value = cell[colon_pos + 3]
-                    # If not already found, check for a cell that is exactly 9 digits.
-                    if nine_digit_first is None and re.fullmatch(r"\d{9}", cell.strip()):
-                        nine_digit_first = cell.strip()[0]
-                # If both found, we can stop scanning the file.
-                if extracted_value is not None and nine_digit_first is not None:
-                    break
-    except Exception as e:
-        print(f"Error processing {file_path}: {e}")
+    rows, used_encoding = read_csv_with_fallback(file_path)
+    if rows is None:
+        return extracted_value, nine_digit_first
+
+    for row in rows:
+        for cell in row:
+            # If not already found, check for cell with "/64"
+            if extracted_value is None and "/64" in cell:
+                colon_pos = cell.find(":")
+                if colon_pos != -1 and len(cell) >= colon_pos + 4:
+                    # Extract the 3rd character after the colon.
+                    extracted_value = cell[colon_pos + 3]
+            # If not already found, check for a cell that is exactly 9 digits.
+            if nine_digit_first is None and re.fullmatch(r"\d{9}", cell.strip()):
+                nine_digit_first = cell.strip()[0]
+        if extracted_value is not None and nine_digit_first is not None:
+            break
 
     return extracted_value, nine_digit_first
 
 def main():
-    # Define the root folder to search. Change this path as needed.
+    # Define the root folder to search (change this path as needed)
     root_folder = r"C:\path\to\your\folder"
-    # Define the output text file path.
+    # Define the output text file path (change this path as needed)
     output_txt = r"C:\path\to\output\mismatches.txt"
 
     mismatches = []
@@ -62,7 +73,7 @@ def main():
                 # Only proceed if both values were found.
                 if ext_val is not None and nine_digit is not None:
                     expected_digit = expected_mapping.get(ext_val)
-                    # If we don't have an expected digit (i.e. extracted value not in mapping) or they don't match, record a mismatch.
+                    # If the extracted value isn't in the mapping or they don't match, record a mismatch.
                     if expected_digit is None or expected_digit != nine_digit:
                         mismatches.append({
                             "File Name": fname,
