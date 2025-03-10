@@ -1,11 +1,101 @@
-for file_path in target_csv_files:
+import os
+import re
+import pandas as pd
+
+# Define the mapping: extracted value from the /64 cell -> expected first digit of the 9-digit cell.
+expected_mapping = {
+    "1": "3",  # if /64 cell yields "1" (east) then the 9-digit cell should start with "3"
+    "2": "1",  # if /64 cell yields "2" (west) then the 9-digit cell should start with "1"
+    "3": "2",  # if /64 cell yields "3" (north) then the 9-digit cell should start with "2"
+    "4": "4"   # if /64 cell yields "4" (south) then the 9-digit cell should start with "4"
+}
+
+def read_csv_with_fallback(file_path):
+    """
+    Try reading the CSV file using 'utf-8' encoding first; if that fails due to a UnicodeDecodeError,
+    try 'latin1'. Returns a list of rows if successful, or None if reading fails.
+    """
     try:
-        # Try reading with UTF-8 encoding first; if that fails, try Latin-1.
         try:
             df = pd.read_csv(file_path, encoding='utf-8', header=None)
         except UnicodeDecodeError:
             df = pd.read_csv(file_path, encoding='latin1', header=None)
+        return df.values.tolist()
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
-        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
-        continue
+        return None
+
+def process_csv(file_path):
+    """
+    Process a CSV file and return a tuple:
+      (extracted_value, nine_digit_first)
+    where:
+      - extracted_value is the 3rd character after the first ":" in the first cell that contains '/64'
+      - nine_digit_first is the first digit of the first cell that exactly matches 9 digits
+    Returns (None, None) if one or both are not found.
+    """
+    extracted_value = None
+    nine_digit_first = None
+
+    rows = read_csv_with_fallback(file_path)
+    if rows is None:
+        return extracted_value, nine_digit_first
+
+    for row in rows:
+        for cell in row:
+            cell_str = str(cell)
+            # If not already found, check for cell with "/64"
+            if extracted_value is None and "/64" in cell_str:
+                colon_pos = cell_str.find(":")
+                if colon_pos != -1 and len(cell_str) >= colon_pos + 4:
+                    # Extract the 3rd character after the colon.
+                    extracted_value = cell_str[colon_pos + 3]
+            # If not already found, check for a cell that is exactly 9 digits.
+            if nine_digit_first is None and re.fullmatch(r"\d{9}", cell_str.strip()):
+                nine_digit_first = cell_str.strip()[0]
+        if extracted_value is not None and nine_digit_first is not None:
+            break
+
+    return extracted_value, nine_digit_first
+
+def main():
+    # Define the root folder to search (change this path as needed)
+    root_folder = r"C:\path\to\your\folder"
+    # Define the output text file path (change this path as needed)
+    output_txt = r"C:\path\to\output\mismatches.txt"
+
+    mismatches = []
+
+    # Walk through the folder recursively.
+    for dirpath, dirnames, filenames in os.walk(root_folder):
+        for fname in filenames:
+            if fname.lower().endswith(".csv"):
+                file_path = os.path.join(dirpath, fname)
+                ext_val, nine_digit = process_csv(file_path)
+                # Only proceed if both values were found.
+                if ext_val is not None and nine_digit is not None:
+                    expected_digit = expected_mapping.get(ext_val)
+                    # If the extracted value isn't in the mapping or they don't match, record a mismatch.
+                    if expected_digit is None or expected_digit != nine_digit:
+                        mismatches.append({
+                            "File Name": fname,
+                            "Extracted from /64": ext_val,
+                            "First digit of 9-digit cell": nine_digit,
+                            "File Path": file_path
+                        })
+
+    # Write the mismatches to the designated text file.
+    try:
+        with open(output_txt, "w", encoding="utf-8") as f:
+            for m in mismatches:
+                f.write(f"File Name: {m['File Name']}\n")
+                f.write(f"Extracted from /64: {m['Extracted from /64']}\n")
+                f.write(f"First digit of 9-digit cell: {m['First digit of 9-digit cell']}\n")
+                f.write(f"File Path: {m['File Path']}\n")
+                f.write("-" * 40 + "\n")
+        print(f"Mismatches exported to {output_txt}")
+    except Exception as e:
+        print(f"Error writing output file: {e}")
+
+if __name__ == "__main__":
+    main()
