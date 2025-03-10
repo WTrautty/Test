@@ -13,7 +13,7 @@ expected_mapping = {
 def read_csv_with_fallback(file_path):
     """
     Try reading the CSV file using 'utf-8' first. If it fails, try 'latin-1'.
-    Returns a tuple (rows, used_encoding) where rows is a list of lists (each row) and used_encoding is the encoding that worked.
+    Returns a tuple (rows, used_encoding) where rows is a list of rows.
     """
     for encoding in ["utf-8", "latin-1"]:
         try:
@@ -36,7 +36,7 @@ def process_csv(file_path):
     extracted_value = None
     nine_digit_first = None
 
-    rows, used_encoding = read_csv_with_fallback(file_path)
+    rows, _ = read_csv_with_fallback(file_path)  # Ignore the used encoding.
     if rows is None:
         return extracted_value, nine_digit_first
 
