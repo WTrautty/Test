@@ -131,12 +131,13 @@ def generate_report(base_dir):
     
     3. Scripting Error:
        - If "Error Processing Order" exists, extracts the first {data} and logs "Error with {data}".
-       - Otherwise, checks for content after "Network Matches:".
+       - Otherwise, if "Network Matches:" exists, checks for content after it.
          It first checks the remainder of the line. If that is blank,
          it then searches subsequent lines for the first non-blank line.
          If no non-blank content is found, logs "LASER Match Error".
          If non-blank content is found but the "PE TID:" line is missing or empty,
          logs "Possible Region Mismatch".
+         If "Network Matches:" does not exist, no error is logged.
     """
     report_lines = []
 
@@ -200,9 +201,8 @@ def generate_report(base_dir):
                         if len(parts) > 1:
                             nm_content = parts[1].strip()
                         break
-                if not nm_found:
-                    report_lines.append(f"{basename}\nLASER Match Error\n")
-                else:
+                # Only proceed if "Network Matches:" is found.
+                if nm_found:
                     if not nm_content:
                         # Look for the first non-blank line after "Network Matches:"
                         for j in range(nm_index + 1, len(lines)):
