@@ -1,1 +1,111 @@
+import pandas as pd
+import re
 
+def get_entries_from_sheet(sheet_df):
+    """
+    Given a DataFrame from the 'Lan 1VLAN' or 'LAN 2VLANS' sheet (with headers "NSC" and "123123"),
+    build a list of entries for rows where the "NSC" value is non-zero.
+    Each entry is a dictionary with keys: "NSC" and "123123".
+    """
+    entries = []
+    # Loop through rows in the DataFrame
+    for idx, row in sheet_df.iterrows():
+        NSC_val = row.get("NSC")
+        val_123123 = row.get("LAN Port 0 IPv6/mask (Router)")
+        # Check if NSC is non-zero (works for numeric or string values)
+        if pd.notnull(NSC_val):
+            try:
+                # If convertible to float, check numeric non-zero
+                if float(NSC_val) != 0:
+                    entries.append({"NSC": NSC_val, "LAN Port 0 IPv6/mask (Router)": val_123123})
+            except Exception:
+                # If not numeric, check string content
+                if str(NSC_val).strip() != "0" and str(NSC_val).strip() != "":
+                    entries.append({"NSC": NSC_val, "LAN Port 0 IPv6/mask (Router)": val_123123})
+    return entries
+
+def get_region_from_main(main_df, NSC_value):
+    """
+    In the Main sheet DataFrame, find the row where the "NSC" column matches the given value,
+    and return the corresponding "Region" value.
+    """
+    matching = main_df[main_df["NSC"] == NSC_value]
+    if not matching.empty:
+        return matching.iloc[0]["Region"]
+    else:
+        return None
+
+def extract_digit_from_123123(val_123123):
+    """
+    Given a string from the "123123" column that contains '/64',
+    split by ":" and return the first character of the fourth element 
+    (i.e. the first character to the right of the third colon).
+    """
+    parts = str(val_123123).split(":")
+    if len(parts) >= 4:
+        part_after_third = parts[3].strip()
+        if part_after_third:
+            return part_after_third[0]
+    return None
+
+def expected_digit_for_region(region):
+    """
+    Map the Region value to the expected digit as follows:
+      - Region East → expected digit "8"
+      - Region B → expected digit "9"
+      - Region C → expected digit "A"
+      - Region D → expected digit "B"
+    """
+    region = str(region).strip().upper()
+    mapping = {"East": "8", "Central": "9", "Mountain": "A", "West": "B"}
+    return mapping.get(region, None)
+
+def main():
+    # Update the Excel file path as needed.
+    excel_file = r"C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\WORKLIST\USDA TDE WORKLIST.xlsx"
+    
+    # Read the sheets
+    lan_df = pd.read_excel(excel_file, sheet_name="LAN 1VLAN")
+    LAN_2VLANS_df = pd.read_excel(excel_file, sheet_name="LAN 2VLANS")
+    main_df = pd.read_excel(excel_file, sheet_name="Main")
+    
+    # Build a combined list of entries from Lan and LAN 2VLANS
+    entries = get_entries_from_sheet(lan_df) + get_entries_from_sheet(LAN_2VLANS_df)
+    
+    mismatches = []
+    
+    # For each entry, get the Region from the Main sheet and check the "123123" value
+    for entry in entries:
+        NSC_val = entry["NSC"]
+        val_123123 = entry["LAN Port 0 IPv6/mask (Router)"]
+        region = get_region_from_main(main_df, NSC_val)
+        if region is None:
+            continue  # skip if no matching row is found in Main
+        # Process only if the "123123" value contains '/64'
+        if "/64" in str(val_123123):
+            extracted_digit = extract_digit_from_123123(val_123123)
+            expected_digit = expected_digit_for_region(region)
+            if extracted_digit is None or expected_digit is None:
+                continue  # skip if extraction failed or region is not recognized
+            if extracted_digit != expected_digit:
+                mismatches.append({
+                    "NSC": NSC_val,
+                    "LAN Port 0 IPv6/mask (Router)": val_123123,
+                    "Region": region,
+                    "Extracted": extracted_digit,
+                    "Expected": expected_digit
+                })
+    
+    # Export all mismatches to a txt file.
+    file_path = r"C:\Users\AD39644\OneDrive - Lumen\Desktop\mismatches.txt"
+    with open(file_path, "w") as f:
+        for m in mismatches:
+            line = (
+                f"NSC: {m['NSC']}, LAN Port 0 IPv6/mask (Router): {m['123123']}, Region: {m['Region']}, "
+                f"Extracted: {m['Extracted']}, Expected: {m['Expected']}\n"
+            )
+            f.write(line)
+    print("Mismatches exported to mismatches.txt")
+
+if __name__ == "__main__":
+    main()
