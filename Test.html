@@ -131,7 +131,8 @@ def generate_report(base_dir):
     
     3. Scripting Error:
        - If "Error Processing Order" exists, extracts the first {data} and logs "Error with {data}".
-       - Otherwise, if "Network Matches:" exists, checks for content after it.
+       - If "Fortinet" exists, logs "Possible Fortinet".
+       - Otherwise, if "Network Matches:" exists, it checks for content after it.
          It first checks the remainder of the line. If that is blank,
          it then searches subsequent lines for the first non-blank line.
          If no non-blank content is found, logs "LASER Match Error".
@@ -148,13 +149,13 @@ def generate_report(base_dir):
         for file in txt_files:
             with open(file, 'r') as f:
                 content = f.read()
-            # Look for the "Scheduler:" line.
-            match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
-            Activation_Tech = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
-            scheduler_status = match.group(1).strip() if match else ""
+            sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+            act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+            scheduler_status = sched_match.group(1).strip() if sched_match else "N/A"
+            activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
             if scheduler_status != "Completed":
                 basename = os.path.basename(file)
-                report_lines.append(f"{basename}\nNot Marked as Completed\n{match}\n{Activation_Tech}\n\n")
+                report_lines.append(f"{basename}\nIssue: Not Marked as Completed\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
     
     # --- 2. Clean Folder ---
     clean_dir = os.path.join(base_dir, "Clean")
@@ -163,13 +164,14 @@ def generate_report(base_dir):
         for file in txt_files:
             with open(file, 'r') as f:
                 content = f.read()
-            match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
-            Activation_Tech = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
-            if match:
-                scheduler_status = match.group(1).strip()
+            sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+            act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+            if sched_match:
+                scheduler_status = sched_match.group(1).strip()
+                activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
                 if scheduler_status == "Completed":
                     basename = os.path.basename(file)
-                    report_lines.append(f"{basename}\nMarked as complete\n{match}\n{Activation_Tech}\n\n,")
+                    report_lines.append(f"{basename}\nIssue: Marked as complete\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
     
     # --- 3. Scripting Error Folder ---
     scripting_error_dir = os.path.join(base_dir, "Scripting Error")
@@ -180,22 +182,26 @@ def generate_report(base_dir):
                 content = f.read()
             basename = os.path.basename(file)
             error_logged = False
-            # Check if the file has "Error Processing Order"           
-            if "Error processing order" in content:
-                # Extract data within the first pair of curly braces.
-                match = re.search(r'\{([^}]+)\}', content)
-                Activation_Tech = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
-                Scheduled = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
-                if match:
-                    data = match.group(1)
-                    report_lines.append(f"{basename}\nError with {data}\n{Scheduled}\n{Activation_Tech}\n\n,")
-                    match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+            # Check if the file has "Error Processing Order" (case-insensitive)
+            if "error processing order" in content.lower():
+                m_data = re.search(r'\{([^}]+)\}', content)
+                sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+                act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+                scheduler_status = sched_match.group(1).strip() if sched_match else "N/A"
+                activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
+                if m_data:
+                    data = m_data.group(1).strip()
+                    report_lines.append(f"{basename}\nIssue: Error with {data}\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
                     error_logged = True
+            # Check for Fortinet issues.
             if "Fortinet" in content:
-                # Extract data within the first pair of curly braces.
-                report_lines.append(f"{basename}\nPossible Fortinet\n\n")
+                sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+                act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+                scheduler_status = sched_match.group(1).strip() if sched_match else "N/A"
+                activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
+                report_lines.append(f"{basename}\nIssue: Possible Fortinet\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
             if not error_logged:
-                # Split content into lines for inspection.
+                # Look for "Network Matches:" and check for content after it.
                 lines = content.splitlines()
                 nm_found = False
                 nm_content = ""
@@ -204,38 +210,42 @@ def generate_report(base_dir):
                     if line.strip().startswith("Network Matches:"):
                         nm_found = True
                         nm_index = i
-                        # Check if there's content on the same line after the colon.
                         parts = line.split(":", 1)
                         if len(parts) > 1:
                             nm_content = parts[1].strip()
                         break
-                # Only proceed if "Network Matches:" is found.
                 if nm_found:
                     if not nm_content:
-                        # Look for the first non-blank line after "Network Matches:"
+                        # Look for first non-blank line after "Network Matches:"
                         for j in range(nm_index + 1, len(lines)):
                             if lines[j].strip():
                                 nm_content = lines[j].strip()
                                 break
                     if not nm_content:
-                        Activation_Tech = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
-                        Scheduled = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
-                        report_lines.append(f"{basename}\nLASER Match Error\n{Scheduled}\n{Activation_Tech}\n\n,")
+                        sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+                        act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+                        scheduler_status = sched_match.group(1).strip() if sched_match else "N/A"
+                        activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
+                        report_lines.append(f"{basename}\nIssue: LASER Match Error\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
                     else:
-                        # If we have non-blank content below "Network Matches:",
-                        # now check for the "PE TID:" line.
                         pe_tid_match = re.search(r'^PE TID:\s*(\S.*)$', content, flags=re.MULTILINE)
                         pe_interface_match = re.search(r'^PE INTERFACE:\s*(\S.*)$', content, flags=re.MULTILINE)
-
                         if pe_tid_match and pe_interface_match:
                             tid_end = pe_tid_match.end()
                             interface_start = pe_interface_match.start()
                             if tid_end == interface_start:
-                                report_lines.append(f"{basename}\nPossible Region Mismatch\n\n")
+                                sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+                                act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+                                scheduler_status = sched_match.group(1).strip() if sched_match else "N/A"
+                                activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
+                                report_lines.append(f"{basename}\nIssue: Possible Region Mismatch\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
                         else:
-                            report_lines.append(f"{basename}\nPossible Region Mismatch\n\n")
+                            sched_match = re.search(r'^Scheduler:\s*(.*)$', content, flags=re.MULTILINE)
+                            act_match = re.search(r'^Activation Technician:\s*(.*)$', content, flags=re.MULTILINE)
+                            scheduler_status = sched_match.group(1).strip() if sched_match else "N/A"
+                            activation_tech_val = act_match.group(1).strip() if act_match else "N/A"
+                            report_lines.append(f"{basename}\nIssue: Possible Region Mismatch\nScheduler: {scheduler_status}\nActivation Technician: {activation_tech_val}\n\n")
     
-    # --- Write Report ---
     report_path = os.path.join(base_dir, "report.txt")
     with open(report_path, 'w') as report_file:
         for line in report_lines:
