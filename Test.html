@@ -1,4 +1,3 @@
-
 import os
 import re
 import shutil
@@ -132,9 +131,11 @@ def generate_report(base_dir):
     
     3. Scripting Error:
        - If "Error Processing Order" exists, extracts the first {data} and logs "Error with {data}".
-       - Otherwise, checks the first non-blank line following "Network Matches:".
-         If none is found, logs "LASER Match Error".
-       - If there is non-blank data below "Network Matches:" but the "PE TID:" line is missing or empty,
+       - Otherwise, checks for content after "Network Matches:".
+         It first checks the remainder of the line. If that is blank,
+         it then searches subsequent lines for the first non-blank line.
+         If no non-blank content is found, logs "LASER Match Error".
+         If non-blank content is found but the "PE TID:" line is missing or empty,
          logs "Possible Region Mismatch".
     """
     report_lines = []
@@ -185,25 +186,34 @@ def generate_report(base_dir):
                     report_lines.append(f"{basename}\nError with {data}\n")
                     error_logged = True
             if not error_logged:
-                # Split into lines to inspect the section below "Network Matches:".
+                # Split content into lines for inspection.
                 lines = content.splitlines()
+                nm_found = False
+                nm_content = ""
                 nm_index = None
                 for i, line in enumerate(lines):
                     if line.strip().startswith("Network Matches:"):
+                        nm_found = True
                         nm_index = i
+                        # Check if there's content on the same line after the colon.
+                        parts = line.split(":", 1)
+                        if len(parts) > 1:
+                            nm_content = parts[1].strip()
                         break
-                if nm_index is None:
+                if not nm_found:
                     report_lines.append(f"{basename}\nLASER Match Error\n")
                 else:
-                    # Find the first non-blank line after "Network Matches:"
-                    next_non_blank = None
-                    for j in range(nm_index + 1, len(lines)):
-                        if lines[j].strip():
-                            next_non_blank = lines[j].strip()
-                            break
-                    if not next_non_blank:
+                    if not nm_content:
+                        # Look for the first non-blank line after "Network Matches:"
+                        for j in range(nm_index + 1, len(lines)):
+                            if lines[j].strip():
+                                nm_content = lines[j].strip()
+                                break
+                    if not nm_content:
                         report_lines.append(f"{basename}\nLASER Match Error\n")
                     else:
+                        # If we have non-blank content below "Network Matches:",
+                        # now check for the "PE TID:" line.
                         pe_tid_match = re.search(r'^PE TID:\s*(.*)$', content, flags=re.MULTILINE)
                         if not pe_tid_match or pe_tid_match.group(1).strip() == "":
                             report_lines.append(f"{basename}\nPossible Region Mismatch\n")
