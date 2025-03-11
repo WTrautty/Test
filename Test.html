@@ -1,52 +1,26 @@
-# $language = "Python3" 
+# $language = "Python"
+# $interface = "1.0"
 
-# $interface = "1.0" 
+import os
+import sys
 
-  
+def read_current_prompt():
+    """
+    Reads and returns the current prompt text from the screen.
+    """
+    return crt.Screen.Get(crt.Screen.CurrentRow, 0, crt.Screen.CurrentRow, crt.Screen.CurrentColumn).strip()
 
-import os 
-
-  
-
-  
-
-def read_current_prompt(): 
-
-    """ 
-
-    Reads and returns the current prompt text from the screen. 
-
-    """ 
-
-    return crt.Screen.Get(crt.Screen.CurrentRow, 0, crt.Screen.CurrentRow, crt.Screen.CurrentColumn).strip() #Lots of CRT commands, normally would just connect to the nocsup bastion 
-                                                                                                             #but playing with CRT buttons for sharing scripts with peers without VE or packaging
-
-
-def wait_for_previous_row(expected, timeout=30): 
-
-    """ 
-
-    Waits for a specific string to appear in the previous row. 
-
-    Returns True if the expected string is found within the timeout, otherwise False. 
-
-    """ 
-
-    for _ in range(timeout): 
-
-        previous_row = read_previous_row().lower()  # Just for capitiliaztion mismatches
-
-        if expected.lower() in previous_row: 
-
-            return True 
-
-        crt.Sleep(1000)  # timer for recheck
-
-    return False 
-
-  
-
-  
+def wait_for_previous_row(expected, timeout=30):
+    """
+    Waits for a specific string to appear in the previous row.
+    Returns True if the expected string is found within the timeout, otherwise False.
+    """
+    for _ in range(timeout):
+        previous_row = read_previous_row().lower()  # Just for capitalization mismatches
+        if expected.lower() in previous_row:
+            return True
+        crt.Sleep(1000)
+    return False
 
 def read_previous_row():
     """
@@ -60,270 +34,125 @@ def read_previous_row():
         else:
             crt.Dialog.MessageBox("No previous row to read.")
             return None
-    except Exception as e:
-        crt.Dialog.MessageBox(f"Error reading previous row")
+    except Exception, e:
+        crt.Dialog.MessageBox("Error reading previous row")
         return None
 
-  
-
-  
-
-def wait_for_prompt(expected, timeout=10): 
-
-    """ 
-
-    Waits for a specific string in the current prompt. 
-
-    Returns True if the expected string is found within the timeout, otherwise False. 
-
-    """ 
-
-    for _ in range(timeout): 
-
-        if expected in read_current_prompt(): 
-
-            return True 
-
-        crt.Sleep(1000) 
-
-    return False 
-
-  
-
-  
-
-def process_ip(ip, password, ssh_command_template): 
-
-    """ 
-
-    Processes a single IP address: Connects via SSH and executes commands. 
-
-    """ 
-
-    if not wait_for_prompt("wtrautm2"): #Make sure session is in PE so it doesn't run commands in the wrong device
-
+def wait_for_prompt(expected, timeout=10):
+    """
+    Waits for a specific string in the current prompt.
+    Returns True if the expected string is found within the timeout, otherwise False.
+    """
+    for _ in range(timeout):
+        if expected in read_current_prompt():
+            return True
         crt.Sleep(1000)
-        return False 
+    return False
 
-  
-
-    ssh_command = ssh_command_template.format(ip) #Originally wrote this in python 2.7 so some are old format, some are fstrings
-
-    crt.Screen.Send(ssh_command + "\n") 
-
-  
-
-    # Handle login prompts 
-
-    for _ in range(3):  # Retry up to 3 times 
-
-        if wait_for_prompt("Password:"): 
-
-            crt.Screen.Send(password + "\n") 
-
-            crt.Sleep(1000) 
-
-            break 
-
-        elif wait_for_prompt("Are you sure"): #auth for new CPE logins
-
-            crt.Screen.Send("yes\n") 
-
-            crt.Sleep(2000) 
-
-        else: 
-
-            crt.Sleep(1000) 
-
-  
-
-    # Check if login was successful 
-
-    if not wait_for_prompt("yyy" or "zzz", timeout=10): 
-
+def process_ip(ip, password, ssh_command_template):
+    """
+    Processes a single IP address: Connects via SSH and executes commands.
+    """
+    if not wait_for_prompt("wtrautm2"):  # Make sure session is in PE so it doesn't run commands in the wrong device
         crt.Sleep(1000)
-
-
-
-        return False 
-
-  
-
-    # Execute commands 
-
-    crt.Screen.Send("show sdwan running-config | i Engine\n") 
-
-    crt.Sleep(1000)
-
-    crt.Screen.Send("show sdwan running-config | i interface GigabitEthernet0/1\n") 
-
-    crt.Sleep(1000)
-
-    wait_for_prompt("yyy" or "zzz")
-
-    crt.Screen.Send("show sdwan running-config | i interface GigabitEthernet0/2\n") 
-
-    crt.Sleep(1000)
-
-    wait_for_prompt("yyy" or "zzz")
-
-    crt.Screen.Send("show inv\n")
-
-    crt.Sleep(2000)
-
-    wait_for_prompt("yyy" or "zzz")
-
-    crt.Screen.Send("show sdwan running-config | i vbond\n") 
-
-    if not wait_for_prompt("yyy" or "zzz", timeout=20): 
-
-        crt.Sleep(1000)
-
-        return False 
-
-
-    wait_for_previous_row("port")
-
-    if ".com" in read_previous_row(): 
-
-        crt.Screen.Send("show sdwan control connections\n") 
-
-        crt.Sleep(1000) 
-
-        wait_for_prompt("yyy" or "zzz")
-
-        crt.Screen.Send("show sdwan bfd sessions\n") 
-
-        crt.Sleep(5000)
-
-        if not "yyy" or "zzz" in read_previous_row(): #If BFD sessions are found, require manual intervention with option to kill script
-
-            crt.Sleep (2000)
-
-            result = crt.Dialog.MessageBox("BFD SESSIONS FOUND","Confirm", 1)
-
-            if result ==2:
-
-                crt.Dialog.MessageBox("Exiting Script")
-
-                sys.exit()
-
-        crt.Sleep(1000) 
-
-        wait_for_prompt("yyy" or "zzz")
-
-        crt.Screen.Send("config-transaction\n") 
-
-        crt.Sleep(1000) 
-
-        wait_for_prompt("(config)")
-
-        crt.Screen.Send("system\n")
- 
-        crt.Sleep(1000) 
-
-        wait_for_prompt("(config-system)")
-
-        crt.Screen.Send("vbond vbond-prod-56588.sdwangov.fedramp.cisco port 12346\n") 
-
-        crt.Sleep(1000) 
-
-        wait_for_prompt("(config-system)")
- 
-
-        crt.Screen.Send("commit\n") 
-
-        crt.Sleep(1000) 
-
-  
-
-        crt.Screen.Send("end\n") 
-
-        crt.Sleep(3000) 
-
-  
-
-        crt.Screen.Send("show sdwan control connections\n") 
-
-        crt.Sleep(1000) 
-
-  
-
-    crt.Screen.Send("exit\n")  # Close the SSH session 
-
-    wait_for_prompt("wtrautm2")
-
-    crt.Sleep(1000) 
-
-    return True  # Successfully processed the IP 
-
-  
-
-  
-
-def main(): 
-
-    # File containing IP addresses (one IP per line, delimited by %) 
-
-    ip_file = r"C:\Users\AD39644\test file.txt" 
-
-  
-
-    # SSH command template 
-
-    ssh_command_template = "ssh routing-instance 00/VPXX/857176/LVLC admin@{}" 
-
-  
-
-    # Prompt user for the password 
-
-    password = crt.Dialog.Prompt("Enter SSH password:", "Password Prompt", "", True) 
-
-    if not password: 
-
-        crt.Dialog.MessageBox("Password entry canceled. Exiting script.") 
-
-        return 
-
-  
-
-    # Verify the IP file exists 
-
-    if not os.path.exists(ip_file): 
-
-        crt.Dialog.MessageBox(f"IP file not found: {ip_file}") 
-
-        return 
-
-  
-
-    # Read IP addresses from the file 
-
-    with open(ip_file, 'r') as file: 
-
-        ips = [line.strip() for line in file.read().split("%") if line.strip()] 
-
-  
-
-    # Iterate through each IP address 
-
-    for ip in ips: 
-
-        success = process_ip(ip, password, ssh_command_template) 
-
-        if not success: 
-
+        return False
+
+    ssh_command = ssh_command_template.format(ip)
+    crt.Screen.Send(ssh_command + "\n")
+
+    # Handle login prompts
+    for _ in range(3):  # Retry up to 3 times
+        if wait_for_prompt("Password:"):
+            crt.Screen.Send(password + "\n")
+            crt.Sleep(1000)
+            break
+        elif wait_for_prompt("Are you sure"):
+            crt.Screen.Send("yes\n")
+            crt.Sleep(2000)
+        else:
             crt.Sleep(1000)
 
-        crt.Sleep(2000)  # Allow time for the session to close before proceeding 
+    # Check if login was successful
+    if not wait_for_prompt("yyy" or "zzz", timeout=10):
+        crt.Sleep(1000)
+        return False
 
-  
+    # Execute commands
+    crt.Screen.Send("show sdwan running-config | i Engine\n")
+    crt.Sleep(1000)
+    crt.Screen.Send("show sdwan running-config | i interface GigabitEthernet0/1\n")
+    crt.Sleep(1000)
+    wait_for_prompt("yyy" or "zzz")
+    crt.Screen.Send("show sdwan running-config | i interface GigabitEthernet0/2\n")
+    crt.Sleep(1000)
+    wait_for_prompt("yyy" or "zzz")
+    crt.Screen.Send("show inv\n")
+    crt.Sleep(2000)
+    wait_for_prompt("yyy" or "zzz")
+    crt.Screen.Send("show sdwan running-config | i vbond\n")
+    if not wait_for_prompt("yyy" or "zzz", timeout=20):
+        crt.Sleep(1000)
+        return False
 
-    # Notify the user when the script completes 
+    wait_for_previous_row("port")
+    if ".com" in read_previous_row():
+        crt.Screen.Send("show sdwan control connections\n")
+        crt.Sleep(1000)
+        wait_for_prompt("yyy" or "zzz")
+        crt.Screen.Send("show sdwan bfd sessions\n")
+        crt.Sleep(5000)
+        if not "yyy" or "zzz" in read_previous_row():
+            crt.Sleep(2000)
+            result = crt.Dialog.MessageBox("BFD SESSIONS FOUND", "Confirm", 1)
+            if result == 2:
+                crt.Dialog.MessageBox("Exiting Script")
+                sys.exit()
+        crt.Sleep(1000)
+        wait_for_prompt("yyy" or "zzz")
+        crt.Screen.Send("config-transaction\n")
+        crt.Sleep(1000)
+        wait_for_prompt("(config)")
+        crt.Screen.Send("system\n")
+        crt.Sleep(1000)
+        wait_for_prompt("(config-system)")
+        crt.Screen.Send("vbond vbond-prod-56588.sdwangov.fedramp.cisco port 12346\n")
+        crt.Sleep(1000)
+        wait_for_prompt("(config-system)")
+        crt.Screen.Send("commit\n")
+        crt.Sleep(1000)
+        crt.Screen.Send("end\n")
+        crt.Sleep(3000)
+        crt.Screen.Send("show sdwan control connections\n")
+        crt.Sleep(1000)
+    crt.Screen.Send("exit\n")  # Close the SSH session
+    wait_for_prompt("wtrautm2")
+    crt.Sleep(1000)
+    return True  # Successfully processed the IP
 
-    crt.Dialog.MessageBox("Script completed for all IPs") 
+def main():
+    # File containing IP addresses (one IP per line, delimited by %)
+    ip_file = r"C:\Users\AD39644\test file.txt"
+    # SSH command template
+    ssh_command_template = "ssh routing-instance 00/VPXX/857176/LVLC admin@{}"
+    # Prompt user for the password
+    password = crt.Dialog.Prompt("Enter SSH password:", "Password Prompt", "", True)
+    if not password:
+        crt.Dialog.MessageBox("Password entry canceled. Exiting script.")
+        return
+    # Verify the IP file exists
+    if not os.path.exists(ip_file):
+        crt.Dialog.MessageBox("IP file not found: " + ip_file)
+        return
+    # Read IP addresses from the file
+    with open(ip_file, 'r') as file:
+        ips = [line.strip() for line in file.read().split("%") if line.strip()]
+    # Iterate through each IP address
+    for ip in ips:
+        success = process_ip(ip, password, ssh_command_template)
+        if not success:
+            crt.Sleep(1000)
+        crt.Sleep(2000)  # Allow time for the session to close before proceeding
+    # Notify the user when the script completes
+    crt.Dialog.MessageBox("Script completed for all IPs")
 
-  
-
-
-main() 
+main()
