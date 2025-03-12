@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import re
 import pandas as pd
 import argparse
 
@@ -7,10 +8,13 @@ def process_csv(file_path):
     """
     Processes a single CSV file.
 
-    Opens the CSV in read-only mode and checks the "A5" cell (row 5, col 1 in Excel).
-    If that cell has a value, the CSV is assumed to be vertical and is transposed.
-    Then the function searches for 'xyzzy' and '123123' and checks if the cell to the right is blank.
-
+    Opens the CSV in read-only mode using utf-8 (with a fallback to latin-1).
+    Checks the "A5" cell (row 5, col 1 in Excel). If that cell has a value,
+    the CSV is assumed to be vertical and is transposed.
+    Then the function searches for cells that start with 'xyzzy' and end with 
+    '23123' with a digit between (pattern: '^xyzzy\d23123$'). If the cell immediately 
+    to the right is blank, it logs the result.
+    
     Returns a list of result strings (one per finding).
     """
     results = []
@@ -36,14 +40,16 @@ def process_csv(file_path):
             # If the cell is not empty, assume vertical orientation; transpose to horizontal
             df = df.transpose()
 
-    # Define the search values
-    search_values = {"xyzzy", "123123"}
-
+    # Compile the regex pattern:
+    # This pattern matches strings that start with 'xyzzy', followed by exactly one digit, and end with '23123'.
+    pattern = re.compile(r'^xyzzy\d23123$')
+    
     # Loop through each cell in the DataFrame
     for i in range(df.shape[0]):
         for j in range(df.shape[1]):
             cell = df.iloc[i, j]
-            if str(cell).strip() in search_values:
+            cell_str = str(cell).strip()
+            if pattern.match(cell_str):
                 # Check the next cell to the right in the same row if it exists
                 next_val = None
                 if j + 1 < df.shape[1]:
@@ -51,14 +57,14 @@ def process_csv(file_path):
                 # Determine if the next cell is blank (empty or NaN)
                 if next_val is None or pd.isna(next_val) or str(next_val).strip() == "":
                     # Prepare a tab-delimited output line
-                    line = f"{os.path.basename(file_path)}\t{file_path}\t{cell}\t{next_val}"
+                    line = f"{os.path.basename(file_path)}\t{file_path}\t{cell_str}\t{next_val}"
                     results.append(line)
     return results
 
 def main():
     # Setup command-line argument parsing
     parser = argparse.ArgumentParser(
-        description="Search CSV files for specific values and check for blank next cells."
+        description="Search CSV files for cells matching a regex pattern and check for blank next cells."
     )
     parser.add_argument(
         "--search-dir", type=str, required=True,
