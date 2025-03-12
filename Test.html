@@ -1,158 +1,74 @@
-# $language = "Python"
-# $interface = "1.0"
 
 import os
-import sys
+import glob
+import re
+import pandas as pd
 
-def read_current_prompt():
-    """
-    Reads and returns the current prompt text from the screen.
-    """
-    return crt.Screen.Get(crt.Screen.CurrentRow, 0, crt.Screen.CurrentRow, crt.Screen.CurrentColumn).strip()
+# Set the folder containing your CSV files.
+folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
 
-def wait_for_previous_row(expected, timeout=30):
-    """
-    Waits for a specific string to appear in the previous row.
-    Returns True if the expected string is found within the timeout, otherwise False.
-    """
-    for _ in range(timeout):
-        previous_row = read_previous_row().lower()  # Just for capitalization mismatches
-        if expected.lower() in previous_row:
-            return True
-        crt.Sleep(1000)
-    return False
+# List to hold details of CSV files that fail the condition.
+failed_files = []
 
-def read_previous_row():
-    """
-    Reads and returns the content of the previous row in the SecureCRT session.
-    """
+# Recursively get a list of all CSV files.
+csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
+print(f"Found {len(csv_files)} CSV files.")
+
+# Filter to only files with "xyzxyz" in the filename (case-insensitive).
+target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()]
+print(f"Processing {len(target_csv_files)} CSV files with 'xyzxyz' in the name.")
+
+# Regex pattern to match exactly 9 digits.
+pattern = re.compile(r'^\d{9}$')
+
+for file_path in target_csv_files:
     try:
-        current_row = crt.Screen.CurrentRow
-        if current_row > 1:
-            previous_row_content = crt.Screen.Get(current_row - 1, 0, current_row - 1, crt.Screen.Columns).strip()
-            return previous_row_content
-        else:
-            crt.Dialog.MessageBox("No previous row to read.")
-            return None
-    except Exception, e:
-        crt.Dialog.MessageBox("Error reading previous row")
-        return None
+        # Try reading with UTF-8 encoding first; if that fails, try Latin-1.
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8', header=None)
+        except UnicodeDecodeError:
+            df = pd.read_csv(file_path, encoding='latin1', header=None)
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
+        continue
 
-def wait_for_prompt(expected, timeout=10):
-    """
-    Waits for a specific string in the current prompt.
-    Returns True if the expected string is found within the timeout, otherwise False.
-    """
-    for _ in range(timeout):
-        if expected in read_current_prompt():
-            return True
-        crt.Sleep(1000)
-    return False
+    # Check if the file contains the value "RoIP" somewhere (case-insensitive).
+    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
 
-def process_ip(ip, password, ssh_command_template):
-    """
-    Processes a single IP address: Connects via SSH and executes commands.
-    """
-    if not wait_for_prompt("wtrautm2"):  # Make sure session is in PE so it doesn't run commands in the wrong device
-        crt.Sleep(1000)
-        return False
+    file_flagged = False
+    candidate_details = []
 
-    ssh_command = ssh_command_template.format(ip)
-    crt.Screen.Send(ssh_command + "\n")
+    # Iterate over every cell in the DataFrame.
+    for row in df.itertuples(index=False):
+        for cell in row:
+            cell_value = str(cell).strip()
+            # Check if the cell value is exactly 9 digits.
+            if pattern.fullmatch(cell_value):
+                print(f"File {os.path.basename(file_path)}: Found candidate value: '{cell_value}'")
+                if len(cell_value) >= 4:
+                    if cell_value[3] != "1":
+                        candidate_details.append(
+                            f"Candidate value '{cell_value}' fails: 4th digit is '{cell_value[3]}' (expected '1')."
+                        )
+                        file_flagged = True
+                    else:
+                        print(f"Candidate value '{cell_value}' passes (4th digit is '1').")
+                else:
+                    candidate_details.append(f"Candidate value '{cell_value}' is too short.")
+                    file_flagged = True
 
-    # Handle login prompts
-    for _ in range(3):  # Retry up to 3 times
-        if wait_for_prompt("Password:"):
-            crt.Screen.Send(password + "\n")
-            crt.Sleep(1000)
-            break
-        elif wait_for_prompt("Are you sure"):
-            crt.Screen.Send("yes\n")
-            crt.Sleep(2000)
-        else:
-            crt.Sleep(1000)
+    # Only export (flag the file) if a candidate fails the condition AND the file contains "RoIP".
+    if file_flagged and has_RoIP:
+        details = "\n".join(candidate_details)
+        failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
+    elif file_flagged and not has_RoIP:
+        print(f"File {os.path.basename(file_path)} flagged candidate issues but does not contain 'RoIP'; skipping export.")
 
-    # Check if login was successful
-    if not wait_for_prompt("yyy" or "zzz", timeout=10):
-        crt.Sleep(1000)
-        return False
+# Write the details of CSV files that failed the condition to an output text file.
+output_file = r'C:\Users\AD39644\Desktop\output.txt'
+with open(output_file, "w") as f:
+    for entry in failed_files:
+        f.write(entry + "\n")
 
-    # Execute commands
-    crt.Screen.Send("show sdwan running-config | i Engine\n")
-    crt.Sleep(1000)
-    crt.Screen.Send("show sdwan running-config | i interface GigabitEthernet0/1\n")
-    crt.Sleep(1000)
-    wait_for_prompt("yyy" or "zzz")
-    crt.Screen.Send("show sdwan running-config | i interface GigabitEthernet0/2\n")
-    crt.Sleep(1000)
-    wait_for_prompt("yyy" or "zzz")
-    crt.Screen.Send("show inv\n")
-    crt.Sleep(2000)
-    wait_for_prompt("yyy" or "zzz")
-    crt.Screen.Send("show sdwan running-config | i vbond\n")
-    if not wait_for_prompt("yyy" or "zzz", timeout=20):
-        crt.Sleep(1000)
-        return False
-
-    wait_for_previous_row("port")
-    if ".com" in read_previous_row():
-        crt.Screen.Send("show sdwan control connections\n")
-        crt.Sleep(1000)
-        wait_for_prompt("yyy" or "zzz")
-        crt.Screen.Send("show sdwan bfd sessions\n")
-        crt.Sleep(5000)
-        if not "yyy" or "zzz" in read_previous_row():
-            crt.Sleep(2000)
-            result = crt.Dialog.MessageBox("BFD SESSIONS FOUND", "Confirm", 1)
-            if result == 2:
-                crt.Dialog.MessageBox("Exiting Script")
-                sys.exit()
-        crt.Sleep(1000)
-        wait_for_prompt("yyy" or "zzz")
-        crt.Screen.Send("config-transaction\n")
-        crt.Sleep(1000)
-        wait_for_prompt("(config)")
-        crt.Screen.Send("system\n")
-        crt.Sleep(1000)
-        wait_for_prompt("(config-system)")
-        crt.Screen.Send("vbond vbond-prod-56588.sdwangov.fedramp.cisco port 12346\n")
-        crt.Sleep(1000)
-        wait_for_prompt("(config-system)")
-        crt.Screen.Send("commit\n")
-        crt.Sleep(1000)
-        crt.Screen.Send("end\n")
-        crt.Sleep(3000)
-        crt.Screen.Send("show sdwan control connections\n")
-        crt.Sleep(1000)
-    crt.Screen.Send("exit\n")  # Close the SSH session
-    wait_for_prompt("wtrautm2")
-    crt.Sleep(1000)
-    return True  # Successfully processed the IP
-
-def main():
-    # File containing IP addresses (one IP per line, delimited by %)
-    ip_file = r"C:\Users\AD39644\test file.txt"
-    # SSH command template
-    ssh_command_template = "ssh routing-instance 00/VPXX/857176/LVLC admin@{}"
-    # Prompt user for the password
-    password = crt.Dialog.Prompt("Enter SSH password:", "Password Prompt", "", True)
-    if not password:
-        crt.Dialog.MessageBox("Password entry canceled. Exiting script.")
-        return
-    # Verify the IP file exists
-    if not os.path.exists(ip_file):
-        crt.Dialog.MessageBox("IP file not found: " + ip_file)
-        return
-    # Read IP addresses from the file
-    with open(ip_file, 'r') as file:
-        ips = [line.strip() for line in file.read().split("%") if line.strip()]
-    # Iterate through each IP address
-    for ip in ips:
-        success = process_ip(ip, password, ssh_command_template)
-        if not success:
-            crt.Sleep(1000)
-        crt.Sleep(2000)  # Allow time for the session to close before proceeding
-    # Notify the user when the script completes
-    crt.Dialog.MessageBox("Script completed for all IPs")
-
-main()
+print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
