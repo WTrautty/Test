@@ -1,74 +1,86 @@
-
+#!/usr/bin/env python3
 import os
-import glob
-import re
 import pandas as pd
+import argparse
 
-# Set the folder containing your CSV files.
-folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs'
-
-# List to hold details of CSV files that fail the condition.
-failed_files = []
-
-# Recursively get a list of all CSV files.
-csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
-print(f"Found {len(csv_files)} CSV files.")
-
-# Filter to only files with "xyzxyz" in the filename (case-insensitive).
-target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()]
-print(f"Processing {len(target_csv_files)} CSV files with 'xyzxyz' in the name.")
-
-# Regex pattern to match exactly 9 digits.
-pattern = re.compile(r'^\d{9}$')
-
-for file_path in target_csv_files:
+def process_csv(file_path):
+    """
+    Processes a single CSV file.
+    
+    Opens the CSV in read-only mode and checks the "A5" cell (row 5, col 1 in Excel).
+    If that cell has a value, the CSV is assumed to be vertical and is transposed.
+    Then the function searches for 'xyzzy' and '123123' and checks if the cell to the right is blank.
+    
+    Returns a list of result strings (one per finding).
+    """
+    results = []
     try:
-        # Try reading with UTF-8 encoding first; if that fails, try Latin-1.
-        try:
-            df = pd.read_csv(file_path, encoding='utf-8', header=None)
-        except UnicodeDecodeError:
-            df = pd.read_csv(file_path, encoding='latin1', header=None)
+        # Read CSV without assuming any header
+        df = pd.read_csv(file_path, header=None, dtype=str)
     except Exception as e:
         print(f"Error reading {file_path}: {e}")
-        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
-        continue
+        return results
 
-    # Check if the file contains the value "RoIP" somewhere (case-insensitive).
-    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
+    # Determine if CSV is stored vertically by checking the 5th row, first column (A5)
+    if df.shape[0] >= 5:
+        cell_value = df.iloc[4, 0]
+        if pd.notna(cell_value) and str(cell_value).strip() != "":
+            # If the cell is not empty, assume vertical orientation; transpose to horizontal
+            df = df.transpose()
 
-    file_flagged = False
-    candidate_details = []
+    # Define the search values
+    search_values = {"xyzzy", "123123"}
 
-    # Iterate over every cell in the DataFrame.
-    for row in df.itertuples(index=False):
-        for cell in row:
-            cell_value = str(cell).strip()
-            # Check if the cell value is exactly 9 digits.
-            if pattern.fullmatch(cell_value):
-                print(f"File {os.path.basename(file_path)}: Found candidate value: '{cell_value}'")
-                if len(cell_value) >= 4:
-                    if cell_value[3] != "1":
-                        candidate_details.append(
-                            f"Candidate value '{cell_value}' fails: 4th digit is '{cell_value[3]}' (expected '1')."
-                        )
-                        file_flagged = True
-                    else:
-                        print(f"Candidate value '{cell_value}' passes (4th digit is '1').")
-                else:
-                    candidate_details.append(f"Candidate value '{cell_value}' is too short.")
-                    file_flagged = True
+    # Loop through each cell in the DataFrame
+    for i in range(df.shape[0]):
+        for j in range(df.shape[1]):
+            cell = df.iloc[i, j]
+            if str(cell).strip() in search_values:
+                # Check the next cell to the right in the same row if it exists
+                next_val = None
+                if j + 1 < df.shape[1]:
+                    next_val = df.iloc[i, j+1]
+                # Determine if the next cell is blank (empty or NaN)
+                if next_val is None or pd.isna(next_val) or str(next_val).strip() == "":
+                    # Prepare a tab-delimited output line
+                    line = f"{os.path.basename(file_path)}\t{file_path}\t{cell}\t{next_val}"
+                    results.append(line)
+    return results
 
-    # Only export (flag the file) if a candidate fails the condition AND the file contains "RoIP".
-    if file_flagged and has_RoIP:
-        details = "\n".join(candidate_details)
-        failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
-    elif file_flagged and not has_RoIP:
-        print(f"File {os.path.basename(file_path)} flagged candidate issues but does not contain 'RoIP'; skipping export.")
+def main():
+    # Setup command-line argument parsing
+    parser = argparse.ArgumentParser(
+        description="Search CSV files for specific values and check for blank next cells."
+    )
+    parser.add_argument(
+        "--search-dir", type=str, required=True,
+        help="Directory to search for CSV files (including subdirectories)."
+    )
+    parser.add_argument(
+        "--output", type=str, required=True,
+        help="File path for the output TXT file."
+    )
+    args = parser.parse_args()
 
-# Write the details of CSV files that failed the condition to an output text file.
-output_file = r'C:\Users\AD39644\Desktop\output.txt'
-with open(output_file, "w") as f:
-    for entry in failed_files:
-        f.write(entry + "\n")
+    all_results = []
 
-print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
+    # Walk through the directory and its subdirectories to find CSV files
+    for root, _, files in os.walk(args.search_dir):
+        for file in files:
+            if file.lower().endswith(".csv"):
+                file_path = os.path.join(root, file)
+                results = process_csv(file_path)
+                if results:
+                    all_results.extend(results)
+
+    # Write the findings to the designated output text file
+    try:
+        with open(args.output, "w") as out_file:
+            for line in all_results:
+                out_file.write(line + "\n")
+        print(f"Results exported to: {args.output}")
+    except Exception as e:
+        print(f"Error writing output file: {e}")
+
+if __name__ == "__main__":
+    main()
