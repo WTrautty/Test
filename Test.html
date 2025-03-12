@@ -7,23 +7,24 @@ import argparse
 def process_csv(file_path):
     """
     Processes a single CSV file.
-
-    Opens the CSV in read-only mode using utf-8 (with a fallback to latin-1).
-    Checks the "A5" cell (row 5, col 1 in Excel). If that cell has a value,
-    the CSV is assumed to be vertical and is transposed.
-    Then the function searches for cells that start with 'xyzzy' and end with 
-    '23123' with a digit between (pattern: '^xyzzy\d23123$'). If the cell immediately 
-    to the right is blank, it logs the result.
+    
+    Opens the CSV in read-only mode (tries UTF-8 first, then Latin-1 if needed),
+    checks the "A5" cell (row 5, col 1 in Excel) to determine orientation, transposes
+    if necessary, and searches for cells matching the regex pattern.
+    
+    The regex looks for values that start with 'xyzzy', followed by exactly one digit, 
+    and end with '23123' (e.g., "xyzzy423123"). If the cell immediately to the right is blank,
+    a result is recorded.
     
     Returns a list of result strings (one per finding).
     """
     results = []
-    # Attempt to load the CSV with UTF-8 first, then fallback to Latin-1 if needed
+    # Try to load the CSV with UTF-8 first, then fallback to Latin-1 if needed
     df = None
     for encoding in ['utf-8', 'latin-1']:
         try:
             df = pd.read_csv(file_path, header=None, dtype=str, encoding=encoding)
-            break  # exit loop if read successfully
+            break
         except UnicodeDecodeError:
             continue
         except Exception as e:
@@ -41,9 +42,9 @@ def process_csv(file_path):
             df = df.transpose()
 
     # Compile the regex pattern:
-    # This pattern matches strings that start with 'xyzzy', followed by exactly one digit, and end with '23123'.
+    # Pattern: starts with 'xyzzy', followed by exactly one digit, and ends with '23123'
     pattern = re.compile(r'^xyzzy\d23123$')
-    
+
     # Loop through each cell in the DataFrame
     for i in range(df.shape[0]):
         for j in range(df.shape[1]):
@@ -62,37 +63,46 @@ def process_csv(file_path):
     return results
 
 def main():
-    # Setup command-line argument parsing
+    # Setup command-line argument parsing for two positional arguments
     parser = argparse.ArgumentParser(
-        description="Search CSV files for cells matching a regex pattern and check for blank next cells."
+        description="Search CSV files for cells matching a regex pattern and check if the next cell is blank."
     )
     parser.add_argument(
-        "--search-dir", type=str, required=True,
-        help="Directory to search for CSV files (including subdirectories)."
+        "search_path", type=str,
+        help="Path to a CSV file or directory to search for CSV files."
     )
     parser.add_argument(
-        "--output", type=str, required=True,
+        "export_path", type=str,
         help="File path for the output TXT file."
     )
     args = parser.parse_args()
 
     all_results = []
 
-    # Walk through the directory and its subdirectories to find CSV files
-    for root, _, files in os.walk(args.search_dir):
-        for file in files:
-            if file.lower().endswith(".csv"):
-                file_path = os.path.join(root, file)
-                results = process_csv(file_path)
-                if results:
-                    all_results.extend(results)
+    # If search_path is a directory, search recursively for CSV files
+    if os.path.isdir(args.search_path):
+        for root, _, files in os.walk(args.search_path):
+            for file in files:
+                if file.lower().endswith(".csv"):
+                    file_path = os.path.join(root, file)
+                    results = process_csv(file_path)
+                    if results:
+                        all_results.extend(results)
+    # If search_path is a file, process it directly if it's a CSV file
+    elif os.path.isfile(args.search_path) and args.search_path.lower().endswith(".csv"):
+        results = process_csv(args.search_path)
+        if results:
+            all_results.extend(results)
+    else:
+        print(f"Provided search path {args.search_path} is neither a CSV file nor a directory.")
+        return
 
-    # Write the findings to the designated output text file
+    # Write the results to the designated output text file
     try:
-        with open(args.output, "w") as out_file:
+        with open(args.export_path, "w") as out_file:
             for line in all_results:
                 out_file.write(line + "\n")
-        print(f"Results exported to: {args.output}")
+        print(f"Results exported to: {args.export_path}")
     except Exception as e:
         print(f"Error writing output file: {e}")
 
