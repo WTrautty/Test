@@ -1,44 +1,4 @@
-import os
-import csv
-
-# ----- CONFIGURATION VARIABLES -----
-# Set the directory to search for CSV files
-search_directory = "/path/to/search/directory"  # CHANGE THIS
-
-# Set the path (and filename) for the exported TXT file
-output_txt_path = "/path/to/output/results.txt"  # CHANGE THIS
-
-# ----- HELPER FUNCTIONS -----
-def read_csv_with_fallback(file_path):
-    """
-    Tries to open the CSV file with utf-8 encoding first, then latin1 if utf-8 fails.
-    Returns the CSV data as a list of rows.
-    """
-    try:
-        with open(file_path, mode='r', encoding='utf-8', newline='') as f:
-            print(f"Reading {file_path} with UTF-8")
-            reader = csv.reader(f)
-            data = list(reader)
-    except UnicodeDecodeError:
-        with open(file_path, mode='r', encoding='latin1', newline='') as f:
-            print(f"UTF-8 failed for {file_path}, reading with Latin-1")
-            reader = csv.reader(f)
-            data = list(reader)
-    return data
-
-def transpose_data(data):
-    """
-    Transposes a list of lists (data from CSV).
-    """
-    print("Transposing data...")
-    return list(map(list, zip(*data)))
-
-# ----- MAIN PROCESSING -----
-results = []  # List to hold result lines
-
-# Using followlinks=True to ensure all subdirectories are traversed
-for root, dirs, files in os.walk(search_directory, followlinks=True):
-    print(f"\nVisiting directory: {root}")
+for root, dirs, files in os.walk(search_directory):
     for file in files:
         if file.lower().endswith('.csv'):
             csv_file_path = os.path.join(root, file)
@@ -51,42 +11,25 @@ for root, dirs, files in os.walk(search_directory, followlinks=True):
                 print(f"First row: {data[0]}")
             
             # Check if the CSV has at least 5 rows; inspect the 5th row, first column (A5 equivalent)
+            transposed = False
+            # Check if the CSV has at least 5 rows; inspect the 5th row, first column (A5 equivalent)				  
             if len(data) >= 5:
                 a5_value = data[4][0] if len(data[4]) > 0 else ""
                 print(f"A5 value: '{a5_value}'")
-                if a5_value.strip() != '':
-                    data = transpose_data(data)
+                if a5_value.strip() != '':															 
+                    data = transpose_data(data)				 
                     print("CSV transposed based on A5 value.")
                 else:
                     print("CSV not transposed (A5 is blank).")
             else:
                 print("CSV has fewer than 5 rows; skipping A5 check.")
-            
-            # Now scan the data for the search pattern.
-            # For each cell that starts with "xyzzy" and ends with "123123", check the cell in the next row, same column.
+            # Now scan the (horizontal) data for the search pattern.
             for row_index, row in enumerate(data):
-                for col_index, cell in enumerate(row):
-                    cell_str = cell.strip()
-                    if cell_str.startswith("xyzzy") and cell_str.endswith("123123"):
-                        # Check if there's a next row
-                        if row_index < len(data) - 1:
-                            # Check that the next row has the same column index; if not, default to an empty string.
-                            if col_index < len(data[row_index + 1]):
-                                next_cell = data[row_index + 1][col_index].strip()
-                            else:
-                                next_cell = ""
-                            print(f"Found pattern in file {file} at row {row_index}, col {col_index}. Next row cell: '{next_cell}'")
-                            if next_cell == '':
-                                print(f"Next row cell is blank for pattern '{cell_str}'. Recording result.")
-                                results.append(f"{file}\t{csv_file_path}\t{cell_str}\t{next_cell}")
-                        else:
-                            print(f"Found pattern in file {file} at row {row_index}, col {col_index} but no next row to check.")
-
-# ----- EXPORT RESULTS -----
-print("\nExporting results...")
-with open(output_txt_path, "w", encoding="utf-8") as out_f:
-    for line in results:
-        out_f.write(line + "\n")
-        print(f"Exported: {line}")
-
-print(f"\nResults exported to {output_txt_path}")
+                for i in range(len(row) - 1):
+                    cell = row[i].strip()
+                    if "xyxz" in cell and "yzxy" in cell:
+                        next_cell = row[i + 1].strip()  # The cell immediately after the matched cell
+                        print(f"Found pattern in file {file} at row {row_index}, col {i}. Next cell: '{next_cell}'")
+                        if len(next_cell) < 4:
+                            print(f"Adjacent cell is blank for pattern {cell}. Recording result.")
+                            results.append(f"{file}\t{csv_file_path}\t{cell}\t{next_cell}")
