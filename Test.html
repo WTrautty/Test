@@ -1,16 +1,131 @@
-for row_index, row in enumerate(data):
-    for i, cell in enumerate(row):
-        cell = cell.strip()
-        if "xyxz" in cell and "yzxy" in cell:
-            # Check the cell below the current cell (same column, next row)
-            if row_index < len(data) - 1:
-                next_row = data[row_index + 1]
-                # Ensure the next row has enough columns; if not, default to an empty string
-                next_cell = next_row[i].strip() if i < len(next_row) else ""
-            else:
-                next_cell = ""
-            print(f"Found pattern in file {file} at row {row_index}, col {i}. Next row cell: '{next_cell}'")
-            # Check if the cell below is blank (or nearly blank)
-            if len(next_cell) < 4:
-                print(f"Next row cell is blank or nearly blank for pattern '{cell}'. Recording result.")
-                results.append(f"{file}\t{csv_file_path}\t{cell}\t{next_cell}")
+import os
+import re
+import sys
+import shutil
+
+def process_text(text):
+    """
+    Modifies the text in a file:
+      1. Finds "END OF AUTOMATED OUTPUT", then searches upward (using rfind)
+         for "COMMAND:" in that section. In the text between these markers,
+         it looks for a 5-digit number starting with "6". If found, every
+         occurrence of "@as_num@" is replaced with that number.
+      2. Replaces every occurrence of "ERROR:" and "stay:" with a newline.
+    """
+    end_marker = "END OF AUTOMATED OUTPUT"
+    command_marker = "COMMAND:"
+    idx_end = text.find(end_marker)
+    if idx_end != -1:
+        # Find the last occurrence of "COMMAND:" before the end marker
+        idx_command = text.rfind(command_marker, 0, idx_end)
+        if idx_command != -1:
+            # Look in the text from "COMMAND:" to "END OF AUTOMATED OUTPUT"
+            substring = text[idx_command:idx_end]
+            match = re.search(r'6\d{4}', substring)
+            if match:
+                number = match.group(0)
+                text = text.replace("@as_num@", number)
+    # Replace specific tokens with newline characters
+    text = text.replace("ERROR:", "\n")
+    text = text.replace("stay:", "\n")
+    return text
+
+def check_completed(text):
+    return "Scheduler: Completed" in text
+
+def check_fortinet(text):
+    return "Fortinet" in text
+
+def check_unreachable(text):
+    # Count occurrences of the two phrases
+    cnt_pings = text.count("0 pings received")
+    cnt_packets = text.count("5 packets transmitted")
+    # If both occur exactly once or exactly twice, the file qualifies.
+    return (cnt_pings == 1 and cnt_packets == 1) or (cnt_pings == 2 and cnt_packets == 2)
+
+def check_routes_found(text):
+    # Count occurrences for the two patterns
+    cnt_route = text.count("::/0")
+    cnt_no_routes = text.count("No. of Routes: 0")
+    # Qualify if both appear (at least once) and each appears less than 3 times.
+    return (cnt_route > 0 and cnt_no_routes > 0) and (cnt_route < 3 and cnt_no_routes < 3)
+
+def check_scripting_error(text):
+    return "Network Matches" in text
+
+def check_possible_region_mismatch(text):
+    """
+    Check if there is any line with "PE TID:" that has non-blank data after it.
+    If no such valid line exists, this condition qualifies.
+    """
+    for line in text.splitlines():
+        if "PE TID:" in line:
+            parts = line.split("PE TID:")
+            if len(parts) > 1 and parts[1].strip() != "":
+                return False  # Found valid non-blank data
+    return True
+
+def organize_file(filepath, text, base_dir):
+    """
+    Based on the file text, this function determines the destination subfolder.
+    The checks occur in order. When a file qualifies for a folder, the folder is
+    created (if necessary) and the file is moved there.
+    """
+    dest_folder = None
+    if check_completed(text):
+        dest_folder = "Completed"
+    elif check_fortinet(text):
+        dest_folder = "Fortinet"
+    elif check_unreachable(text):
+        dest_folder = "unreachable"
+    elif check_routes_found(text):
+        dest_folder = "Routes Found"
+    elif check_scripting_error(text):
+        dest_folder = "Scripting Error"
+    elif check_possible_region_mismatch(text):
+        dest_folder = "Possible Region Mismatch"
+    
+    if dest_folder:
+        folder_path = os.path.join(base_dir, dest_folder)
+        os.makedirs(folder_path, exist_ok=True)
+        dest_path = os.path.join(folder_path, os.path.basename(filepath))
+        shutil.move(filepath, dest_path)
+        return dest_folder
+    return None
+
+def process_file(filepath, base_dir):
+    """
+    Processes a single file: modifies its text and then organizes it into a subfolder.
+    """
+    with open(filepath, 'r', encoding='utf-8') as f:
+        text = f.read()
+    
+    new_text = process_text(text)
+    
+    # Write the modified text back to the file
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(new_text)
+    
+    # Organize (move) the file based on its contents
+    folder = organize_file(filepath, new_text, base_dir)
+    return folder
+
+def main():
+    # Use a directory passed as an argument, or default to the current directory
+    if len(sys.argv) > 1:
+        directory = sys.argv[1]
+    else:
+        directory = os.getcwd()
+    
+    # Loop through all .txt files in the directory
+    for filename in os.listdir(directory):
+        if filename.lower().endswith('.txt'):
+            filepath = os.path.join(directory, filename)
+            folder_moved = process_file(filepath, directory)
+            msg = f"Processed '{filename}'"
+            if folder_moved:
+                msg += f" -> moved to '{folder_moved}'"
+            print(msg)
+
+if __name__ == "__main__":
+    main()
