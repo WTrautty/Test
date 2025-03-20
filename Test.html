@@ -1,26 +1,74 @@
 import os
+import csv
+import re
 
-# Specify the directory to scan
-directory = 'path/to/your/directory'
+def extract_third_digit_from_slash64(value):
+    """Extract the third character after the first colon in a /64 entry."""
+    try:
+        parts = value.split(':')
+        if len(parts) > 2 and len(parts[2]) > 2:
+            return parts[2][2]
+    except IndexError:
+        return None
+    return None
 
-# File to export results
-output_file = 'files_missing_area.txt'
+def extract_first_digit_from_nine_digit(value):
+    """Extract the first digit from a 9-digit value."""
+    return value[0] if value.isdigit() and len(value) == 9 else None
 
-# Clear or create the output file
-with open(output_file, 'w') as f:
-    pass
+def check_mapping(third_digit, first_digit):
+    """Check if the extracted values match the specified mapping."""
+    mapping = {
+        '8': '1',
+        '9': '2',
+        'A': '3', 'a': '3',
+        'B': '4', 'b': '4'
+    }
+    return mapping.get(third_digit) == first_digit
 
-# Iterate through files in directory
-for filename in os.listdir(directory):
-    if 'blah' in filename:
-        file_path = os.path.join(directory, filename)
-        # Ensure it's a file
-        if os.path.isfile(file_path):
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
-                contents = file.read()
-                if 'area' not in contents:
-                    # Write filename to output
-                    with open(output_file, 'a') as out:
-                        out.write(filename + '\n')
+def process_csv(file_path, output_file):
+    """Process a CSV file, extract relevant values, and log mismatches."""
+    mismatches = []
+    
+    encodings = ['utf-8', 'latin1']
+    for encoding in encodings:
+        try:
+            with open(file_path, newline='', encoding=encoding) as csvfile:
+                reader = csv.reader(csvfile)
+                for row in reader:
+                    for cell in row:
+                        if '/64' in cell:
+                            third_digit = extract_third_digit_from_slash64(cell)
+                            if third_digit:
+                                for num_cell in row:
+                                    if re.fullmatch(r'\d{9}', num_cell):
+                                        first_digit = extract_first_digit_from_nine_digit(num_cell)
+                                        if first_digit and not check_mapping(third_digit, first_digit):
+                                            mismatches.append(f"9 digit value: {num_cell}\n/64 value: {cell}\n")
+            break  # Stop trying encodings if one works
+        except UnicodeDecodeError:
+            continue  # Try the next encoding
+    
+    if mismatches:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write(f"{file_path}\n")
+            f.writelines(mismatches)
+            f.write("\n")
 
-print(f"Done. Check '{output_file}' for results.")
+def process_directory(directory, output_file):
+    """Recursively search for CSV files in a directory and process them."""
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write("Mismatch Report\n\n")
+    
+    for root, _, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.csv'):
+                file_path = os.path.join(root, file)
+                process_csv(file_path, output_file)
+
+# Set the directory and output file
+input_directory = "path_to_your_directory"  # Change this to the correct path
+output_txt = "mismatch_report.txt"
+
+process_directory(input_directory, output_txt)
+print(f"Processing complete. Mismatch report saved to {output_txt}")
