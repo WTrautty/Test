@@ -1,20 +1,49 @@
 import os
+import argparse
 
-def search_word_in_folder(folder_path, word):
-    # Iterate over all files in the folder
-    for root, dirs, files in os.walk(folder_path):
-        for file in files:
-            file_path = os.path.join(root, file)
-            # Open and read the file
-            with open(file_path, 'r', errors='ignore') as f:
-                content = f.read()
-                # Check if the word is in the file
+def search_word_in_folder(folder_path, word, output_file):
+    # Open the output file for writing results.
+    with open(output_file, 'w') as out:
+        # Walk through the folder and its subfolders.
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                # Process only .txt files.
+                if not file.lower().endswith('.txt'):
+                    continue
+                
+                file_path = os.path.join(root, file)
+                try:
+                    # Open the file and read its content.
+                    with open(file_path, 'r', errors='ignore') as f:
+                        content = f.read()
+                except Exception as e:
+                    out.write(f"Error reading file {file_path}: {e}\n")
+                    continue
+
+                # Check if the file does NOT contain the specified word.
                 if word not in content:
-                    print(f"'{word}' missing in file: {file_path}")
+                    out.write(f"'{word}' missing in file: {file_path}\n")
 
-# Define the folder path and the word to search for
-folder_path = r"C:\Users\AD39644\OneDrive - Lumen\Stage 1\Stage I Activation Templates and Results"
-word = 'Serial Module'
+if __name__ == "__main__":
+    # Set up the command-line argument parser.
+    parser = argparse.ArgumentParser(
+        description="Search text files in a folder for a word and output file paths missing that word."
+    )
+    parser.add_argument(
+        "input_folder",
+        help="Path to the folder containing the TXT documents."
+    )
+    parser.add_argument(
+        "output_file",
+        help="Path to the output TXT file where results will be written."
+    )
+    parser.add_argument(
+        "--word",
+        default="Serial Module",
+        help="Word to search for (default: 'Serial Module')."
+    )
+    
+    args = parser.parse_args()
 
-# Call the function to search for the word in the folder
-search_word_in_folder(folder_path, word)
+    # Call the function with provided arguments.
+    search_word_in_folder(args.input_folder, args.word, args.output_file)
