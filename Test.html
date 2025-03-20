@@ -3,11 +3,11 @@ import csv
 import re
 
 def extract_third_digit_from_slash64(value):
-    """Extract the third character after the first colon in a /64 entry."""
+    """Find the first colon in the value, then extract the third character after it."""
     try:
-        parts = value.split(':')
-        if len(parts) > 1 and len(parts[1]) > 2:
-            return parts[1][2]
+        index = value.find(':')
+        if index != -1 and len(value) > index + 3:
+            return value[index + 3]
     except IndexError:
         return None
     return None
