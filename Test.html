@@ -6,8 +6,8 @@ def extract_third_digit_from_slash64(value):
     """Extract the third character after the first colon in a /64 entry."""
     try:
         parts = value.split(':')
-        if len(parts) > 2 and len(parts[2]) > 2:
-            return parts[2][2]
+        if len(parts) > 1 and len(parts[1]) > 2:
+            return parts[1][2]
     except IndexError:
         return None
     return None
