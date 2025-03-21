@@ -1,12 +1,10 @@
-txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
-print(f"Checking {len(txt_files)} TXT files...")
-for txt_path in txt_files:
-    try:
-        with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read().lower()
-            if '9200' in os.path.basename(txt_path) and 'for sin' not in content:
-                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'for sin' in 9200 TXT file.\n")
-            if 'commit' not in content:
-                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'commit' in TXT file.\n")
-    except Exception as e:
-        failed_files.append(f"Read Error: {os.path.basename(txt_path)}\n{txt_path}\nError: {e}\n")
+            if new_custom_pattern.match(cell_value):
+                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+                print(f"{next_val_below},{next_val_right}")
+
+                if re.fullmatch(r'\d+\.\d+\.\d+\.d+/', next_val_right)  and re.fullmatch(r'\d+\.\d+\.\d+\.d+/', next_val_below):
+                    candidate_details.append(
+                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
+                    )
+                    file_flagged = True
