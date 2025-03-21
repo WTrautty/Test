@@ -22,6 +22,20 @@ id_pattern = re.compile(r'^\d{9}$')
 # Regex to check for specific value start and end pattern.
 custom_pattern = re.compile(r'^/1/vpn_lan_subif.*name/interface/shutdown$')
 
+# Mapping for /64 region extraction.
+ip_region_map = {
+    '8': 'West',
+    '9': 'Mountain',
+    'A': 'Central', 'a': 'Central',
+    'B': 'East', 'b': 'East'
+}
+id_region_map = {
+    '1': 'East',
+    '2': 'Central',
+    '3': 'Mountain',
+    '4': 'West'
+}
+
 for file_path in target_csv_files:
     try:
         try:
@@ -36,12 +50,16 @@ for file_path in target_csv_files:
     file_flagged = False
     candidate_details = []
 
+    found_ids = []
+    ip_regions = []
+
     for row_idx, row in df.iterrows():
         for col_idx, cell in enumerate(row):
             cell_value = str(cell).strip()
 
             # 9-digit ID check.
             if id_pattern.fullmatch(cell_value):
+                found_ids.append(cell_value)
                 if len(cell_value) >= 4:
                     if cell_value[3] != "1":
                         candidate_details.append(
@@ -56,12 +74,31 @@ for file_path in target_csv_files:
             if custom_pattern.match(cell_value):
                 next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
                 next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
-                
+
                 if next_val_right != "TRUE" and next_val_below != "TRUE":
                     candidate_details.append(
                         f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), both not 'TRUE'."
                     )
                     file_flagged = True
+
+            # /64 IP region match check
+            if cell_value.endswith("/64"):
+                ip_parts = cell_value.split(":")
+                if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
+                    region_char = ip_parts[1][2]
+                    ip_region = ip_region_map.get(region_char)
+                    if ip_region:
+                        ip_regions.append((cell_value, ip_region))
+
+    # Match IP region with ID region logic
+    for ip_val, ip_region in ip_regions:
+        for id_val in found_ids:
+            id_region = id_region_map.get(id_val[0])
+            if id_region and ip_region != id_region:
+                candidate_details.append(
+                    f"Mismatch: ID '{id_val}' region is '{id_region}' but IP '{ip_val}' maps to region '{ip_region}'."
+                )
+                file_flagged = True
 
     if file_flagged and has_RoIP:
         details = "\n".join(candidate_details)
