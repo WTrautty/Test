@@ -52,6 +52,7 @@ for file_path in target_csv_files:
 
     found_ids = []
     ip_regions = []
+    id_regions = []
 
     for row_idx, row in df.iterrows():
         for col_idx, cell in enumerate(row):
@@ -60,6 +61,9 @@ for file_path in target_csv_files:
             # 9-digit ID check.
             if id_pattern.fullmatch(cell_value):
                 found_ids.append(cell_value)
+                id_region = id_region_map.get(cell_value[0])
+                if id_region:
+                    id_regions.append((cell_value, id_region))
                 if len(cell_value) >= 4:
                     if cell_value[3] != "1":
                         candidate_details.append(
@@ -90,11 +94,10 @@ for file_path in target_csv_files:
                     if ip_region:
                         ip_regions.append((cell_value, ip_region))
 
-    # Match IP region with ID region logic
+    # Ensure all /64 entries match the region of every found ID
     for ip_val, ip_region in ip_regions:
-        for id_val in found_ids:
-            id_region = id_region_map.get(id_val[0])
-            if id_region and ip_region != id_region:
+        for id_val, id_region in id_regions:
+            if ip_region != id_region:
                 candidate_details.append(
                     f"Mismatch: ID '{id_val}' region is '{id_region}' but IP '{ip_val}' maps to region '{ip_region}'."
                 )
