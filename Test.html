@@ -1,106 +1,12 @@
-import re
-import os
-import pandas as pd
-
-for file_path in target_csv_files:
+txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
+print(f"Checking {len(txt_files)} TXT files...")
+for txt_path in txt_files:
     try:
-        try:
-            df = pd.read_csv(file_path, encoding='utf-8', header=None)
-        except UnicodeDecodeError:
-            df = pd.read_csv(file_path, encoding='latin1', header=None)
+        with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read().lower()
+            if '9200' in os.path.basename(txt_path) and 'wr mem' not in content:
+                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'wr mem' in 9200 TXT file.\n")
+            if 'commit' not in content:
+                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'commit' in TXT file.\n")
     except Exception as e:
-        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
-        continue
-
-    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
-    file_flagged = False
-    candidate_details = []
-
-    found_ids = []
-    id_region_set = set()
-    ip_regions = []
-    icmp_check_required = False
-    icmp_found = False
-
-    print(f"{file_path}")
-
-    rows, cols = df.shape
-
-    for row_idx in range(rows):
-        for col_idx in range(cols):
-            cell = df.iat[row_idx, col_idx]
-            cell_value = str(cell).strip()
-            cell_upper = cell_value.upper()
-            cell_lower = cell_value.lower()
-
-            # 9-digit ID check.
-            if cell_value.endswith("site-id"):
-                right_val = str(df.iat[row_idx, col_idx + 1]).strip() if col_idx + 1 < cols else ""
-                below_val = str(df.iat[row_idx + 1, col_idx]).strip() if row_idx + 1 < rows else ""
-                for val in [right_val, below_val]:
-                    if id_pattern.fullmatch(val):
-                        found_ids.append(val)
-                        id_region = id_region_map.get(val[0])
-                        if id_region:
-                            id_region_set.add(id_region)
-                        if has_RoIP:
-                            if len(val) >= 4:
-                                if val[3] != "1":
-                                    candidate_details.append(
-                                        f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
-                                    )
-                                    file_flagged = True
-                            else:
-                                candidate_details.append(f"Candidate value '{val}' is too short.")
-                                file_flagged = True
-                        if len(val) >= 2 and val[1] == '1':
-                            icmp_check_required = True
-
-            # vpn_lan_subif check (independent)
-            if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
-                right_val = str(df.iat[row_idx, col_idx + 1]).strip().upper() if col_idx + 1 < cols else ""
-                below_val = str(df.iat[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < rows else ""
-                if right_val != "TRUE" and below_val != "TRUE":
-                    candidate_details.append(
-                        f"'{cell_value}' followed by '{right_val}' (right) and '{below_val}' (below), neither 'TRUE'."
-                    )
-                    file_flagged = True
-
-            # /64 IP region match check
-            if cell_value.endswith("/64"):
-                ip_parts = cell_value.split(":")
-                if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
-                    region_char = ip_parts[1][2]
-                    ip_region = ip_region_map.get(region_char)
-                    if ip_region:
-                        ip_regions.append((cell_value, ip_region))
-
-            # % character found
-            if '%' in cell_value and cell_value not in ("%chassis_id", "%chassis_number"):
-                candidate_details.append(f"'%' Found in {cell_value}")
-                file_flagged = True
-
-            # Efficient ICMP check (only if needed)
-            if icmp_check_required and not icmp_found:
-                if 'icmp' in cell_lower:
-                    right_val = str(df.iat[row_idx, col_idx + 1]).strip().upper() if col_idx + 1 < cols else ""
-                    below_val = str(df.iat[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < rows else ""
-                    if right_val != "FALSE" and below_val != "FALSE":
-                        candidate_details.append(
-                            f"ICMP found with site ID {found_ids} at ({row_idx}, {col_idx}) with right='{right_val}' and below='{below_val}', neither is FALSE."
-                        )
-                        file_flagged = True
-                    icmp_found = True  # stop checking further
-
-            # New pattern check: value followed by IPv4/ (right & below)
-            if new_custom_pattern.match(cell_upper):
-                right_val = str(df.iat[row_idx, col_idx + 1]).strip().upper() if col_idx + 1 < cols else ""
-                below_val = str(df.iat[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < rows else ""
-
-                print(f"{below_val}, {right_val}")
-
-                if re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', right_val) and re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', below_val):
-                    candidate_details.append(
-                        f"'{cell_upper}' followed by '{right_val}' (right) and '{below_val}' (below), neither 'TRUE'."
-                    )
-                    file_flagged = True
+        failed_files.append(f"Read Error: {os.path.basename(txt_path)}\n{txt_path}\nError: {e}\n")
