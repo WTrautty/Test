@@ -1,18 +1,103 @@
-import re
+for file_path in target_csv_files:
+    try:
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8', header=None)
+        except UnicodeDecodeError:
+            df = pd.read_csv(file_path, encoding='latin1', header=None)
+    except Exception as e:
+        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
+        continue
 
-for row_idx, row in df.iterrows():
-    for col_idx, cell_value in enumerate(row):
-        cell_value = str(cell_value).strip().upper()
+    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
+    file_flagged = False
+    candidate_details = []
 
-        if new_custom_pattern.match(cell_value):
-            next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
-            next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+    found_ids = []
+    id_region_set = set()
+    ip_regions = []
+    icmp_check_required = False
+    print(f"{file_path}")
 
-            print(f"{next_val_below}, {next_val_right}")
+    for row_idx, row in df.iterrows():
+        for col_idx, cell in enumerate(row):
+            cell_value = str(cell).strip()
 
-            # Check if both right and below match the IP-like pattern ending with a slash
-            if re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', next_val_right) and re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', next_val_below):
-                candidate_details.append(
-                    f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
-                )
+            # 9-digit ID check.
+            if cell_value.endswith("site-id"):
+                possible_ids = []
+                right_val = str(df.iloc[row_idx, col_idx + 1]).strip() if col_idx + 1 < len(row) else ""
+                below_val = str(df.iloc[row_idx + 1, col_idx]).strip() if row_idx + 1 < len(df) else ""
+                for val in [right_val, below_val]:
+                    if id_pattern.fullmatch(val):
+                        found_ids.append(val)
+                        id_region = id_region_map.get(val[0])
+                        if id_region:
+                            id_region_set.add(id_region)
+                        if has_RoIP and len(val) >= 4:
+                            if val[3] != "1":
+                                candidate_details.append(
+                                    f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
+                                )
+                                file_flagged = True
+                        elif has_RoIP and len(val) < 4:
+                            candidate_details.append(f"Candidate value '{val}' is too short.")
+                            file_flagged = True
+                                        # New logic: mark if 2nd digit is '1'
+                        if len(val) >= 2 and val[1] == '1':
+                            icmp_check_required = True
+
+            # vpn_lan_subif check (independent)
+            if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
+                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+
+                if next_val_right != "TRUE" and next_val_below != "TRUE":
+                    candidate_details.append(
+                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
+                    )
+                    file_flagged = True
+
+            # /64 IP region match check (independent)
+            if cell_value.endswith("/64"):
+                ip_parts = cell_value.split(":")
+                if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
+                    region_char = ip_parts[1][2]
+                    ip_region = ip_region_map.get(region_char)
+                    if ip_region:
+                        ip_regions.append((cell_value, ip_region))
+
+            if '%' in cell_value and cell_value != "%chassis_id" and cell_value != "%chassis_number":
+                candidate_details.append(f"'%' Found in {cell_value}")
                 file_flagged = True
+
+            
+            # ICMP check if second digit of ID is '1'
+            if icmp_check_required:
+                for row_idx, row in df.iterrows():
+                    for col_idx, cell in enumerate(row):
+                        cell_value = str(cell).strip().lower()
+                        if 'icmp' in cell_value:
+                            right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                            below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+                            if right != "FALSE" and below != "FALSE":
+                                candidate_details.append(
+                                    f"ICMP found with site ID {found_ids} at ({row_idx}, {col_idx}) with right='{right}' and below='{below}', neither is FALSE."
+                                )
+                                file_flagged = True
+
+            for row_idx, row in df.iterrows():
+                for col_idx, cell_value in enumerate(row):
+                    cell_value = str(cell_value).strip().upper()
+
+                    if new_custom_pattern.match(cell_value):
+                        next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                        next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+
+                        print(f"{next_val_below}, {next_val_right}")
+
+                        # Check if both right and below match the IP-like pattern ending with a slash
+                        if re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', next_val_right) and re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', next_val_below):
+                            candidate_details.append(
+                                f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
+                            )
+                            file_flagged = True
