@@ -1,74 +1,73 @@
+
 import os
-import csv
+import glob
 import re
+import pandas as pd
 
-def extract_third_digit_from_slash64(value):
-    """Find the first colon in the value, then extract the third character after it."""
+# Set the folder containing your CSV files.
+folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs\2025\02-February'
+
+# List to hold details of CSV files that fail the condition.
+failed_files = []
+
+# Recursively get a list of all CSV files.
+csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
+print(f"Found {len(csv_files)} CSV files.")
+
+# Filter to only files with "xyzxyz" in the filename (case-insensitive).
+target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()]
+
+# Regex pattern to match exactly 9 digits.
+pattern = re.compile(r'^\d{9}$')
+
+for file_path in target_csv_files:
     try:
-        index = value.find(':')
-        if index != -1 and len(value) > index + 3:
-            return value[index + 3]
-    except IndexError:
-        return None
-    return None
-
-def extract_first_digit_from_nine_digit(value):
-    """Extract the first digit from a 9-digit value."""
-    return value[0] if value.isdigit() and len(value) == 9 else None
-
-def check_mapping(third_digit, first_digit):
-    """Check if the extracted values match the specified mapping."""
-    mapping = {
-        '8': '1',
-        '9': '2',
-        'A': '3', 'a': '3',
-        'B': '4', 'b': '4'
-    }
-    return mapping.get(third_digit) == first_digit
-
-def process_csv(file_path, output_file):
-    """Process a CSV file, extract relevant values, and log mismatches."""
-    mismatches = []
-    
-    encodings = ['utf-8', 'latin1']
-    for encoding in encodings:
+        # Try reading with UTF-8 encoding first; if that fails, try Latin-1.
         try:
-            with open(file_path, newline='', encoding=encoding) as csvfile:
-                reader = csv.reader(csvfile)
-                for row in reader:
-                    for cell in row:
-                        if '/64' in cell:
-                            third_digit = extract_third_digit_from_slash64(cell)
-                            if third_digit:
-                                for num_cell in row:
-                                    if re.fullmatch(r'\d{9}', num_cell):
-                                        first_digit = extract_first_digit_from_nine_digit(num_cell)
-                                        if first_digit and not check_mapping(third_digit, first_digit):
-                                            mismatches.append(f"9 digit value: {num_cell}\n/64 value: {cell}\n")
-            break  # Stop trying encodings if one works
+            df = pd.read_csv(file_path, encoding='utf-8', header=None)
         except UnicodeDecodeError:
-            continue  # Try the next encoding
-    
-    if mismatches:
-        with open(output_file, 'a', encoding='utf-8') as f:
-            f.write(f"{file_path}\n")
-            f.writelines(mismatches)
-            f.write("\n")
+            df = pd.read_csv(file_path, encoding='latin1', header=None)
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
+        continue
 
-def process_directory(directory, output_file):
-    """Recursively search for CSV files in a directory and process them."""
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("Mismatch Report\n\n")
-    
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if file.endswith('.csv'):
-                file_path = os.path.join(root, file)
-                process_csv(file_path, output_file)
+    # Check if the file contains the value "RoIP" somewhere (case-insensitive).
+    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
 
-# Set the directory and output file
-input_directory = "path_to_your_directory"  # Change this to the correct path
-output_txt = "mismatch_report.txt"
+    file_flagged = False
+    candidate_details = []
 
-process_directory(input_directory, output_txt)
-print(f"Processing complete. Mismatch report saved to {output_txt}")
+    # Iterate over every cell in the DataFrame.
+    for row in df.itertuples(index=False):
+        for cell in row:
+            cell_value = str(cell).strip()
+            # Check if the cell value is exactly 9 digits.
+            if pattern.fullmatch(cell_value):
+                print(f"File {os.path.basename(file_path)}: Found candidate value: '{cell_value}'")
+                if len(cell_value) >= 4:
+                    if cell_value[3] != "1":
+                        candidate_details.append(
+                            f"Candidate value '{cell_value}' fails: 4th digit is '{cell_value[3]}' (expected '1')."
+                        )
+                        file_flagged = True
+                    else:
+                        print(f"Candidate value '{cell_value}' passes (4th digit is '1').")
+                else:
+                    candidate_details.append(f"Candidate value '{cell_value}' is too short.")
+                    file_flagged = True
+
+    # Only export (flag the file) if a candidate fails the condition AND the file contains "RoIP".
+    if file_flagged and has_RoIP:
+        details = "\n".join(candidate_details)
+        failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
+    elif file_flagged and not has_RoIP:
+        print(f"File {os.path.basename(file_path)} flagged candidate issues but does not contain 'RoIP'; skipping export.")
+
+# Write the details of CSV files that failed the condition to an output text file.
+output_file = r'C:\Users\AD39644\Desktop\output.txt'
+with open(output_file, "w") as f:
+    for entry in failed_files:
+        f.write(entry + "\n")
+
+print(f"Script completed. {len(failed_files)} file(s) did not meet the condition. See '{output_file}' for details.")
