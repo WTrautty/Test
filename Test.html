@@ -1,11 +1,3 @@
-import os
-import glob
-import re
-import pandas as pd
-
-# Set the folder containing your CSV files.
-folder_path = r'c:\CSVs\2025\02-February'
-
 # List to hold details of CSV files that fail the condition.
 failed_files = []
 
@@ -46,9 +38,7 @@ for file_path in target_csv_files:
         failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
         continue
 
-    print(f"\nChecking file: {file_path}")
     has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
-    print(f"Contains 'RoIP': {has_RoIP}")
     file_flagged = False
     candidate_details = []
 
@@ -61,13 +51,8 @@ for file_path in target_csv_files:
         for col_idx, cell in enumerate(row):
             cell_value = str(cell).strip()
 
-            # Check for % symbol (independent)
-            if '%' in cell_value:
-                candidate_details.append(f"% Found in '{cell_value}'")
-                file_flagged = True
-
-            # ID detection using keywords "xyzzy zyzxz" and checking right/below
-            if cell_value.lower() == "xyzzy zyzxz":
+            # 9-digit ID check.
+            if cell_value.endswith("site-id"):
                 possible_ids = []
                 right_val = str(df.iloc[row_idx, col_idx + 1]).strip() if col_idx + 1 < len(row) else ""
                 below_val = str(df.iloc[row_idx + 1, col_idx]).strip() if row_idx + 1 < len(df) else ""
@@ -81,12 +66,13 @@ for file_path in target_csv_files:
                         if has_RoIP and len(val) >= 4:
                             if val[3] != "1":
                                 candidate_details.append(
-                                    f"Candidate value '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
+                                    f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
                                 )
                                 file_flagged = True
                         elif has_RoIP and len(val) < 4:
                             candidate_details.append(f"Candidate value '{val}' is too short.")
                             file_flagged = True
+                                        # New logic: mark if 2nd digit is '1'
                         if len(val) >= 2 and val[1] == '1':
                             icmp_check_required = True
 
@@ -97,7 +83,7 @@ for file_path in target_csv_files:
 
                 if next_val_right != "TRUE" and next_val_below != "TRUE":
                     candidate_details.append(
-                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), both not 'TRUE'."
+                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
                     )
                     file_flagged = True
 
@@ -107,34 +93,40 @@ for file_path in target_csv_files:
                 if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
                     region_char = ip_parts[1][2]
                     ip_region = ip_region_map.get(region_char)
-                    print(f"Found /64: {cell_value}, extracted char: {region_char}, mapped region: {ip_region}")
                     if ip_region:
                         ip_regions.append((cell_value, ip_region))
 
-    # ICMP check if second digit of ID is '1'
-    if icmp_check_required:
-        for row_idx, row in df.iterrows():
-            for col_idx, cell in enumerate(row):
-                cell_value = str(cell).strip().lower()
-                if cell_value == 'icmp':
-                    right = str(df.iloc[row_idx, col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
-                    below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
-                    if right != "FALSE" and below != "FALSE":
-                        candidate_details.append(
-                            f"ICMP found at ({row_idx}, {col_idx}) with right='{right}' and below='{below}', neither is FALSE."
-                        )
-                        file_flagged = True
+            if '%' in cell_value and cell_value != "%chassis_id" and cell_value != "%chassis_number":
+                candidate_details.append(f"'%' Found in {cell_value}")
+                file_flagged = True
 
-    print(f"All ID regions found: {id_region_set}")
-    print(f"All /64 IP regions found: {ip_regions}")
+            
+            # ICMP check if second digit of ID is '1'
+            if icmp_check_required:
+                for row_idx, row in df.iterrows():
+                    for col_idx, cell in enumerate(row):
+                        cell_value = str(cell).strip().lower()
+                        if 'icmp' in cell_value:
+                            print(f"{cell_value}")
+                            right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                            print(f"{right}")
+                            below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+                            print(f"{below}")
+                            if right != "FALSE" and below != "FALSE":
+                                candidate_details.append(
+                                    f"ICMP found with site ID {found_ids} at ({row_idx}, {col_idx}) with right='{right}' and below='{below}', neither is FALSE."
+                                )
+                                file_flagged = True
+
+
+
 
     # Region mismatch check
     for ip_val, ip_region in ip_regions:
         for id_region in id_region_set:
             if ip_region != id_region:
-                print(f"Mismatch found -> ID Region: {id_region}, IP: {ip_val}, IP Region: {ip_region}")
                 candidate_details.append(
-                    f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region '{id_region}'."
+                    f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region '{found_ids}':'{id_region}'."
                 )
                 file_flagged = True
 
@@ -143,9 +135,3 @@ for file_path in target_csv_files:
         failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
 
 # Write the details of CSV files that failed the condition to an output text file.
-output_file = r'C:\Desktop\output.txt'
-with open(output_file, "w") as f:
-    for entry in failed_files:
-        f.write(entry + "\n")
-
-print(f"Script completed. {len(failed_files)} file(s) did not meet the conditions. See '{output_file}' for details.")
