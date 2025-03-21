@@ -1,3 +1,11 @@
+import os
+import glob
+import re
+import pandas as pd
+
+# Set the folder containing your CSV files.
+folder_path = r'c:\CSVs\2025\02-February'
+
 # List to hold details of CSV files that fail the condition.
 failed_files = []
 
@@ -12,7 +20,7 @@ target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()
 id_pattern = re.compile(r'^\d{9}$')
 
 # Regex to check for specific value start and end pattern.
-custom_pattern = re.compile(r'^/1/vpn_lan_subif.*name/interface/shutdown$')
+custom_pattern = re.compile(r'^.*vpn_lan_subif.*name/interface/shutdown$')
 
 # Mapping for /64 region extraction.
 ip_region_map = {
@@ -27,9 +35,6 @@ id_region_map = {
     '3': 'Mountain',
     '4': 'West'
 }
-
-# Regex to check for specific value start and end pattern.
-custom_pattern = re.compile(r'^.*vpn_lan_subif.*name/interface/shutdown$')
 
 for file_path in target_csv_files:
     try:
@@ -46,9 +51,8 @@ for file_path in target_csv_files:
     candidate_details = []
 
     found_ids = []
+    id_region_set = set()
     ip_regions = []
-    id_regions = []
-
 
     for row_idx, row in df.iterrows():
         for col_idx, cell in enumerate(row):
@@ -59,7 +63,7 @@ for file_path in target_csv_files:
                 found_ids.append(cell_value)
                 id_region = id_region_map.get(cell_value[0])
                 if id_region:
-                    id_regions.append((cell_value, id_region))
+                    id_region_set.add(id_region)
                 if len(cell_value) >= 4:
                     if cell_value[3] != "1":
                         candidate_details.append(
@@ -70,35 +74,32 @@ for file_path in target_csv_files:
                     candidate_details.append(f"Candidate value '{cell_value}' is too short.")
                     file_flagged = True
 
-            # /1/vpn_lan_subif check.
+            # vpn_lan_subif check, skip entries starting with /200/
             if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
                 next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
                 next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
-                
+
                 if next_val_right != "TRUE" and next_val_below != "TRUE":
                     candidate_details.append(
                         f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), both not 'TRUE'."
                     )
                     file_flagged = True
 
-
             # /64 IP region match check
             if cell_value.endswith("/64"):
                 ip_parts = cell_value.split(":")
                 if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
                     region_char = ip_parts[1][2]
-                    print(f"{ip_parts[1][2]}")
                     ip_region = ip_region_map.get(region_char)
-                    print(f"{ip_region}")
                     if ip_region:
                         ip_regions.append((cell_value, ip_region))
 
-        # Ensure all /64 entries match the region of every found ID
+    # Ensure each /64 entry matches all found ID regions
     for ip_val, ip_region in ip_regions:
-        for id_val, id_region in id_regions:
+        for id_region in id_region_set:
             if ip_region != id_region:
                 candidate_details.append(
-                    f"Mismatch: ID '{id_val}' region is '{id_region}' but IP '{ip_val}' maps to region '{ip_region}'."
+                    f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region '{id_region}'."
                 )
                 file_flagged = True
 
@@ -107,3 +108,11 @@ for file_path in target_csv_files:
         failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
     elif file_flagged:
         continue  # Skip exporting if RoIP not present.
+
+# Write the details of CSV files that failed the condition to an output text file.
+output_file = r'C:\Desktop\output.txt'
+with open(output_file, "w") as f:
+    for entry in failed_files:
+        f.write(entry + "\n")
+
+print(f"Script completed. {len(failed_files)} file(s) did not meet the conditions. See '{output_file}' for details.")
