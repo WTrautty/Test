@@ -5,7 +5,7 @@ import re
 import pandas as pd
 
 # Set the folder containing your CSV files.
-folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs\2025\02-February'
+folder_path = r'c:\CSVs\2025\02-February'
 
 # List to hold details of CSV files that fail the condition.
 failed_files = []
@@ -52,7 +52,90 @@ for file_path in target_csv_files:
                         )
                         file_flagged = True
                     else:
-                        print(f"Candidate value '{cell_value}' passes (4th digit is '1').")
+                        print(f"Candidate value '{cell_value}' passes (4th digit is '1').")import os
+import glob
+import re
+import pandas as pd
+
+# Set the folder containing your CSV files.
+folder_path = r'c:\CSVs\2025\02-February'
+
+# List to hold details of CSV files that fail the condition.
+failed_files = []
+
+# Recursively get a list of all CSV files.
+csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
+print(f"Found {len(csv_files)} CSV files. Beginning checks...")
+
+# Filter to only files with "csv" in the filename (case-insensitive).
+target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()]
+
+# Regex pattern to match exactly 9 digits.
+id_pattern = re.compile(r'^\d{9}$')
+
+# Regex to check for specific value start and end pattern.
+custom_pattern = re.compile(r'^/1/vpn_lan_subif.*name/interface/shutdown$')
+
+for file_path in target_csv_files:
+    try:
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8', header=None)
+        except UnicodeDecodeError:
+            df = pd.read_csv(file_path, encoding='latin1', header=None)
+    except Exception as e:
+        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
+        continue
+
+    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
+    file_flagged = False
+    candidate_details = []
+
+    for row in df.itertuples(index=False):
+        row = list(row)
+        for i, cell in enumerate(row):
+            cell_value = str(cell).strip()
+
+            # 9-digit ID check.
+            if id_pattern.fullmatch(cell_value):
+                if len(cell_value) >= 4:
+                    if cell_value[3] != "1":
+                        candidate_details.append(
+                            f"Candidate value '{cell_value}' fails: 4th digit is '{cell_value[3]}' (expected '1')."
+                        )
+                        file_flagged = True
+                else:
+                    candidate_details.append(f"Candidate value '{cell_value}' is too short.")
+                    file_flagged = True
+
+            # /1/vpn_lan_subif check.
+            if custom_pattern.match(cell_value):
+                if i + 1 < len(row):
+                    next_val = str(row[i + 1]).strip().upper()
+                    if next_val != "TRUE":
+                        candidate_details.append(
+                            f"'{cell_value}' followed by '{next_val}' (expected 'TRUE')."
+                        )
+                        file_flagged = True
+                else:
+                    candidate_details.append(
+                        f"'{cell_value}' found but no following value to check."
+                    )
+                    file_flagged = True
+
+    if file_flagged and has_RoIP:
+        details = "\n".join(candidate_details)
+        failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
+    elif file_flagged:
+        continue  # Skip exporting if RoIP not present.
+
+# Write the details of CSV files that failed the condition to an output text file.
+output_file = r'C:\Desktop\output.txt'
+with open(output_file, "w") as f:
+    for entry in failed_files:
+        f.write(entry + "\n")
+
+print(f"Script completed. {len(failed_files)} file(s) did not meet the conditions. See '{output_file}' for details.")
+
                 else:
                     candidate_details.append(f"Candidate value '{cell_value}' is too short.")
                     file_flagged = True
@@ -65,7 +148,7 @@ for file_path in target_csv_files:
         print(f"File {os.path.basename(file_path)} flagged candidate issues but does not contain 'RoIP'; skipping export.")
 
 # Write the details of CSV files that failed the condition to an output text file.
-output_file = r'C:\Users\AD39644\Desktop\output.txt'
+output_file = r'C:Desktop\output.txt'
 with open(output_file, "w") as f:
     for entry in failed_files:
         f.write(entry + "\n")
