@@ -1,10 +1,18 @@
-            if new_custom_pattern.match(cell_value):
-                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
-                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
-                print(f"{next_val_below},{next_val_right}")
+import re
 
-                if re.fullmatch(r'\d+\.\d+\.\d+\.d+/', next_val_right)  and re.fullmatch(r'\d+\.\d+\.\d+\.d+/', next_val_below):
-                    candidate_details.append(
-                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
-                    )
-                    file_flagged = True
+for row_idx, row in df.iterrows():
+    for col_idx, cell_value in enumerate(row):
+        cell_value = str(cell_value).strip().upper()
+
+        if new_custom_pattern.match(cell_value):
+            next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+            next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+
+            print(f"{next_val_below}, {next_val_right}")
+
+            # Check if both right and below match the IP-like pattern ending with a slash
+            if re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', next_val_right) and re.fullmatch(r'\d+\.\d+\.\d+\.\d+/', next_val_below):
+                candidate_details.append(
+                    f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
+                )
+                file_flagged = True
