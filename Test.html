@@ -1,8 +1,3 @@
-import glob
-import os
-import re
-import ipaddress
-
 txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
 print(f"Checking {len(txt_files)} TXT files...")
 
@@ -11,14 +6,17 @@ for txt_path in txt_files:
         with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read().lower()
 
+            # General checks
             if '9200' in os.path.basename(txt_path) and 'wr mem' not in content:
                 failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'wr mem' in 9200 TXT file.\n")
             if 'commit' not in content:
                 failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'commit' in TXT file.\n")
 
-            # Find lines with .254 and IP address pattern
+            # Go back to beginning and read lines
             f.seek(0)
             lines = f.readlines()
+
+            # We'll extract IP address + subnet info from lines containing ".254"
             ip_lines = []
             ip_pattern = re.compile(r'ip address (\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)')
 
@@ -37,14 +35,25 @@ for txt_path in txt_files:
                 try:
                     ip1_obj = ipaddress.IPv4Address(ip1)
                     ip2_obj = ipaddress.IPv4Address(ip2)
+
                     if subnet1 != subnet2:
-                        failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nSubnet mismatch between two .254 lines: {subnet1} vs {subnet2}\n")
+                        failed_files.append(
+                            f"{os.path.basename(txt_path)}\n{txt_path}\nSubnet mismatch between two .254 lines: {subnet1} vs {subnet2}\n"
+                        )
                     elif int(ip2_obj) != int(ip1_obj) + 1:
-                        failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nSecond .254 IP ({ip2}) is not one higher than first ({ip1})\n")
+                        failed_files.append(
+                            f"{os.path.basename(txt_path)}\n{txt_path}\nSecond .254 IP ({ip2}) is not one higher than first ({ip1})\n"
+                        )
                 except ValueError:
-                    failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nInvalid IP address format in .254 check.\n")
+                    failed_files.append(
+                        f"{os.path.basename(txt_path)}\n{txt_path}\nInvalid IP address format in .254 check.\n"
+                    )
             else:
-                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nLess than two valid '.254' IP address lines found.\n")
+                failed_files.append(
+                    f"{os.path.basename(txt_path)}\n{txt_path}\nLess than two valid '.254' IP address lines found.\n"
+                )
 
     except Exception as e:
-        failed_files.append(f"Read Error: {os.path.basename(txt_path)}\n{txt_path}\nError: {e}\n")
+        failed_files.append(
+            f"Read Error: {os.path.basename(txt_path)}\n{txt_path}\nError: {e}\n"
+        )
