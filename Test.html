@@ -68,18 +68,18 @@ for file_path in target_csv_files:
                 print(f"  ID region: {id_region}")
                 if id_region:
                     id_region_set.add(id_region)
-                if len(cell_value) >= 4:
+                if has_RoIP and len(cell_value) >= 4:
                     if cell_value[3] != "1":
                         candidate_details.append(
                             f"Candidate value '{cell_value}' fails: 4th digit is '{cell_value[3]}' (expected '1')."
                         )
                         file_flagged = True
-                else:
+                elif has_RoIP and len(cell_value) < 4:
                     candidate_details.append(f"Candidate value '{cell_value}' is too short.")
                     file_flagged = True
 
-            # vpn_lan_subif check, only if RoIP exists, skip entries starting with /200/
-            if has_RoIP and custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
+            # vpn_lan_subif check (independent)
+            if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
                 next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
                 next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
 
@@ -89,7 +89,7 @@ for file_path in target_csv_files:
                     )
                     file_flagged = True
 
-            # /64 IP region match check
+            # /64 IP region match check (independent)
             if cell_value.endswith("/64"):
                 ip_parts = cell_value.split(":")
                 if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
@@ -102,7 +102,7 @@ for file_path in target_csv_files:
     print(f"All ID regions found: {id_region_set}")
     print(f"All /64 IP regions found: {ip_regions}")
 
-    # Ensure each /64 entry matches all found ID regions
+    # Region mismatch check
     for ip_val, ip_region in ip_regions:
         for id_region in id_region_set:
             if ip_region != id_region:
