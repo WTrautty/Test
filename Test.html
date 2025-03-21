@@ -55,10 +55,16 @@ for file_path in target_csv_files:
     found_ids = []
     id_region_set = set()
     ip_regions = []
+    icmp_check_required = False
 
     for row_idx, row in df.iterrows():
         for col_idx, cell in enumerate(row):
             cell_value = str(cell).strip()
+
+            # Check for % symbol (independent)
+            if '%' in cell_value:
+                candidate_details.append(f"% Found in '{cell_value}'")
+                file_flagged = True
 
             # 9-digit ID check.
             if id_pattern.fullmatch(cell_value):
@@ -77,6 +83,9 @@ for file_path in target_csv_files:
                 elif has_RoIP and len(cell_value) < 4:
                     candidate_details.append(f"Candidate value '{cell_value}' is too short.")
                     file_flagged = True
+                # New logic: mark if 2nd digit is '1'
+                if len(cell_value) >= 2 and cell_value[1] == '1':
+                    icmp_check_required = True
 
             # vpn_lan_subif check (independent)
             if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
@@ -98,6 +107,20 @@ for file_path in target_csv_files:
                     print(f"Found /64: {cell_value}, extracted char: {region_char}, mapped region: {ip_region}")
                     if ip_region:
                         ip_regions.append((cell_value, ip_region))
+
+    # ICMP check if second digit of ID is '1'
+    if icmp_check_required:
+        for row_idx, row in df.iterrows():
+            for col_idx, cell in enumerate(row):
+                cell_value = str(cell).strip().lower()
+                if cell_value == 'icmp':
+                    right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                    below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+                    if right != "FALSE" and below != "FALSE":
+                        candidate_details.append(
+                            f"ICMP found at ({row_idx}, {col_idx}) with right='{right}' and below='{below}', neither is FALSE."
+                        )
+                        file_flagged = True
 
     print(f"All ID regions found: {id_region_set}")
     print(f"All /64 IP regions found: {ip_regions}")
