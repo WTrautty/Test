@@ -1,4 +1,4 @@
-txt_files = glob.glob(os.path.join(folder_path, '**', '*.txt'), recursive=True)
+txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
 print(f"Checking {len(txt_files)} TXT files...")
 for txt_path in txt_files:
     if '9200' in os.path.basename(txt_path):
