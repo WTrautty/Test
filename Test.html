@@ -112,11 +112,10 @@ for file_path in target_csv_files:
                 )
                 file_flagged = True
 
-    if file_flagged and has_RoIP:
+    # Ensure export even if RoIP is False, as long as there's a mismatch
+    if file_flagged:
         details = "\n".join(candidate_details)
         failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
-    elif file_flagged:
-        continue  # Skip exporting if RoIP not present.
 
 # Write the details of CSV files that failed the condition to an output text file.
 output_file = r'C:\Desktop\output.txt'
