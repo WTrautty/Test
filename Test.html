@@ -6,7 +6,7 @@ import ipaddress
 txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
 print(f"Checking {len(txt_files)} TXT files...")
 
-# Improved IP/subnet regex
+# Regex to match: ip address <IPv4> <subnet>
 ip_pattern = re.compile(r'ip address\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)', re.IGNORECASE)
 
 for txt_path in txt_files:
@@ -14,26 +14,25 @@ for txt_path in txt_files:
         with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read().lower()
 
-            # General checks
             if '9200' in os.path.basename(txt_path) and 'wr mem' not in content:
                 failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'wr mem' in 9200 TXT file.\n")
             if 'commit' not in content:
                 failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'commit' in TXT file.\n")
 
-            # Reset for line-by-line check
             f.seek(0)
             lines = f.readlines()
-
             ip_lines = []
 
+            # Collect 2 IP lines that contain '.254'
             for line in lines:
                 if '.254' in line:
                     match = ip_pattern.search(line)
                     if match:
-                        ip_lines.append((match.group(1), match.group(2)))
+                        ip_lines.append((match.group(1), match.group(2)))  # (IP, Subnet)
                     if len(ip_lines) == 2:
                         break
 
+            # Only run checks if we have two valid IP/subnet entries
             if len(ip_lines) == 2:
                 ip1, subnet1 = ip_lines[0]
                 ip2, subnet2 = ip_lines[1]
