@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.cm import get_cmap
 import matplotlib.patches as mpatches
+import colorsys
 
 # === CONFIGURATION ===
 file_path = r"C:\Users\Checker.xlsx"
@@ -12,23 +12,20 @@ misc_threshold_usage = 20
 misc_threshold_rate = 15
 label_threshold_pct = 3
 
-# === LOAD DATA ===
-df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
-failures_raw = df.iloc[:, 0].dropna().astype(str).str.strip()  # Failures
-usages_raw = df.iloc[:, 1].dropna().astype(str).str.strip()    # Usages
+# === FUNCTION: Generate Pastel Colors ===
+def generate_pastel_colors(n):
+    pastel_colors = []
+    for i in range(n):
+        hue = i / n
+        lightness = 0.75 + (0.2 * ((i % 3) / 3))  # Add variation
+        saturation = 0.4
+        rgb = colorsys.hls_to_rgb(hue, lightness, saturation)
+        pastel_colors.append(tuple(rgb))
+    return pastel_colors
 
-failures = failures_raw.value_counts()
-usages = usages_raw.value_counts()
-
-# === BUILD CONSISTENT COLOR MAP ===
-all_lecs = sorted(set(failures.index).union(set(usages.index)))
-cmap = get_cmap('nipy_spectral', len(all_lecs) + 1)
-
-lec_color_map = {lec: cmap(i) for i, lec in enumerate(all_lecs)}
-lec_color_map["Misc."] = '#888888'
-
-# === PIE CHART FUNCTION ===
+# === FUNCTION: Plot Pie Chart ===
 def plot_pie_chart(data, title, misc_threshold):
+    # Group low-count LECs into 'Misc.'
     frequent = data[data > misc_threshold]
     misc_count = data[data <= misc_threshold].sum()
     chart_data = frequent.copy()
@@ -39,7 +36,7 @@ def plot_pie_chart(data, title, misc_threshold):
     labels = []
     legend_labels = []
     legend_colors = []
-    
+
     for label, pct in percentages.items():
         count = chart_data[label]
         color = lec_color_map.get(label, '#CCCCCC')
@@ -74,6 +71,20 @@ def plot_pie_chart(data, title, misc_threshold):
     plt.tight_layout()
     plt.show()
 
+# === LOAD & CLEAN DATA ===
+df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
+failures_raw = df.iloc[:, 0].dropna().astype(str).str.strip()
+usages_raw = df.iloc[:, 1].dropna().astype(str).str.strip()
+
+failures = failures_raw.value_counts()
+usages = usages_raw.value_counts()
+
+# === CREATE COLOR MAP ===
+all_lecs = sorted(set(failures.index).union(set(usages.index)))
+pastel_palette = generate_pastel_colors(len(all_lecs))
+lec_color_map = {lec: pastel_palette[i] for i, lec in enumerate(all_lecs)}
+lec_color_map["Misc."] = '#CCCCCC'
+
 # === PLOT PIE CHARTS ===
 plot_pie_chart(failures, "LEC Failures", misc_threshold_failures)
 plot_pie_chart(usages, "LEC Usage", misc_threshold_usage)
@@ -85,6 +96,7 @@ misc_failures_count = failures[failures <= misc_threshold_rate].sum()
 failure_counts = frequent_failures.copy()
 failure_counts["Misc."] = misc_failures_count
 
+# Align usage counts
 frequent_lecs = set(frequent_failures.index)
 usage_counts = pd.Series(dtype=int)
 
@@ -94,6 +106,7 @@ for lec, count in usages.items():
     else:
         usage_counts["Misc."] = usage_counts.get("Misc.", 0) + count
 
+# Calculate failure rates
 failure_rate = {}
 for lec in failure_counts.index:
     fail = failure_counts[lec]
@@ -105,7 +118,7 @@ for lec in failure_counts.index:
 
 rate_df = pd.Series(failure_rate).sort_values(ascending=False)
 
-# === PLOT FAILURE RATE BAR CHART ===
+# === PLOT BAR CHART ===
 if not rate_df.empty:
     colors = [lec_color_map.get(label, '#CCCCCC') for label in rate_df.index]
     plt.figure(figsize=(12, 8))
