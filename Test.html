@@ -1,61 +1,69 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
-# === Step 1: Load Excel data ===
+# === Load Excel Data ===
 file_path = "C:/Users/AD39644/Desktop/EIS/OneDrive_2024-07-25/Auditing Script/your_file.xlsx"
 df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
-# === Step 2: Extract LEC Name column (column L = index 11) ===
+# === Extract Column L (LEC Name) ===
 lec_names = df.iloc[:, 11]
 lec_counts = lec_names.value_counts()
 
-# === Step 3: Group infrequent entries into "Misc." ===
+# === Group infrequent entries into "Misc." ===
 frequent = lec_counts[lec_counts > 5]
 misc_count = lec_counts[lec_counts <= 5].sum()
 chart_data = frequent.copy()
 chart_data["Misc."] = misc_count
 
-# === Step 4: Move "Misc." to the end for custom coloring ===
+# === Move "Misc." to the end ===
 if "Misc." in chart_data:
     misc_value = chart_data.pop("Misc.")
     chart_data["Misc."] = misc_value
 
-# === Step 5: Calculate percentages and split data ===
+# === Calculate percentages ===
 total = chart_data.sum()
 percentages = (chart_data / total) * 100
 
-visible_labels = percentages[percentages >= 3]
-small_labels = percentages[percentages < 3]
+# === Determine label logic ===
+labels = []
+legend_labels = []
+for label, pct in percentages.items():
+    if pct >= 3:
+        labels.append(f"{label} ({pct:.1f}%)")  # Label shown on slice
+    else:
+        labels.append("")  # No label on slice
+        legend_labels.append(f"{label} ({pct:.1f}%)")  # Goes in legend
 
-visible_data = chart_data[visible_labels.index]
-small_data = chart_data[small_labels.index]
-
-# === Step 6: Custom color palette ===
-color_list = [
+# === Assign Custom Colors (one for each slice) ===
+base_colors = [
     '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
     '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
-    '#9C755F', '#BAB0AC', '#888888'  # For Misc.
+    '#9C755F', '#BAB0AC', '#888888'
 ]
+# Extend if needed
+color_list = (base_colors * ((len(chart_data) // len(base_colors)) + 1))[:len(chart_data)]
 
-# Trim or extend the color list to match number of visible_data slices
-color_list = (color_list[:len(visible_data)-1] if "Misc." in visible_data else color_list[:len(visible_data)]) + ['#888888'] if "Misc." in visible_data else []
-
-# === Step 7: Plot pie chart ===
+# === Plot Pie Chart ===
 fig, ax = plt.subplots(figsize=(10, 8))
 wedges, texts = ax.pie(
-    visible_data,
-    labels=[f"{label} ({percent:.1f}%)" for label, percent in visible_labels.items()],
+    chart_data,
+    labels=labels,
     startangle=140,
     colors=color_list,
     wedgeprops=dict(edgecolor='white')
 )
 
-# === Step 8: Add legend for small (< 3%) entries ===
-if not small_data.empty:
-    legend_labels = [f"{label} ({(count/total)*100:.1f}%)" for label, count in small_data.items()]
+# === Ensure Labels Are Centered Over Slices ===
+for text in texts:
+    text.set_horizontalalignment('center')
+    text.set_fontsize(9)
+
+# === Add Legend for <3% Labels ===
+if legend_labels:
     ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
 
-# === Step 9: Final formatting ===
-plt.title("LEC Name Distribution (Pie Chart)")
+# === Final Touches ===
+plt.title("LEC Name Distribution (Pie Chart with Legend for Small Slices)")
 plt.tight_layout()
 plt.show()
