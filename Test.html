@@ -1,43 +1,9 @@
-df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
-
-# Get the LEC Name column (column L is index 11)
-lec_names = df.iloc[:, 11]
-
-# Count occurrences of each unique LEC Name
-lec_counts = lec_names.value_counts()
-
-# Separate frequent and infrequent values
-frequent = lec_counts[lec_counts > 5]
-misc_count = lec_counts[lec_counts <= 5].sum()
-
-# Combine into one Series for plotting
-chart_data = frequent.copy()
-chart_data["Misc."] = misc_count
-
-plt.figure(figsize=(10, 8))
-
-# Plot the pie chart
 wedges, texts, autotexts = plt.pie(
     chart_data,
+    labels=chart_data.index,   # 👈 Add this line
     autopct='%1.1f%%',
     startangle=140,
-    pctdistance=0.85,         # Moves % labels out a bit
-    labeldistance=1.1,        # Moves text labels further out
+    pctdistance=0.85,
+    labeldistance=1.1,
     wedgeprops={'linewidth': 1, 'edgecolor': 'white'}
 )
-
-# Add lines from labels to slices
-for text in texts:
-    text.set_horizontalalignment('center')
-    text.set_fontsize(10)
-
-for autotext in autotexts:
-    autotext.set_fontsize(9)
-    autotext.set_color('black')
-
-# Add legend if needed
-# plt.legend(wedges, chart_data.index, title="LEC Names", loc="center left", bbox_to_anchor=(1, 0.5))
-
-plt.title("LEC Name Distribution (with Leader Lines)")
-plt.tight_layout()
-plt.show()
