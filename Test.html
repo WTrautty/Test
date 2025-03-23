@@ -1,7 +1,51 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load Excel data
+file_path = "C:/Users/AD39644/Desktop/EIS/OneDrive_2024-07-25/Auditing Script/your_file.xlsx"
+df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
+
+# Get LEC Name column (column L = index 11)
+lec_names = df.iloc[:, 11]
+lec_counts = lec_names.value_counts()
+
+# Group infrequent names
+frequent = lec_counts[lec_counts > 5]
+misc_count = lec_counts[lec_counts <= 5].sum()
+chart_data = frequent.copy()
+chart_data["Misc."] = misc_count
+
+# Calculate percentages
+total = chart_data.sum()
+percentages = (chart_data / total) * 100
+
+# Separate large and small slices
+visible_labels = percentages[percentages >= 3]
+small_labels = percentages[percentages < 3]
+
+# Chart values in same order
+visible_data = chart_data[visible_labels.index]
+small_data = chart_data[small_labels.index]
+
+# Plot donut chart
+fig, ax = plt.subplots(figsize=(10, 8))
 wedges, texts = ax.pie(
-    chart_data,
-    labels=None,
-    autopct=None,  # This is why there are only 2 values returned
+    visible_data,
+    labels=[f"{label} ({percent:.1f}%)" for label, percent in visible_labels.items()],
     startangle=140,
-    wedgeprops=dict(width=0.4, edgecolor='white')  # donut effect
+    wedgeprops=dict(width=0.4, edgecolor='white')
 )
+
+# Add white center to make it a donut
+centre_circle = plt.Circle((0, 0), 0.70, fc='white')
+fig.gca().add_artist(centre_circle)
+
+# Add legend for smaller items
+if not small_data.empty:
+    legend_labels = [f"{label} ({(count/total)*100:.1f}%)" for label, count in small_data.items()]
+    ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1, 0.5))
+
+# Title and layout
+plt.title("LEC Name Distribution (Donut Style)")
+plt.tight_layout()
+plt.show()
