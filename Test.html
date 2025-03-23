@@ -5,34 +5,56 @@ import matplotlib.pyplot as plt
 file_path = r"C:\Users\AD39644\On\lsx"
 df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
-# Get LEC failure data (column 12) and usage data (column 2)
-failures = df.iloc[:, 12].value_counts()
-usages = df.iloc[:, 2].value_counts()
+# === Extract and clean both columns ===
+failures_raw = df.iloc[:, 12].dropna().astype(str).str.strip()
+usages_raw = df.iloc[:, 2].dropna().astype(str).str.strip()
 
-# Align LECs between both sets (some may only appear in one)
-all_lecs = set(failures.index).union(set(usages.index))
-failure_rate = {}
+# === Count LEC occurrences ===
+failures = failures_raw.value_counts()
+usages = usages_raw.value_counts()
 
-for lec in all_lecs:
-    fail_count = failures.get(lec, 0)
-    use_count = usages.get(lec, 0)
-    if use_count > 0:
-        failure_rate[lec] = (fail_count / use_count) * 100
+# === Group infrequent LECs (failures <= 15) into "Misc." ===
+frequent_failures = failures[failures > 15]
+misc_failures_count = failures[failures <= 15].sum()
+
+# Combine with "Misc."
+failure_counts = frequent_failures.copy()
+failure_counts["Misc."] = misc_failures_count
+
+# Adjust usage counts to align with "Misc." grouping
+# Build a full LEC list for failure/usage combo
+all_lecs = set(failure_counts.index).union(set(usages.index))
+
+# Group usage data to match Misc. grouping
+frequent_lecs = set(frequent_failures.index)
+usage_counts = pd.Series(dtype=int)
+
+for lec in usages.index:
+    count = usages[lec]
+    if lec in frequent_lecs:
+        usage_counts[lec] = count
     else:
-        failure_rate[lec] = 0  # Avoid divide-by-zero
+        usage_counts["Misc."] = usage_counts.get("Misc.", 0) + count
 
-# Convert to DataFrame for plotting
+# === Calculate failure rates ===
+failure_rate = {}
+for lec in failure_counts.index:
+    fail = failure_counts[lec]
+    use = usage_counts.get(lec, 0)
+    if use > 0:
+        failure_rate[lec] = (fail / use) * 100
+    else:
+        failure_rate[lec] = 0
+
+# === Convert to DataFrame and sort ===
 rate_df = pd.Series(failure_rate).sort_values(ascending=False)
 
-# Optional: filter out LECs with very low usage if needed
-# rate_df = rate_df[usages[rate_df.index] > 10]
-
-# Plot horizontal bar chart
+# === Plot horizontal bar chart ===
 plt.figure(figsize=(12, 8))
 rate_df.plot(kind='barh', color='#E15759')
 plt.xlabel("Failure Rate (%)")
-plt.title("LEC Failure Rate by Usage")
-plt.gca().invert_yaxis()  # Highest failure rate on top
+plt.title("LEC Failure Rate (Grouped with 'Misc.')")
+plt.gca().invert_yaxis()
 plt.grid(axis='x', linestyle='--', alpha=0.5)
 plt.tight_layout()
 plt.show()
