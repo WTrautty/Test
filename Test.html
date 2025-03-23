@@ -1,70 +1,38 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
-# Load the Excel file
-file_path = r"C:\Users\AD39644\OneDrive - Lumen\Lec Checker.xlsx"  # <-- change this to your file
+# Load Excel
+file_path = r"C:\Users\AD39644\On\lsx"
 df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
-# === Extract Column L (LEC Name) ===
-lec_names = df.iloc[:, 12]
-lec_counts = lec_names.value_counts()
+# Get LEC failure data (column 12) and usage data (column 2)
+failures = df.iloc[:, 12].value_counts()
+usages = df.iloc[:, 2].value_counts()
 
-# === Group infrequent entries into "Misc." ===
-frequent = lec_counts[lec_counts > 15]
-misc_count = lec_counts[lec_counts <= 15].sum()
-chart_data = frequent.copy()
-chart_data["Misc."] = misc_count
+# Align LECs between both sets (some may only appear in one)
+all_lecs = set(failures.index).union(set(usages.index))
+failure_rate = {}
 
-# === Move "Misc." to the end ===
-if "Misc." in chart_data:
-    misc_value = chart_data.pop("Misc.")
-    chart_data["Misc."] = misc_value
-
-# === Calculate percentages ===
-total = chart_data.sum()
-percentages = (chart_data / total) * 100
-
-# === Determine label logic ===
-labels = []
-legend_labels = []
-for label, pct in percentages.items():
-    if pct >= 3:
-        labels.append(f"{label} ({pct:.1f}%)")  # Label shown on slice
+for lec in all_lecs:
+    fail_count = failures.get(lec, 0)
+    use_count = usages.get(lec, 0)
+    if use_count > 0:
+        failure_rate[lec] = (fail_count / use_count) * 100
     else:
-        labels.append("")  # No label on slice
-        legend_labels.append(f"{label} ({pct:.1f}%)")  # Goes in legend
+        failure_rate[lec] = 0  # Avoid divide-by-zero
 
-# === Assign Custom Colors (one for each slice) ===
-base_colors = [
-    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
-    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
-    '#9C755F', '#BAB0AC', '#888888'
-]
-# Extend if needed
-color_list = (base_colors * ((len(chart_data) // len(base_colors)) + 1))[:len(chart_data)]
+# Convert to DataFrame for plotting
+rate_df = pd.Series(failure_rate).sort_values(ascending=False)
 
-# === Plot Pie Chart ===
-fig, ax = plt.subplots(figsize=(10, 8))
-wedges, texts = ax.pie(
-    chart_data,
-    labels=labels,
-    startangle=140,
-    colors=color_list,
-    wedgeprops=dict(edgecolor='white'),
-    labeldistance=1.2
-)
+# Optional: filter out LECs with very low usage if needed
+# rate_df = rate_df[usages[rate_df.index] > 10]
 
-# === Ensure Labels Are Centered Over Slices ===
-for text in texts:
-    text.set_horizontalalignment('center')
-    text.set_fontsize(9)
-
-# === Add Legend for <3% Labels ===
-if legend_labels:
-    ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
-
-# === Final Touches ===
-plt.title("LEC Name Distribution (Pie Chart with Legend for Small Slices)")
+# Plot horizontal bar chart
+plt.figure(figsize=(12, 8))
+rate_df.plot(kind='barh', color='#E15759')
+plt.xlabel("Failure Rate (%)")
+plt.title("LEC Failure Rate by Usage")
+plt.gca().invert_yaxis()  # Highest failure rate on top
+plt.grid(axis='x', linestyle='--', alpha=0.5)
 plt.tight_layout()
 plt.show()
