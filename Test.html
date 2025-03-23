@@ -1,6 +1,5 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
 # === Step 1: Load Excel data ===
 file_path = "C:/Users/AD39644/Desktop/EIS/OneDrive_2024-07-25/Auditing Script/your_file.xlsx"
@@ -31,24 +30,25 @@ small_labels = percentages[percentages < 3]
 visible_data = chart_data[visible_labels.index]
 small_data = chart_data[small_labels.index]
 
-# === Step 6: Assign distinct colors, gray for Misc ===
-num_colors = len(visible_data)
-cmap = cm.get_cmap('tab20', num_colors + 1)  # one extra for Misc
-color_list = [cmap(i) for i in range(num_colors - 1)] + ['#888888']  # gray for Misc
+# === Step 6: Custom color palette ===
+color_list = [
+    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
+    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
+    '#9C755F', '#BAB0AC', '#888888'  # For Misc.
+]
 
-# === Step 7: Plot the donut chart ===
+# Trim or extend the color list to match number of visible_data slices
+color_list = (color_list[:len(visible_data)-1] if "Misc." in visible_data else color_list[:len(visible_data)]) + ['#888888'] if "Misc." in visible_data else []
+
+# === Step 7: Plot pie chart ===
 fig, ax = plt.subplots(figsize=(10, 8))
 wedges, texts = ax.pie(
     visible_data,
     labels=[f"{label} ({percent:.1f}%)" for label, percent in visible_labels.items()],
     startangle=140,
     colors=color_list,
-    wedgeprops=dict(width=0.4, edgecolor='white')
+    wedgeprops=dict(edgecolor='white')
 )
-
-# Add white circle to make it a donut
-centre_circle = plt.Circle((0, 0), 0.70, fc='white')
-fig.gca().add_artist(centre_circle)
 
 # === Step 8: Add legend for small (< 3%) entries ===
 if not small_data.empty:
@@ -56,6 +56,6 @@ if not small_data.empty:
     ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
 
 # === Step 9: Final formatting ===
-plt.title("LEC Name Distribution (Donut Style)")
+plt.title("LEC Name Distribution (Pie Chart)")
 plt.tight_layout()
 plt.show()
