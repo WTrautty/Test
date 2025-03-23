@@ -1,6 +1,18 @@
-import matplotlib.pyplot as plt
+df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
-# Assuming chart_data is already built as before
+# Get the LEC Name column (column L is index 11)
+lec_names = df.iloc[:, 11]
+
+# Count occurrences of each unique LEC Name
+lec_counts = lec_names.value_counts()
+
+# Separate frequent and infrequent values
+frequent = lec_counts[lec_counts > 5]
+misc_count = lec_counts[lec_counts <= 5].sum()
+
+# Combine into one Series for plotting
+chart_data = frequent.copy()
+chart_data["Misc."] = misc_count
 
 plt.figure(figsize=(10, 8))
 
