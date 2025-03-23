@@ -1,195 +1,98 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from matplotlib.cm import get_cmap
 
-# Load the Excel file
-file_path = r"C:\Users\Checker.xlsx"  # <-- change this to your file
-df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
-
-# === Extract Column L (LEC Name) ===
-lec_names = df.iloc[:, 0]
-lec_counts = lec_names.value_counts()
-
-# === Group infrequent entries into "Misc." ===
-frequent = lec_counts[lec_counts > 5]
-misc_count = lec_counts[lec_counts <= 5].sum()
-chart_data = frequent.copy()
-chart_data["Misc."] = misc_count
-
-# === Move "Misc." to the end ===
-if "Misc." in chart_data:
-    misc_value = chart_data.pop("Misc.")
-    chart_data["Misc."] = misc_value
-
-# === Calculate percentages ===
-total = chart_data.sum()
-percentages = (chart_data / total) * 100
-
-# === Determine label logic ===
-labels = []
-legend_labels = []
-for label, pct in percentages.items():
-    if pct >= 3:
-        labels.append(f"{label} ({pct:.1f}%)")  # Label shown on slice
-    else:
-        labels.append("")  # No label on slice
-        legend_labels.append(f"{label} ({pct:.1f}%)")  # Goes in legend
-
-# === Assign Custom Colors (one for each slice) ===
-base_colors = [
-    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
-    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
-    '#9C755F', '#BAB0AC', '#888888'
-]
-# Extend if needed
-color_list = (base_colors * ((len(chart_data) // len(base_colors)) + 1))[:len(chart_data)]
-
-# === Plot Pie Chart ===
-fig, ax = plt.subplots(figsize=(10, 8))
-wedges, texts = ax.pie(
-    chart_data,
-    labels=labels,
-    startangle=140,
-    colors=color_list,
-    wedgeprops=dict(edgecolor='white'),
-    labeldistance=1.2
-)
-
-# === Ensure Labels Are Centered Over Slices ===
-for text in texts:
-    text.set_horizontalalignment('center')
-    text.set_fontsize(9)
-
-# === Add Legend for <3% Labels ===
-if legend_labels:
-    ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
-
-# === Final Touches ===
-plt.title("LEC Failures")
-plt.tight_layout()
-plt.show()
-
-
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-
-# Load the Excel file
-file_path = r"C:\Users\Checker.xlsx"  # <-- change this to your file
-df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
-
-# === Extract Column L (LEC Name) ===
-lec_names = df.iloc[:, 1]
-lec_counts = lec_names.value_counts()
-
-# === Group infrequent entries into "Misc." ===
-frequent = lec_counts[lec_counts > 15]
-misc_count = lec_counts[lec_counts <= 15].sum()
-chart_data = frequent.copy()
-chart_data["Misc."] = misc_count
-
-# === Move "Misc." to the end ===
-if "Misc." in chart_data:
-    misc_value = chart_data.pop("Misc.")
-    chart_data["Misc."] = misc_value
-
-# === Calculate percentages ===
-total = chart_data.sum()
-percentages = (chart_data / total) * 100
-
-# === Determine label logic ===
-labels = []
-legend_labels = []
-for label, pct in percentages.items():
-    if pct >= 3:
-        labels.append(f"{label} ({pct:.1f}%)")  # Label shown on slice
-    else:
-        labels.append("")  # No label on slice
-        legend_labels.append(f"{label} ({pct:.1f}%)")  # Goes in legend
-
-# === Assign Custom Colors (one for each slice) ===
-base_colors = [
-    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
-    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
-    '#9C755F', '#BAB0AC', '#888888'
-]
-# Extend if needed
-color_list = (base_colors * ((len(chart_data) // len(base_colors)) + 1))[:len(chart_data)]
-
-# === Plot Pie Chart ===
-fig, ax = plt.subplots(figsize=(10, 8))
-wedges, texts = ax.pie(
-    chart_data,
-    labels=labels,
-    startangle=140,
-    colors=color_list,
-    wedgeprops=dict(edgecolor='white'),
-    labeldistance=1.2
-)
-
-# === Ensure Labels Are Centered Over Slices ===
-for text in texts:
-    text.set_horizontalalignment('center')
-    text.set_fontsize(9)
-
-# === Add Legend for <3% Labels ===
-if legend_labels:
-    ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
-
-# === Final Touches ===
-plt.title("LEC Usage Rate")
-plt.tight_layout()
-plt.show()
-
-
-import pandas as pd
-import matplotlib.pyplot as plt
-
-# Load Excel
+# === Config ===
 file_path = r"C:\Users\Checker.xlsx"
-df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
+sheet_name = 'Sheet2'
+misc_threshold_failures = 5
+misc_threshold_rate = 15
+label_threshold_pct = 3
 
-# === Corrected Column Indexes ===
-failures_raw = df.iloc[:, 0].dropna().astype(str).str.strip()  # Now using index 1
-usages_raw = df.iloc[:, 1].dropna().astype(str).str.strip()
+# === Step 1: Load and Clean Data ===
+df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
+failures_raw = df.iloc[:, 0].dropna().astype(str).str.strip()  # Failures
+usages_raw = df.iloc[:, 1].dropna().astype(str).str.strip()    # Usages
 
-print(f"Total failure entries: {len(failures_raw)}")
-print(f"Total usage entries: {len(usages_raw)}")
-
-# === Count LEC occurrences ===
+# === Step 2: Count Occurrences ===
 failures = failures_raw.value_counts()
 usages = usages_raw.value_counts()
 
-print("\nTop 5 failures:\n", failures.head())
-print("\nTop 5 usages:\n", usages.head())
+# === Step 3: Generate Unified Color Map ===
+# Get all unique LECs from both failures and usages
+all_lecs = sorted(set(failures.index).union(set(usages.index)))
+lec_color_map = {}
+cmap = get_cmap('tab20', len(all_lecs) + 1)
 
-# === Group infrequent LECs (failures <= 15) into "Misc." ===
-frequent_failures = failures[failures > 15]
-misc_failures_count = failures[failures <= 15].sum()
+for i, lec in enumerate(all_lecs):
+    lec_color_map[lec] = cmap(i)
 
-print(f"\nFrequent failures: {len(frequent_failures)}")
-print(f"Misc failure count: {misc_failures_count}")
+# Assign gray to 'Misc.'
+lec_color_map["Misc."] = '#888888'
 
-# Combine with "Misc."
+# === Helper: Plot Pie Chart ===
+def plot_pie_chart(data, title, misc_threshold):
+    frequent = data[data > misc_threshold]
+    misc_count = data[data <= misc_threshold].sum()
+    chart_data = frequent.copy()
+    chart_data["Misc."] = misc_count
+    total = chart_data.sum()
+    percentages = (chart_data / total) * 100
+
+    labels = []
+    legend_labels = []
+    for label, pct in percentages.items():
+        if pct >= label_threshold_pct:
+            labels.append(f"{label}\n{chart_data[label]} ({round(pct)}%)")
+        else:
+            labels.append("")
+            legend_labels.append(f"{label} - {chart_data[label]} ({round(pct)}%)")
+
+    colors = [lec_color_map.get(label, '#CCCCCC') for label in chart_data.index]
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    wedges, texts = ax.pie(
+        chart_data,
+        labels=labels,
+        startangle=140,
+        colors=colors,
+        wedgeprops=dict(edgecolor='white'),
+        labeldistance=1.2
+    )
+    for text in texts:
+        text.set_horizontalalignment('center')
+        text.set_fontsize(9)
+
+    if legend_labels:
+        ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
+
+    plt.title(title)
+    plt.tight_layout()
+    plt.show()
+
+# === Step 4: Generate Pie Charts ===
+plot_pie_chart(failures, "LEC Failures", misc_threshold_failures)
+plot_pie_chart(usages, "LEC Usage", misc_threshold_failures)
+
+# === Step 5: Generate Failure Rate Bar Chart ===
+# Use separate misc threshold (15)
+frequent_failures = failures[failures > misc_threshold_rate]
+misc_failures_count = failures[failures <= misc_threshold_rate].sum()
+
 failure_counts = frequent_failures.copy()
 failure_counts["Misc."] = misc_failures_count
 
-# Adjust usage counts to align with Misc. grouping
-frequent_lecs = set(frequent_failures.index)
+# Group usage data accordingly
 usage_counts = pd.Series(dtype=int)
+frequent_lecs = set(frequent_failures.index)
 
-for lec in usages.index:
-    count = usages[lec]
+for lec, count in usages.items():
     if lec in frequent_lecs:
         usage_counts[lec] = count
     else:
         usage_counts["Misc."] = usage_counts.get("Misc.", 0) + count
 
-print("\nFailure counts:\n", failure_counts.head())
-print("\nUsage counts:\n", usage_counts.head())
-
-# === Calculate failure rates ===
+# Calculate failure rates
 failure_rate = {}
 for lec in failure_counts.index:
     fail = failure_counts[lec]
@@ -199,15 +102,13 @@ for lec in failure_counts.index:
     else:
         failure_rate[lec] = 0
 
-# Convert to DataFrame and sort
 rate_df = pd.Series(failure_rate).sort_values(ascending=False)
 
-print("\nCalculated failure rates:\n", rate_df)
-
-# === Plot horizontal bar chart ===
+# Plot bar chart
 if not rate_df.empty:
+    colors = [lec_color_map.get(label, '#CCCCCC') for label in rate_df.index]
     plt.figure(figsize=(12, 8))
-    rate_df.plot(kind='barh', color='#E15759')
+    rate_df.plot(kind='barh', color=colors)
     plt.xlabel("Failure Rate (%)")
     plt.title("LEC Failure Rate (Grouped with 'Misc.')")
     plt.gca().invert_yaxis()
@@ -215,4 +116,4 @@ if not rate_df.empty:
     plt.tight_layout()
     plt.show()
 else:
-    print("\n⚠️ No failure rates to plot. Check data alignment or thresholds.")
+    print("\n⚠️ No failure rates to plot.")
