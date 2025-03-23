@@ -5,27 +5,32 @@ import matplotlib.pyplot as plt
 file_path = r"C:\Users\AD39644\On\lsx"
 df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
-# === Extract and clean both columns ===
-failures_raw = df.iloc[:, 12].dropna().astype(str).str.strip()
+# === Corrected Column Indexes ===
+failures_raw = df.iloc[:, 1].dropna().astype(str).str.strip()  # Now using index 1
 usages_raw = df.iloc[:, 2].dropna().astype(str).str.strip()
+
+print(f"Total failure entries: {len(failures_raw)}")
+print(f"Total usage entries: {len(usages_raw)}")
 
 # === Count LEC occurrences ===
 failures = failures_raw.value_counts()
 usages = usages_raw.value_counts()
 
+print("\nTop 5 failures:\n", failures.head())
+print("\nTop 5 usages:\n", usages.head())
+
 # === Group infrequent LECs (failures <= 15) into "Misc." ===
 frequent_failures = failures[failures > 15]
 misc_failures_count = failures[failures <= 15].sum()
+
+print(f"\nFrequent failures: {len(frequent_failures)}")
+print(f"Misc failure count: {misc_failures_count}")
 
 # Combine with "Misc."
 failure_counts = frequent_failures.copy()
 failure_counts["Misc."] = misc_failures_count
 
-# Adjust usage counts to align with "Misc." grouping
-# Build a full LEC list for failure/usage combo
-all_lecs = set(failure_counts.index).union(set(usages.index))
-
-# Group usage data to match Misc. grouping
+# Adjust usage counts to align with Misc. grouping
 frequent_lecs = set(frequent_failures.index)
 usage_counts = pd.Series(dtype=int)
 
@@ -35,6 +40,9 @@ for lec in usages.index:
         usage_counts[lec] = count
     else:
         usage_counts["Misc."] = usage_counts.get("Misc.", 0) + count
+
+print("\nFailure counts:\n", failure_counts.head())
+print("\nUsage counts:\n", usage_counts.head())
 
 # === Calculate failure rates ===
 failure_rate = {}
@@ -46,15 +54,20 @@ for lec in failure_counts.index:
     else:
         failure_rate[lec] = 0
 
-# === Convert to DataFrame and sort ===
+# Convert to DataFrame and sort
 rate_df = pd.Series(failure_rate).sort_values(ascending=False)
 
+print("\nCalculated failure rates:\n", rate_df)
+
 # === Plot horizontal bar chart ===
-plt.figure(figsize=(12, 8))
-rate_df.plot(kind='barh', color='#E15759')
-plt.xlabel("Failure Rate (%)")
-plt.title("LEC Failure Rate (Grouped with 'Misc.')")
-plt.gca().invert_yaxis()
-plt.grid(axis='x', linestyle='--', alpha=0.5)
-plt.tight_layout()
-plt.show()
+if not rate_df.empty:
+    plt.figure(figsize=(12, 8))
+    rate_df.plot(kind='barh', color='#E15759')
+    plt.xlabel("Failure Rate (%)")
+    plt.title("LEC Failure Rate (Grouped with 'Misc.')")
+    plt.gca().invert_yaxis()
+    plt.grid(axis='x', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+else:
+    print("\n⚠️ No failure rates to plot. Check data alignment or thresholds.")
