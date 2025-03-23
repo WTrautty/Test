@@ -1,5 +1,7 @@
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Lec Check Graph.py", line 25, in <module>
-    wedges, texts, autotexts = ax.pie(
-    ^^^^^^^^^^^^^^^^^^^^^^^^
-ValueError: not enough values to unpack (expected 3, got 2)
+wedges, texts = ax.pie(
+    chart_data,
+    labels=None,
+    autopct=None,  # This is why there are only 2 values returned
+    startangle=140,
+    wedgeprops=dict(width=0.4, edgecolor='white')  # donut effect
+)
