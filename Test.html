@@ -1,4 +1,62 @@
-# Add white circle to create donut hole
-centre_circle = plt.Circle((0,0),0.50,fc='white')
-fig = plt.gcf()
-fig.gca().add_artist(centre_circle)
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Load your data (replace path)
+file_path = "C:/Users/AD39644/Desktop/EIS/OneDrive_2024-07-25/Auditing Script/your_file.xlsx"
+df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
+
+# Get LEC Name column (column L)
+lec_names = df.iloc[:, 11]
+lec_counts = lec_names.value_counts()
+
+# Group low-frequency LEC Names into "Misc."
+frequent = lec_counts[lec_counts > 5]
+misc_count = lec_counts[lec_counts <= 5].sum()
+chart_data = frequent.copy()
+chart_data["Misc."] = misc_count
+
+# Normalize values for percentage
+total = chart_data.sum()
+percentages = chart_data / total * 100
+
+# Create the pie chart
+fig, ax = plt.subplots(figsize=(10, 10))
+wedges, texts, autotexts = ax.pie(
+    chart_data,
+    labels=None,
+    autopct=None,
+    startangle=140,
+    wedgeprops=dict(width=0.4, edgecolor='white')  # donut effect
+)
+
+# Annotate manually for better label placement
+for i, (pct, wedge) in enumerate(zip(percentages, wedges)):
+    angle = (wedge.theta2 + wedge.theta1) / 2.
+    x = np.cos(np.deg2rad(angle))
+    y = np.sin(np.deg2rad(angle))
+
+    # Offset position for small slices
+    if pct < 3:
+        label_x = 1.2 * x
+        label_y = 1.2 * y
+    else:
+        label_x = 0.9 * x
+        label_y = 0.9 * y
+
+    ha = 'left' if label_x > 0 else 'right'
+    va = 'center'
+
+    # Draw label with line
+    ax.annotate(
+        f"{chart_data.index[i]} ({pct:.1f}%)",
+        xy=(x * 0.7, y * 0.7),             # point inside wedge
+        xytext=(label_x, label_y),         # label position
+        arrowprops=dict(arrowstyle="-", connectionstyle="angle3", color='gray'),
+        ha=ha, va=va, fontsize=9
+    )
+
+# Add title
+plt.title("LEC Name Distribution (with Leader Lines & Smart Spacing)")
+plt.tight_layout()
+plt.show()
