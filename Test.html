@@ -7,36 +7,15 @@ import pandas as pd
 folder_path = r'C:\U2025'
 txt_folder_path = r'C:\U2025'
 
-# Dictionary to hold issues grouped by type.
-issues = {}
+# Dictionary to hold issues grouped by file.
+# Key: (file_name, file_path), Value: list of issue messages.
+issues_by_file = {}
 
-def add_issue(issue_type, file_name, file_path, message):
-    if issue_type not in issues:
-        issues[issue_type] = []
-    issues[issue_type].append((file_name, file_path, message))
-
-def get_issue_type(msg):
-    msg_lower = msg.lower()
-    if "read error:" in msg_lower:
-        return "Read Error"
-    elif "icmp" in msg_lower:
-        return "ICMP Issue"
-    elif "fails:" in msg_lower or "too short" in msg_lower:
-        return "Site ID Issue"
-    elif "ipv4 with subnet" in msg_lower:
-        return "IP Address Issue"
-    elif "vpn_lan_subif" in msg_lower:
-        return "VPN LAN Subif Issue"
-    elif "mismatch:" in msg_lower:
-        return "Region Mismatch"
-    elif "missing 'wr mem'" in msg_lower:
-        return "TXT File Issue: Missing 'wr mem'"
-    elif "missing 'commit'" in msg_lower:
-        return "TXT File Issue: Missing 'commit'"
-    elif "'%' found" in msg_lower:
-        return "Special Character Issue"
-    else:
-        return "Other Issues"
+def add_issue(file_name, file_path, message):
+    key = (file_name, file_path)
+    if key not in issues_by_file:
+        issues_by_file[key] = []
+    issues_by_file[key].append(message)
 
 # Recursively get a list of all CSV files.
 csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
@@ -74,7 +53,7 @@ for file_path in target_csv_files:
         except UnicodeDecodeError:
             df = pd.read_csv(file_path, encoding='latin1', header=None)
     except Exception as e:
-        add_issue("Read Error", file_name, file_path, f"Error: {e}")
+        add_issue(file_name, file_path, f"Read Error: {e}")
         continue
 
     has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
@@ -89,7 +68,7 @@ for file_path in target_csv_files:
         for col_idx, cell in enumerate(row):
             cell_value = str(cell).strip()
 
-            # Check for site-id and process the adjacent value(s) for a 9-digit ID.
+            # Check for site-id and process adjacent values for a 9-digit ID.
             if cell_value.endswith("site-id"):
                 right_val = str(df.iloc[row_idx, col_idx + 1]).strip() if col_idx + 1 < len(row) else ""
                 below_val = str(df.iloc[row_idx + 1, col_idx]).strip() if row_idx + 1 < len(df) else ""
@@ -101,11 +80,9 @@ for file_path in target_csv_files:
                             id_region_set.add(id_region)
                         if has_RoIP and len(val) >= 4:
                             if val[3] != "1":
-                                message = f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
-                                add_issue(get_issue_type(message), file_name, file_path, message)
+                                add_issue(file_name, file_path, f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1').")
                         elif has_RoIP and len(val) < 4:
-                            message = f"Candidate value '{val}' is too short."
-                            add_issue(get_issue_type(message), file_name, file_path, message)
+                            add_issue(file_name, file_path, f"Candidate value '{val}' is too short.")
                         if len(val) >= 2 and val[1] == '1':
                             icmp_check_required = True
 
@@ -114,8 +91,8 @@ for file_path in target_csv_files:
                 next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
                 next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
                 if next_val_right != "TRUE" and next_val_below != "TRUE":
-                    message = f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
-                    add_issue(get_issue_type(message), file_name, file_path, message)
+                    add_issue(file_name, file_path,
+                              f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'.")
 
             # vpn_lan_subif check for IP address with subnet.
             if new_custom_pattern.match(cell_value):
@@ -123,8 +100,8 @@ for file_path in target_csv_files:
                 next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
                 ipv4_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,3}$')
                 if not ipv4_pattern.match(next_val_right) and not ipv4_pattern.match(next_val_below):
-                    message = f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'IPv4 with Subnet'."
-                    add_issue(get_issue_type(message), file_name, file_path, message)
+                    add_issue(file_name, file_path,
+                              f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'IPv4 with Subnet'.")
 
             # /64 IP region extraction.
             if cell_value.endswith("/64"):
@@ -137,8 +114,7 @@ for file_path in target_csv_files:
 
             # Check for unexpected '%' characters.
             if '%' in cell_value and cell_value not in ["%chassis_id", "%chassis_number"]:
-                message = f"'%' Found in {cell_value}"
-                add_issue(get_issue_type(message), file_name, file_path, message)
+                add_issue(file_name, file_path, f"'%' found in {cell_value}")
 
     # If required, perform an ICMP check.
     if icmp_check_required:
@@ -149,15 +125,15 @@ for file_path in target_csv_files:
                     right = str(row[j + 1]).strip().upper() if j + 1 < len(row) else ""
                     below = str(df.iloc[i + 1, j]).strip().upper() if i + 1 < len(df) else ""
                     if right != "FALSE" and below != "FALSE":
-                        message = f"ICMP found with site ID {found_ids} at ({i}, {j}) with right='{right}' and below='{below}', neither is FALSE."
-                        add_issue(get_issue_type(message), file_name, file_path, message)
+                        add_issue(file_name, file_path,
+                                  f"ICMP found with site ID {found_ids} at ({i}, {j}) with right='{right}' and below='{below}', neither is FALSE.")
 
     # Region mismatch check.
     for ip_val, ip_region in ip_regions:
         for id_region in id_region_set:
             if ip_region != id_region:
-                message = f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region '{found_ids}':'{id_region}'."
-                add_issue(get_issue_type(message), file_name, file_path, message)
+                add_issue(file_name, file_path,
+                          f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region {list(found_ids)}:'{id_region}'.")
 
 # Process TXT files.
 txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
@@ -168,26 +144,23 @@ for txt_path in txt_files:
         with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read().lower()
             if '9200' in txt_file_name and 'wr mem' not in content:
-                message = "Missing 'wr mem' in 9200 TXT file."
-                add_issue(get_issue_type(message), txt_file_name, txt_path, message)
+                add_issue(txt_file_name, txt_path, "Missing 'wr mem' in 9200 TXT file.")
             if 'commit' not in content:
-                message = "Missing 'commit' in TXT file."
-                add_issue(get_issue_type(message), txt_file_name, txt_path, message)
+                add_issue(txt_file_name, txt_path, "Missing 'commit' in TXT file.")
     except Exception as e:
-        add_issue("Read Error", txt_file_name, txt_path, f"Error: {e}")
+        add_issue(txt_file_name, txt_path, f"Read Error: {e}")
 
 # Write the organized issues to an output text file.
 output_file = r'C:\Users\AD39644\Desktop\output.txt'
 separator = "-" * 64
 
 with open(output_file, "w") as f:
-    for issue_type, entries in issues.items():
-        f.write(f"Issue {issue_type}\n")
-        f.write(separator + "\n")
-        for file_name, file_path, message in entries:
-            f.write(f"File: {file_name}\n")
-            f.write(f"Folder Found: {file_path}\n")
-            f.write(f"Issue Found: {message}\n\n")
+    for (file_name, file_path), messages in issues_by_file.items():
+        f.write(f"File: {file_name}\n")
+        f.write(f"Folder Found: {file_path}\n")
+        f.write("Issues Found:\n")
+        for msg in messages:
+            f.write(f"  - {msg}\n")
         f.write(separator + "\n\n")
 
 print(f"Script completed. Organized issues written to '{output_file}'.")
