@@ -1,247 +1,176 @@
-#!/usr/bin/env python3
-"""
-LEC Analysis Dashboard
-----------------------
-An enhanced visualization tool for analyzing LEC failures, usage, and failure rates.
-"""
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.ticker as mtick
-from matplotlib.gridspec import GridSpec
-import colorsys
-import seaborn as sns
-from pathlib import Path
 import os
-from datetime import datetime
+import glob
+import re
+import pandas as pd
 
-# Set Seaborn style for better aesthetics
-sns.set(style="whitegrid")
-plt.rcParams['font.family'] = 'sans-serif'
-plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
-plt.rcParams['axes.facecolor'] = '#f8f9fa'
-plt.rcParams['figure.facecolor'] = 'white'
+# Set the folder containing your CSV files.
+folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\CSVs\2025'
+txt_folder_path = r'C:\Users\AD39644\OneDrive - Lumen\Documents - USDA Site and SDWAN Device Details\Basic Configs\2025'
 
-# === CONFIGURATION ===
-file_path = "/Users/wyatt/Downloads/Checker_Generated.xlsx"
-sheet_name = "Sheet2"
+# List to hold details of CSV files that fail the condition.
+failed_files = []
 
-misc_threshold_failures = 5
-misc_threshold_usage = 20
-misc_threshold_rate = 15
-label_threshold_pct = 3
-output_dir = "lec_analysis_output"
+# Recursively get a list of all CSV files.
+csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
+print(f"Found {len(csv_files)} CSV files. Beginning checks...")
 
-# Create output directory
-Path(output_dir).mkdir(exist_ok=True)
+# Filter to only files with "csv" in the filename (case-insensitive).
+target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()]
 
-# === FUNCTION: Generate Vibrant Colors ===
-def generate_vibrant_colors(n):
-    """Generate vibrant, easy-to-read colors."""
-    vibrant_colors = []
-    
-    # Base vibrant palette - more saturated, easy to distinguish colors
-    base_colors = [
-        '#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F',
-        '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC',
-        '#D37295', '#6B4C9A', '#0173B2', '#DE8F05', '#029E73',
-        '#CC78BC', '#CA9161', '#FBAFE4', '#949494', '#56B4E9'
-    ]
-    
-    # If we need more colors than in our base palette, generate them
-    if n <= len(base_colors):
-        return base_colors[:n]
-    
-    # Generate additional colors if needed
-    for i in range(n):
-        h = i / n
-        s = 0.65 + (np.random.random() * 0.2)  # Higher saturation for vibrant colors
-        v = 0.85 + (np.random.random() * 0.1)  # High value for brightness
-        r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        vibrant_colors.append((r, g, b))
-    
-    return vibrant_colors
+# Regex pattern to match exactly 9 digits.
+id_pattern = re.compile(r'^\d{9}$')
 
-# === LOAD & CLEAN DATA ===
-print(f"Loading data from {file_path}...")
-df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
-failures_raw = df.iloc[:, 0].dropna().astype(str).str.strip()
-usages_raw = df.iloc[:, 1].dropna().astype(str).str.strip()
+# Regex to check for specific value start and end pattern.
+custom_pattern = re.compile(r'^.*vpn_lan_subif.*name/interface/shutdown$')
+new_custom_pattern = re.compile(r'^.*vpn_lan_subif.*ip/address$')
 
-failures = failures_raw.value_counts()
-usages = usages_raw.value_counts()
+# Mapping for /64 region extraction.
+ip_region_map = {
+    '8': 'East',
+    '9': 'Central',
+    'A': 'Mountain', 'a': 'Mountain',
+    'B': 'West', 'b': 'West'
+}
+id_region_map = {
+    '1': 'East',
+    '2': 'Central',
+    '3': 'Mountain',
+    '4': 'West'
+}
 
-# === COLOR MAP ===
-all_lecs = sorted(set(failures.index).union(set(usages.index)))
-vibrant_palette = generate_vibrant_colors(len(all_lecs))
-lec_color_map = {}
+for file_path in target_csv_files:
+    try:
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8', header=None)
+        except UnicodeDecodeError:
+            df = pd.read_csv(file_path, encoding='latin1', header=None)
+    except Exception as e:
+        failed_files.append(f"Read Error: {os.path.basename(file_path)}\n{file_path}\nError: {e}\n")
+        continue
 
-# Convert hex colors to RGB if needed
-for i, lec in enumerate(all_lecs):
-    color = vibrant_palette[i]
-    if isinstance(color, str) and color.startswith('#'):
-        # Convert hex to RGB tuple
-        lec_color_map[lec] = color
-    else:
-        lec_color_map[lec] = color
+    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
+    file_flagged = False
+    candidate_details = []
 
-lec_color_map["Misc."] = '#808080'  # Medium gray for misc
+    found_ids = []
+    id_region_set = set()
+    ip_regions = []
+    icmp_check_required = False
 
-# === FUNCTION: Plot Pie Chart in Subplot ===
-def plot_pie_in_subplot(ax, data, title, misc_threshold):
-    """Helper method to plot pie chart in a subplot."""
-    frequent = data[data > misc_threshold]
-    misc_count = data[data <= misc_threshold].sum()
-    chart_data = frequent.copy()
-    chart_data["Misc."] = misc_count
-    total = chart_data.sum()
-    percentages = (chart_data / total) * 100
-    
-    # Sort by percentage (descending)
-    chart_data = chart_data.sort_values(ascending=False)
-    percentages = percentages.sort_values(ascending=False)
-    
-    labels = []
-    for label, pct in percentages.items():
-        count = chart_data[label]
-        if pct >= label_threshold_pct:
-            labels.append(f"{label}\n{count} ({round(pct)}%)")
-        else:
-            labels.append("")
-    
-    colors = [lec_color_map.get(label, '#808080') for label in chart_data.index]
-    
-    wedges, texts = ax.pie(
-        chart_data,
-        labels=labels,
-        startangle=140,
-        colors=colors,
-        wedgeprops=dict(edgecolor='white', linewidth=1),
-        labeldistance=1.05
-    )
-    
-    # Enhance text appearance
-    for text in texts:
-        text.set_horizontalalignment('center')
-        text.set_fontsize(9)
-        text.set_fontweight('bold')
-        text.set_color('black')  # Ensure text is black for readability
-    
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+    for row_idx, row in df.iterrows():
+        for col_idx, cell in enumerate(row):
+            cell_value = str(cell).strip()
 
-# === FUNCTION: Plot Failure Rate in Subplot ===
-def plot_rate_in_subplot(ax, data, misc_threshold):
-    """Helper method to plot failure rate in a subplot."""
-    # Calculate failure rates
-    frequent_failures = failures[failures > misc_threshold]
-    misc_failures_count = failures[failures <= misc_threshold].sum()
-    failure_counts = frequent_failures.copy()
-    failure_counts["Misc."] = misc_failures_count
-    
-    # Match usage counts to failure LECs
-    usage_counts = pd.Series(dtype=float)
-    frequent_lecs = set(frequent_failures.index)
-    for lec, count in usages.items():
-        if lec in frequent_lecs:
-            usage_counts[lec] = count
-        else:
-            usage_counts["Misc."] = usage_counts.get("Misc.", 0) + count
-    
-    # Calculate failure rates
-    failure_rate = {}
-    for lec in failure_counts.index:
-        fail = failure_counts[lec]
-        use = usage_counts.get(lec, 0)
-        failure_rate[lec] = (fail / use) * 100 if use > 0 else 0
-    
-    rate_df = pd.Series(failure_rate).sort_values(ascending=False)
-    
-    if rate_df.empty:
-        ax.text(0.5, 0.5, "No failure rate data available", ha='center', va='center')
-        return
-    
-    # Sort by failure rate (descending)
-    rate_df = rate_df.sort_values(ascending=False)
-    
-    # Limit to top 10 for readability
-    if len(rate_df) > 10:
-        rate_df = rate_df.head(10)
-    
-    colors = [lec_color_map.get(label, '#808080') for label in rate_df.index]
-    
-    bars = ax.barh(rate_df.index, rate_df.values, color=colors, edgecolor='white', linewidth=0.8)
-    
-    # Add grid lines
-    ax.grid(axis='x', linestyle='--', alpha=0.7)
-    
-    # Format x-axis as percentage
-    ax.xaxis.set_major_formatter(mtick.PercentFormatter())
-    
-    # Add percentage labels
-    for i, bar in enumerate(bars):
-        width = bar.get_width()
-        ax.text(width + 0.5, bar.get_y() + bar.get_height()/2, 
-               f"{width:.1f}%", va='center', fontsize=10, fontweight='bold')
-    
-    # Add styling
-    ax.set_xlabel("Failure Rate (%)", fontsize=12, fontweight='bold')
-    ax.set_ylabel("LEC Category", fontsize=12, fontweight='bold')
-    ax.set_title("Top LEC Failure Rates", fontsize=14, fontweight='bold', pad=20)
-    ax.invert_yaxis()  # Highest at the top
+            # 9-digit ID check.
+            if cell_value.endswith("site-id"):
+                possible_ids = []
+                right_val = str(df.iloc[row_idx, col_idx + 1]).strip() if col_idx + 1 < len(row) else ""
+                below_val = str(df.iloc[row_idx + 1, col_idx]).strip() if row_idx + 1 < len(df) else ""
+                for val in [right_val, below_val]:
+                    if id_pattern.fullmatch(val):
+                        found_ids.append(val)
+                        id_region = id_region_map.get(val[0])
+                        if id_region:
+                            id_region_set.add(id_region)
+                        if has_RoIP and len(val) >= 4:
+                            if val[3] != "1":
+                                candidate_details.append(
+                                    f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
+                                )
+                                file_flagged = True
+                        elif has_RoIP and len(val) < 4:
+                            candidate_details.append(f"Candidate value '{val}' is too short.")
+                            file_flagged = True
+                                        # New logic: mark if 2nd digit is '1'
+                        if len(val) >= 2 and val[1] == '1':
+                            icmp_check_required = True
 
-# === FUNCTION: Create Dashboard ===
-def create_dashboard(filename="lec_dashboard.png"):
-    """Create a comprehensive dashboard combining all visualizations."""
-    # Calculate summary statistics
-    total_failures = failures.sum()
-    total_usages = usages.sum()
-    overall_failure_rate = (total_failures / total_usages) * 100
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Create figure with grid layout
-    fig = plt.figure(figsize=(20, 16))
-    gs = GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 1.2])
-    
-    # Title and summary
-    ax_title = fig.add_subplot(gs[0, :])
-    ax_title.axis('off')
-    title_text = "LEC Analysis Dashboard"
-    summary_text = (
-        f"Total Failures: {total_failures}\n"
-        f"Total Usages: {total_usages}\n"
-        f"Overall Failure Rate: {overall_failure_rate:.2f}%\n"
-        f"Generated: {timestamp}"
-    )
-    ax_title.text(0.5, 0.7, title_text, fontsize=24, fontweight='bold', ha='center')
-    ax_title.text(0.5, 0.3, summary_text, fontsize=14, ha='center')
-    
-    # Pie chart for failures
-    ax_failures = fig.add_subplot(gs[1, 0])
-    plot_pie_in_subplot(ax_failures, failures, "LEC Failures Distribution", 
-                        misc_threshold_failures)
-    
-    # Pie chart for usage
-    ax_usage = fig.add_subplot(gs[1, 1])
-    plot_pie_in_subplot(ax_usage, usages, "LEC Usage Distribution", 
-                       misc_threshold_usage)
-    
-    # Failure rate bar chart
-    ax_rate = fig.add_subplot(gs[2, :])
-    plot_rate_in_subplot(ax_rate, failures, misc_threshold_rate)
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches='tight')
-    print(f"Saved dashboard to {os.path.join(output_dir, filename)}")
-    plt.show()
+            # vpn_lan_subif check (independent)
+            if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
+                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
 
-# === MAIN EXECUTION ===
-if __name__ == "__main__":
-    print("\n=== Starting LEC Analysis ===")
-    
-    # Only create the dashboard
-    create_dashboard()
-    
-    print(f"\n=== Analysis Complete ===")
-    print(f"Dashboard saved to: {os.path.abspath(os.path.join(output_dir, 'lec_dashboard.png'))}")
+                if next_val_right != "TRUE" and next_val_below != "TRUE":
+                    candidate_details.append(
+                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
+                    )
+                    file_flagged = True
+
+            # vpn_lan_subif check (independent)
+            if new_custom_pattern.match(cell_value):
+                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+                ipv4_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,3}$')
+                if not ipv4_pattern.match(next_val_right) and not ipv4_pattern.match(next_val_below):
+                    candidate_details.append(
+                        f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'IPv4 with Subnet'."
+                    )
+                    file_flagged = True
+
+            # /64 IP region match check (independent)
+            if cell_value.endswith("/64"):
+                ip_parts = cell_value.split(":")
+                if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
+                    region_char = ip_parts[1][2]
+                    ip_region = ip_region_map.get(region_char)
+                    if ip_region:
+                        ip_regions.append((cell_value, ip_region))
+
+            if '%' in cell_value and cell_value != "%chassis_id" and cell_value != "%chassis_number":
+                candidate_details.append(f"'%' Found in {cell_value}")
+                file_flagged = True
+
+            
+            # ICMP check if second digit of ID is '1'
+            if icmp_check_required:
+                for row_idx, row in df.iterrows():
+                    for col_idx, cell in enumerate(row):
+                        cell_value = str(cell).strip().lower()
+                        if 'icmp' in cell_value:
+                            right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
+                            below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
+                            if right != "FALSE" and below != "FALSE":
+                                candidate_details.append(
+                                    f"ICMP found with site ID {found_ids} at ({row_idx}, {col_idx}) with right='{right}' and below='{below}', neither is FALSE."
+                                )
+                                file_flagged = True
+
+
+
+
+    # Region mismatch check
+    for ip_val, ip_region in ip_regions:
+        for id_region in id_region_set:
+            if ip_region != id_region:
+                candidate_details.append(
+                    f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region '{found_ids}':'{id_region}'."
+                )
+                file_flagged = True
+
+    if file_flagged:
+        details = "\n".join(candidate_details)
+        failed_files.append(f"{os.path.basename(file_path)}\n{file_path}\n{details}\n")
+
+
+
+txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
+print(f"Checking {len(txt_files)} TXT files...")
+for txt_path in txt_files:
+    try:
+        with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read().lower()
+            if '9200' in os.path.basename(txt_path) and 'wr mem' not in content:
+                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'wr mem' in 9200 TXT file.\n")
+            if 'commit' not in content:
+                failed_files.append(f"{os.path.basename(txt_path)}\n{txt_path}\nMissing 'commit' in TXT file.\n")
+    except Exception as e:
+        failed_files.append(f"Read Error: {os.path.basename(txt_path)}\n{txt_path}\nError: {e}\n")
+
+
+# Write the details of CSV files that failed the condition to an output text file.
+output_file = r'C:\Users\AD39644\Desktop\output.txt'
+with open(output_file, "w") as f:
+    for entry in failed_files:
+        f.write(entry + "\n\n")
+
+print(f"Script completed. {len(failed_files)} file(s) did not meet the conditions. See '{output_file}' for details.")
