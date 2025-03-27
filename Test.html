@@ -1,201 +1,70 @@
-import os
-import glob
-import re
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
-# Set the folders containing your CSV and TXT files.
-folder_path = r'C:\U2025'
-txt_folder_path = r'C:\U2025'
+# Load the Excel file
+file_path = r"C:\Users\AD39644\OneDrive - Lumen\Lec Checker.xlsx"  # <-- change this to your file
+df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
-# Dictionary to hold issues grouped by issue type.
-# Structure: { issue_type: { (file_name, file_path): [message1, message2, ...] } }
-issues_by_type = {}
+# === Extract Column L (LEC Name) ===
+lec_names = df.iloc[:, 0]
+lec_counts = lec_names.value_counts()
 
-def add_issue(issue_type, file_name, file_path, message):
-    if issue_type not in issues_by_type:
-        issues_by_type[issue_type] = {}
-    key = (file_name, file_path)
-    if key not in issues_by_type[issue_type]:
-        issues_by_type[issue_type][key] = []
-    issues_by_type[issue_type][key].append(message)
+# === Group infrequent entries into "Misc." ===
+frequent = lec_counts[lec_counts > 5]
+misc_count = lec_counts[lec_counts <= 5].sum()
+chart_data = frequent.copy()
+chart_data["Misc."] = misc_count
 
-def get_issue_type(msg):
-    msg_lower = msg.lower()
-    if "read error" in msg_lower:
-        return "Read Error"
-    elif "icmp" in msg_lower:
-        return "ICMP Issue"
-    elif "fails:" in msg_lower or "too short" in msg_lower:
-        return "Site ID Issue"
-    elif "ipv4 with subnet" in msg_lower:
-        return "IP Address Issue"
-    elif "vpn_lan_subif" in msg_lower:
-        return "VPN LAN Subif Issue"
-    elif "mismatch:" in msg_lower:
-        return "Region Mismatch"
-    elif "missing 'wr mem'" in msg_lower:
-        return "TXT File Issue: Missing 'wr mem'"
-    elif "missing 'commit'" in msg_lower:
-        return "TXT File Issue: Missing 'commit'"
-    elif "'%' found" in msg_lower:
-        return "Special Character Issue"
+# === Move "Misc." to the end ===
+if "Misc." in chart_data:
+    misc_value = chart_data.pop("Misc.")
+    chart_data["Misc."] = misc_value
+
+# === Calculate percentages ===
+total = chart_data.sum()
+percentages = (chart_data / total) * 100
+
+# === Determine label logic ===
+labels = []
+legend_labels = []
+for label, pct in percentages.items():
+    if pct >= 3:
+        labels.append(f"{label} ({pct:.1f}%)")  # Label shown on slice
     else:
-        return "Other Issues"
+        labels.append("")  # No label on slice
+        legend_labels.append(f"{label} ({pct:.1f}%)")  # Goes in legend
 
-# Recursively get a list of all CSV files.
-csv_files = glob.glob(os.path.join(folder_path, '**', '*.csv'), recursive=True)
-print(f"Found {len(csv_files)} CSV files. Beginning checks...")
+# === Assign Custom Colors (one for each slice) ===
+base_colors = [
+    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
+    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
+    '#9C755F', '#BAB0AC', '#888888'
+]
+# Extend if needed
+color_list = (base_colors * ((len(chart_data) // len(base_colors)) + 1))[:len(chart_data)]
 
-# Filter to only files with "csv" in the filename (case-insensitive).
-target_csv_files = [f for f in csv_files if "csv" in os.path.basename(f).lower()]
+# === Plot Pie Chart ===
+fig, ax = plt.subplots(figsize=(10, 8))
+wedges, texts = ax.pie(
+    chart_data,
+    labels=labels,
+    startangle=140,
+    colors=color_list,
+    wedgeprops=dict(edgecolor='white'),
+    labeldistance=1.2
+)
 
-# Regex pattern to match exactly 9 digits.
-id_pattern = re.compile(r'^\d{9}$')
+# === Ensure Labels Are Centered Over Slices ===
+for text in texts:
+    text.set_horizontalalignment('center')
+    text.set_fontsize(9)
 
-# Regex patterns for vpn_lan_subif checks.
-custom_pattern = re.compile(r'^.*vpn_lan_subif.*name/interface/shutdown$')
-new_custom_pattern = re.compile(r'^.*vpn_lan_subif.*ip/address$')
+# === Add Legend for <3% Labels ===
+if legend_labels:
+    ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
 
-# Mappings for region extraction.
-ip_region_map = {
-    '8': 'East',
-    '9': 'Central',
-    'A': 'Mountain', 'a': 'Mountain',
-    'B': 'West', 'b': 'West'
-}
-id_region_map = {
-    '1': 'East',
-    '2': 'Central',
-    '3': 'Mountain',
-    '4': 'West'
-}
-
-for file_path in target_csv_files:
-    file_name = os.path.basename(file_path)
-    try:
-        try:
-            df = pd.read_csv(file_path, encoding='utf-8', header=None)
-        except UnicodeDecodeError:
-            df = pd.read_csv(file_path, encoding='latin1', header=None)
-    except Exception as e:
-        add_issue("Read Error", file_name, file_path, f"Error: {e}")
-        continue
-
-    has_RoIP = df.astype(str).apply(lambda col: col.str.contains("RoIP", case=False, na=False)).any().any()
-    
-    found_ids = []
-    id_region_set = set()
-    ip_regions = []
-    icmp_check_required = False
-
-    # Iterate through rows and columns of the CSV.
-    for row_idx, row in df.iterrows():
-        for col_idx, cell in enumerate(row):
-            cell_value = str(cell).strip()
-
-            # Check for site-id and process adjacent values for a 9-digit ID.
-            if cell_value.endswith("site-id"):
-                right_val = str(df.iloc[row_idx, col_idx + 1]).strip() if col_idx + 1 < len(row) else ""
-                below_val = str(df.iloc[row_idx + 1, col_idx]).strip() if row_idx + 1 < len(df) else ""
-                for val in [right_val, below_val]:
-                    if id_pattern.fullmatch(val):
-                        found_ids.append(val)
-                        id_region = id_region_map.get(val[0])
-                        if id_region:
-                            id_region_set.add(id_region)
-                        if has_RoIP and len(val) >= 4:
-                            if val[3] != "1":
-                                msg = f"Site ID '{val}' fails: 4th digit is '{val[3]}' (expected '1')."
-                                add_issue(get_issue_type(msg), file_name, file_path, msg)
-                        elif has_RoIP and len(val) < 4:
-                            msg = f"Candidate value '{val}' is too short."
-                            add_issue(get_issue_type(msg), file_name, file_path, msg)
-                        # New logic: mark if 2nd digit is '1'
-                        if len(val) >= 2 and val[1] == '1':
-                            icmp_check_required = True
-
-            # vpn_lan_subif check for shutdown condition.
-            if custom_pattern.match(cell_value) and not cell_value.startswith('/200/'):
-                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
-                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
-                if next_val_right != "TRUE" and next_val_below != "TRUE":
-                    msg = f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'TRUE'."
-                    add_issue(get_issue_type(msg), file_name, file_path, msg)
-
-            # vpn_lan_subif check for IP address with subnet.
-            if new_custom_pattern.match(cell_value):
-                next_val_right = str(row[col_idx + 1]).strip().upper() if col_idx + 1 < len(row) else ""
-                next_val_below = str(df.iloc[row_idx + 1, col_idx]).strip().upper() if row_idx + 1 < len(df) else ""
-                ipv4_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,3}$')
-                if not ipv4_pattern.match(next_val_right) and not ipv4_pattern.match(next_val_below):
-                    msg = f"'{cell_value}' followed by '{next_val_right}' (right) and '{next_val_below}' (below), neither 'IPv4 with Subnet'."
-                    add_issue(get_issue_type(msg), file_name, file_path, msg)
-
-            # /64 IP region extraction.
-            if cell_value.endswith("/64"):
-                ip_parts = cell_value.split(":")
-                if len(ip_parts) > 1 and len(ip_parts[1]) >= 3:
-                    region_char = ip_parts[1][2]
-                    ip_region = ip_region_map.get(region_char)
-                    if ip_region:
-                        ip_regions.append((cell_value, ip_region))
-
-            # Check for unexpected '%' characters.
-            if '%' in cell_value and cell_value not in ["%chassis_id", "%chassis_number"]:
-                msg = f"'%' found in {cell_value}"
-                add_issue(get_issue_type(msg), file_name, file_path, msg)
-
-    # If required, perform an ICMP check.
-    if icmp_check_required:
-        for i, row in df.iterrows():
-            for j, cell in enumerate(row):
-                cell_val = str(cell).strip().lower()
-                if 'icmp' in cell_val:
-                    right = str(row[j + 1]).strip().upper() if j + 1 < len(row) else ""
-                    below = str(df.iloc[i + 1, j]).strip().upper() if i + 1 < len(df) else ""
-                    if right != "FALSE" and below != "FALSE":
-                        msg = f"ICMP found with site ID {found_ids} at ({i}, {j}) with right='{right}' and below='{below}', neither is FALSE."
-                        add_issue(get_issue_type(msg), file_name, file_path, msg)
-
-    # Region mismatch check.
-    for ip_val, ip_region in ip_regions:
-        for id_region in id_region_set:
-            if ip_region != id_region:
-                msg = f"Mismatch: IP '{ip_val}' maps to region '{ip_region}' but does not match ID region {list(found_ids)}:'{id_region}'."
-                add_issue(get_issue_type(msg), file_name, file_path, msg)
-
-# Process TXT files.
-txt_files = glob.glob(os.path.join(txt_folder_path, '**', '*.txt'), recursive=True)
-print(f"Checking {len(txt_files)} TXT files...")
-for txt_path in txt_files:
-    txt_file_name = os.path.basename(txt_path)
-    try:
-        with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read().lower()
-            if '9200' in txt_file_name and 'wr mem' not in content:
-                msg = "Missing 'wr mem' in 9200 TXT file."
-                add_issue(get_issue_type(msg), txt_file_name, txt_path, msg)
-            if 'commit' not in content:
-                msg = "Missing 'commit' in TXT file."
-                add_issue(get_issue_type(msg), txt_file_name, txt_path, msg)
-    except Exception as e:
-        add_issue("Read Error", txt_file_name, txt_path, f"Error: {e}")
-
-# Write the organized issues to an output text file.
-output_file = r'C:\Users\AD39644\Desktop\output.txt'
-separator = "-" * 64
-
-with open(output_file, "w") as f:
-    for issue_type, file_dict in issues_by_type.items():
-        f.write(f"Issue: {issue_type}\n")
-        f.write(separator + "\n")
-        for (file_name, file_path), messages in file_dict.items():
-            f.write(f"File: {file_name}\n")
-            f.write(f"Folder Found: {file_path}\n")
-            f.write("Issues Found:\n")
-            for msg in messages:
-                f.write(f"  - {msg}\n")
-            f.write("\n")
-        f.write(separator + "\n\n")
-
-print(f"Script completed. Organized issues written to '{output_file}'.")
+# === Final Touches ===
+plt.title("LEC Failures")
+plt.tight_layout()
+plt.show()
