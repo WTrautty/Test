@@ -1,70 +1,39 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from scipy.stats import pearsonr
 
 # Load the Excel file
-file_path = r"C:\Users\AD39644\OneDrive - Lumen\Lec Checker.xlsx"  # <-- change this to your file
+file_path = r"C:\U"  # <-- change this to your file
 df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 
 # === Extract Column L (LEC Name) ===
 lec_names = df.iloc[:, 0]
 lec_counts = lec_names.value_counts()
 
-# === Group infrequent entries into "Misc." ===
-frequent = lec_counts[lec_counts > 5]
-misc_count = lec_counts[lec_counts <= 5].sum()
-chart_data = frequent.copy()
-chart_data["Misc."] = misc_count
+# === Extract failure and usage counts ===
+failure_counts = df.iloc[:, 1]  # Assuming failures are in Column 1
+usage_counts = df.iloc[:, 2]    # Assuming total usages are in Column 2
 
-# === Move "Misc." to the end ===
-if "Misc." in chart_data:
-    misc_value = chart_data.pop("Misc.")
-    chart_data["Misc."] = misc_value
+# === Aggregate by LEC Name ===
+lec_data = df.groupby(lec_names).sum()
 
-# === Calculate percentages ===
-total = chart_data.sum()
-percentages = (chart_data / total) * 100
+# === Compute Failure Rates ===
+lec_data["Failure Rate"] = lec_data.iloc[:, 0] / lec_data.iloc[:, 1]  # Failures / Usages
 
-# === Determine label logic ===
-labels = []
-legend_labels = []
-for label, pct in percentages.items():
-    if pct >= 3:
-        labels.append(f"{label} ({pct:.1f}%)")  # Label shown on slice
-    else:
-        labels.append("")  # No label on slice
-        legend_labels.append(f"{label} ({pct:.1f}%)")  # Goes in legend
+# === Compute Correlation ===
+corr, p_value = pearsonr(lec_data.iloc[:, 1], lec_data["Failure Rate"])  # Usage count vs. Failure rate
 
-# === Assign Custom Colors (one for each slice) ===
-base_colors = [
-    '#4E79A7', '#F28E2B', '#E15759', '#76B7B2',
-    '#59A14F', '#EDC948', '#B07AA1', '#FF9DA7',
-    '#9C755F', '#BAB0AC', '#888888'
-]
-# Extend if needed
-color_list = (base_colors * ((len(chart_data) // len(base_colors)) + 1))[:len(chart_data)]
+print(f"Pearson correlation coefficient: {corr:.4f}")
+print(f"P-value: {p_value:.4f}")
 
-# === Plot Pie Chart ===
-fig, ax = plt.subplots(figsize=(10, 8))
-wedges, texts = ax.pie(
-    chart_data,
-    labels=labels,
-    startangle=140,
-    colors=color_list,
-    wedgeprops=dict(edgecolor='white'),
-    labeldistance=1.2
-)
-
-# === Ensure Labels Are Centered Over Slices ===
-for text in texts:
-    text.set_horizontalalignment('center')
-    text.set_fontsize(9)
-
-# === Add Legend for <3% Labels ===
-if legend_labels:
-    ax.legend(legend_labels, title="Other (<3%)", loc="center left", bbox_to_anchor=(1.15, 0.5))
-
-# === Final Touches ===
-plt.title("LEC Failures")
-plt.tight_layout()
+# === Visualization ===
+plt.figure(figsize=(10, 5))
+plt.scatter(lec_data.iloc[:, 1], lec_data["Failure Rate"], c="blue", alpha=0.5)
+plt.xlabel("LEC Selection Count (Usage)")
+plt.ylabel("Failure Rate")
+plt.title("Correlation between LEC Selection and Failure Rate")
+plt.grid(True)
 plt.show()
+
+    
