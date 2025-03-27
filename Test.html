@@ -1,37 +1,37 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-from scipy.stats import pearsonr
-
-# Load the Excel file
-file_path = r"C:\U"  # <-- change this to your file
-df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
-
-# === Extract LEC lists ===
-failures = df.iloc[:, 0]  # Index 0: LECs that failed
-usages = df.iloc[:, 2]    # Index 2: All LEC selections
-
-# === Count occurrences ===
-failure_counts = failures.value_counts()
-usage_counts = usages.value_counts()
-
-# === Align data & calculate failure rates ===
-lec_data = pd.DataFrame({'Usages': usage_counts, 'Failures': failure_counts}).fillna(0)
-lec_data['Failure Rate'] = lec_data['Failures'] / lec_data['Usages']
-
-# === Compute Pearson Correlation ===
-corr, _ = pearsonr(lec_data['Usages'], lec_data['Failure Rate'])
-
-# === Visualization ===
-fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-
-# Pie Chart: LEC Selection Distribution
-lec_data['Usages'].plot(kind='pie', ax=ax[0], autopct='%1.1f%%', title="LEC Selection Distribution")
-
-# Scatter Plot: Failure Rate vs. Usage
-ax[1].scatter(lec_data['Usages'], lec_data['Failure Rate'], alpha=0.7)
-ax[1].set_title(f"Failure Rate vs. LEC Usage\n(Pearson r={corr:.2f})")
-ax[1].set_xlabel("Number of Usages")
-ax[1].set_ylabel("Failure Rate")
-
-plt.tight_layout()
-plt.show()
+c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Lec Check Graph.py:22: ConstantInputWarning: An input array is constant; the correlation coefficient is not defined.
+  corr, _ = pearsonr(lec_data['Usages'], lec_data['Failure Rate'])
+C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\scipy\stats\_stats_py.py:4624: RuntimeWarning: invalid value encountered in subtract
+  ym = y - ymean
+C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\axes\_axes.py:3365: RuntimeWarning: invalid value encountered in divide
+  x = x / sx
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Lec Check Graph.py", line 28, in <module>
+    lec_data['Usages'].plot(kind='pie', ax=ax[0], autopct='%1.1f%%', title="LEC Selection Distribution")
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\plotting\_core.py", line 1030, in __call__
+    return plot_backend.plot(data, kind=kind, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\plotting\_matplotlib\__init__.py", line 71, in plot
+    plot_obj.generate()
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\plotting\_matplotlib\core.py", line 501, in generate
+    self._make_plot(fig)
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\plotting\_matplotlib\core.py", line 2107, in _make_plot
+    results = ax.pie(y, labels=blabels, **kwds)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\_api\deprecation.py", line 453, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\__init__.py", line 1521, in inner
+    return func(
+           ^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\axes\_axes.py", line 3409, in pie
+    w = mpatches.Wedge((x, y), radius, 360. * min(theta1, theta2),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\patches.py", line 1252, in __init__
+    self._recompute_path()
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\patches.py", line 1264, in _recompute_path
+    arc = Path.arc(theta1, theta2)
+          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\matplotlib\path.py", line 961, in arc
+    n = int(2 ** np.ceil((eta2 - eta1) / halfpi))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: cannot convert float NaN to integer
