@@ -11,29 +11,53 @@ df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
 lec_names = df.iloc[:, 0]
 lec_counts = lec_names.value_counts()
 
-# === Extract failure and usage counts ===
-failure_counts = df.iloc[:, 1]  # Assuming failures are in Column 1
-usage_counts = df.iloc[:, 2]    # Assuming total usages are in Column 2
+# === Group infrequent entries into "Misc." ===
+frequent = lec_counts[lec_counts > 5]
+misc_count = lec_counts[lec_counts <= 5].sum()
+chart_data = frequent.copy()
+chart_data["Misc."] = misc_count
 
-# === Aggregate by LEC Name ===
-lec_data = df.groupby(lec_names).sum()
+# === Move "Misc." to the end ===
+if "Misc." in chart_data:
+    misc_value = chart_data.pop("Misc.")
+    chart_data["Misc."] = misc_value
 
-# === Compute Failure Rates ===
-lec_data["Failure Rate"] = lec_data.iloc[:, 0] / lec_data.iloc[:, 1]  # Failures / Usages
+# === Calculate Failure Rates ===
+failure_counts = df.iloc[:, 1]  # Assuming column 1 has failure counts
+usage_counts = df.iloc[:, 2]  # Assuming column 2 has total usage counts
+
+lec_failure_rates = failure_counts / usage_counts  # Failure rate per LEC
+lec_failure_rates = lec_failure_rates.dropna()  # Drop NaNs if any
 
 # === Compute Correlation ===
-corr, p_value = pearsonr(lec_data.iloc[:, 1], lec_data["Failure Rate"])  # Usage count vs. Failure rate
+lec_frequencies = lec_counts.reindex(lec_failure_rates.index, fill_value=0)  # Match indices
+correlation, p_value = pearsonr(lec_frequencies, lec_failure_rates)
 
-print(f"Pearson correlation coefficient: {corr:.4f}")
-print(f"P-value: {p_value:.4f}")
-
-# === Visualization ===
-plt.figure(figsize=(10, 5))
-plt.scatter(lec_data.iloc[:, 1], lec_data["Failure Rate"], c="blue", alpha=0.5)
-plt.xlabel("LEC Selection Count (Usage)")
-plt.ylabel("Failure Rate")
-plt.title("Correlation between LEC Selection and Failure Rate")
-plt.grid(True)
+# === Plot Pie Chart for LEC Selection ===
+plt.figure(figsize=(8, 6))
+chart_data.plot(kind='pie', autopct='%1.1f%%', cmap=cm.Paired, legend=False)
+plt.title('LEC Selection Distribution')
+plt.ylabel('')  # Hide y-axis label
 plt.show()
 
-    
+# === Plot Scatter Plot for Correlation ===
+plt.figure(figsize=(8, 6))
+plt.scatter(lec_frequencies, lec_failure_rates, alpha=0.7, color='b', edgecolors='k')
+plt.xlabel('LEC Selection Frequency')
+plt.ylabel('Failure Rate')
+plt.title(f'Correlation between LEC Selection and Failure Rate (r = {correlation:.2f})')
+plt.axhline(y=lec_failure_rates.mean(), color='r', linestyle='--', label='Avg Failure Rate')
+plt.axvline(x=lec_frequencies.mean(), color='g', linestyle='--', label='Avg LEC Selection')
+plt.legend()
+plt.show()
+
+print(f"Pearson correlation coefficient: {correlation:.2f}")
+print(f"P-value: {p_value:.5f}")
+
+# Interpretation
+if abs(correlation) > 0.7:
+    print("Strong correlation between LEC selection and failure rate.")
+elif abs(correlation) > 0.4:
+    print("Moderate correlation between LEC selection and failure rate.")
+else:
+    print("Weak or no significant correlation between LEC selection and failure rate.")
