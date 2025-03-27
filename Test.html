@@ -1,197 +1,27 @@
-#!/usr/bin/env python3
-"""
-LEC Analysis Dashboard
-----------------------
-An enhanced visualization tool for analyzing LEC failures, usage, and failure rates.
-"""
+I'll add a correlation calculation between failures and usage, and display it in the dashboard summary. Here's the modified part of the script (just add this before the dashboard creation and modify the dashboard summary):
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import matplotlib.ticker as mtick
-from matplotlib.gridspec import GridSpec
-import colorsys
-import seaborn as sns
-from pathlib import Path
-import os
-from datetime import datetime
+```python
+# Add this after loading the data and before the dashboard creation:
 
-# Set Seaborn style for better aesthetics
-sns.set(style="whitegrid")
-plt.rcParams['font.family'] = 'sans-serif'
-plt.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
-plt.rcParams['axes.facecolor'] = '#f8f9fa'
-plt.rcParams['figure.facecolor'] = 'white'
+# === CORRELATION ANALYSIS ===
+def calculate_correlations():
+    """Calculate correlations between failures and usage."""
+    # Create a DataFrame with both failures and usage
+    combined_df = pd.DataFrame({
+        'Failures': failures,
+        'Usage': usages
+    }).fillna(0)
+    
+    # Calculate Pearson correlation
+    pearson_corr = combined_df['Failures'].corr(combined_df['Usage'])
+    
+    # Calculate Spearman rank correlation
+    spearman_corr = combined_df['Failures'].corr(combined_df['Usage'], method='spearman')
+    
+    return pearson_corr, spearman_corr
 
-# === CONFIGURATION ===
-file_path = r"C:\Users\AD39644\OneDrive - Lumen\Lec Checker.xlsx"
-sheet_name = "Sheet2"
+# Then modify the create_dashboard function's summary text to include correlations:
 
-misc_threshold_failures = 5
-misc_threshold_usage = 20
-misc_threshold_rate = 15
-label_threshold_pct = 3
-output_dir = "lec_analysis_output"
-
-# Create output directory
-Path(output_dir).mkdir(exist_ok=True)
-
-# === FUNCTION: Generate Vibrant Colors ===
-def generate_vibrant_colors(n):
-    """Generate vibrant, easy-to-read colors."""
-    vibrant_colors = []
-    
-    # Base vibrant palette - more saturated, easy to distinguish colors
-    base_colors = [
-        '#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F',
-        '#EDC948', '#B07AA1', '#FF9DA7', '#9C755F', '#BAB0AC',
-        '#D37295', '#6B4C9A', '#0173B2', '#DE8F05', '#029E73',
-        '#CC78BC', '#CA9161', '#FBAFE4', '#949494', '#56B4E9'
-    ]
-    
-    # If we need more colors than in our base palette, generate them
-    if n <= len(base_colors):
-        return base_colors[:n]
-    
-    # Generate additional colors if needed
-    for i in range(n):
-        h = i / n
-        s = 0.65 + (np.random.random() * 0.2)  # Higher saturation for vibrant colors
-        v = 0.85 + (np.random.random() * 0.1)  # High value for brightness
-        r, g, b = colorsys.hsv_to_rgb(h, s, v)
-        vibrant_colors.append((r, g, b))
-    
-    return vibrant_colors
-
-# === LOAD & CLEAN DATA ===
-print(f"Loading data from {file_path}...")
-df = pd.read_excel(file_path, sheet_name=sheet_name, engine="openpyxl")
-failures_raw = df.iloc[:, 0].dropna().astype(str).str.strip()
-usages_raw = df.iloc[:, 1].dropna().astype(str).str.strip()
-
-failures = failures_raw.value_counts()
-usages = usages_raw.value_counts()
-
-# === COLOR MAP ===
-all_lecs = sorted(set(failures.index).union(set(usages.index)))
-vibrant_palette = generate_vibrant_colors(len(all_lecs))
-lec_color_map = {}
-
-# Convert hex colors to RGB if needed
-for i, lec in enumerate(all_lecs):
-    color = vibrant_palette[i]
-    if isinstance(color, str) and color.startswith('#'):
-        # Convert hex to RGB tuple
-        lec_color_map[lec] = color
-    else:
-        lec_color_map[lec] = color
-
-lec_color_map["Misc."] = '#808080'  # Medium gray for misc
-
-# === FUNCTION: Plot Pie Chart in Subplot ===
-def plot_pie_in_subplot(ax, data, title, misc_threshold):
-    """Helper method to plot pie chart in a subplot."""
-    frequent = data[data > misc_threshold]
-    misc_count = data[data <= misc_threshold].sum()
-    chart_data = frequent.copy()
-    chart_data["Misc."] = misc_count
-    total = chart_data.sum()
-    percentages = (chart_data / total) * 100
-    
-    # Sort by percentage (descending)
-    chart_data = chart_data.sort_values(ascending=False)
-    percentages = percentages.sort_values(ascending=False)
-    
-    labels = []
-    for label, pct in percentages.items():
-        count = chart_data[label]
-        if pct >= label_threshold_pct:
-            labels.append(f"{label}\n{count} ({round(pct)}%)")
-        else:
-            labels.append("")
-    
-    colors = [lec_color_map.get(label, '#808080') for label in chart_data.index]
-    
-    wedges, texts = ax.pie(
-        chart_data,
-        labels=labels,
-        startangle=140,
-        colors=colors,
-        wedgeprops=dict(edgecolor='white', linewidth=1),
-        labeldistance=1.05
-    )
-    
-    # Enhance text appearance
-    for text in texts:
-        text.set_horizontalalignment('center')
-        text.set_fontsize(9)
-        text.set_fontweight('bold')
-        text.set_color('black')  # Ensure text is black for readability
-    
-    ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
-
-# === FUNCTION: Plot Failure Rate in Subplot ===
-def plot_rate_in_subplot(ax, data, misc_threshold):
-    """Helper method to plot failure rate in a subplot."""
-    # Calculate failure rates
-    frequent_failures = failures[failures > misc_threshold]
-    misc_failures_count = failures[failures <= misc_threshold].sum()
-    failure_counts = frequent_failures.copy()
-    failure_counts["Misc."] = misc_failures_count
-    
-    # Match usage counts to failure LECs
-    usage_counts = pd.Series(dtype=float)
-    frequent_lecs = set(frequent_failures.index)
-    for lec, count in usages.items():
-        if lec in frequent_lecs:
-            usage_counts[lec] = count
-        else:
-            usage_counts["Misc."] = usage_counts.get("Misc.", 0) + count
-    
-    # Calculate failure rates
-    failure_rate = {}
-    for lec in failure_counts.index:
-        fail = failure_counts[lec]
-        use = usage_counts.get(lec, 0)
-        failure_rate[lec] = (fail / use) * 100 if use > 0 else 0
-    
-    rate_df = pd.Series(failure_rate).sort_values(ascending=False)
-    
-    if rate_df.empty:
-        ax.text(0.5, 0.5, "No failure rate data available", ha='center', va='center')
-        return
-    
-    # Sort by failure rate (descending)
-    rate_df = rate_df.sort_values(ascending=False)
-    
-    # Limit to top 10 for readability
-    if len(rate_df) > 20:
-        rate_df = rate_df.head(20)
-    
-    colors = [lec_color_map.get(label, '#808080') for label in rate_df.index]
-    
-    bars = ax.barh(rate_df.index, rate_df.values, color=colors, edgecolor='white', linewidth=0.8)
-    
-    # Add grid lines
-    ax.grid(axis='x', linestyle='--', alpha=0.7)
-    
-    # Format x-axis as percentage
-    ax.xaxis.set_major_formatter(mtick.PercentFormatter())
-    
-    # Add percentage labels
-    for i, bar in enumerate(bars):
-        width = bar.get_width()
-        ax.text(width + 0.5, bar.get_y() + bar.get_height()/2, 
-               f"{width:.1f}%", va='center', fontsize=10, fontweight='bold')
-    
-    # Add styling
-    ax.set_xlabel("Failure Rate (%)", fontsize=12, fontweight='bold')
-    ax.set_ylabel("LEC Category", fontsize=12, fontweight='bold')
-    ax.set_title("Top LEC Failure Rates", fontsize=14, fontweight='bold', pad=20)
-    ax.invert_yaxis()  # Highest at the top
-
-# === FUNCTION: Create Dashboard ===
 def create_dashboard(filename="lec_dashboard.png"):
     """Create a comprehensive dashboard combining all visualizations."""
     # Calculate summary statistics
@@ -199,6 +29,9 @@ def create_dashboard(filename="lec_dashboard.png"):
     total_usages = usages.sum()
     overall_failure_rate = (total_failures / total_usages) * 100
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Calculate correlations
+    pearson_corr, spearman_corr = calculate_correlations()
     
     # Create figure with grid layout
     fig = plt.figure(figsize=(20, 16))
@@ -212,36 +45,24 @@ def create_dashboard(filename="lec_dashboard.png"):
         f"Total Failures: {total_failures}\n"
         f"Total Usages: {total_usages}\n"
         f"Overall Failure Rate: {overall_failure_rate:.2f}%\n"
+        f"Pearson Correlation (Failures vs Usage): {pearson_corr:.3f}\n"
+        f"Spearman Correlation (Failures vs Usage): {spearman_corr:.3f}\n"
         f"Generated: {timestamp}"
     )
     ax_title.text(0.5, 0.7, title_text, fontsize=24, fontweight='bold', ha='center')
     ax_title.text(0.5, 0.3, summary_text, fontsize=14, ha='center')
     
-    # Pie chart for failures
-    ax_failures = fig.add_subplot(gs[1, 0])
-    plot_pie_in_subplot(ax_failures, failures, "LEC Failures Distribution", 
-                        misc_threshold_failures)
-    
-    # Pie chart for usage
-    ax_usage = fig.add_subplot(gs[1, 1])
-    plot_pie_in_subplot(ax_usage, usages, "LEC Usage Distribution", 
-                       misc_threshold_usage)
-    
-    # Failure rate bar chart
-    ax_rate = fig.add_subplot(gs[2, :])
-    plot_rate_in_subplot(ax_rate, failures, misc_threshold_rate)
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches='tight')
-    print(f"Saved dashboard to {os.path.join(output_dir, filename)}")
-    plt.show()
+    # ... rest of the function remains the same ...
+```
 
-# === MAIN EXECUTION ===
-if __name__ == "__main__":
-    print("\n=== Starting LEC Analysis ===")
-    
-    # Only create the dashboard
-    create_dashboard()
-    
-    print(f"\n=== Analysis Complete ===")
-    print(f"Dashboard saved to: {os.path.abspath(os.path.join(output_dir, 'lec_dashboard.png'))}")
+This addition will:
+1. Calculate both Pearson (linear) and Spearman (rank) correlations between failures and usage
+2. Display these correlations in the dashboard summary
+3. Help identify if there's a relationship between how often a LEC is used and how often it fails
+
+The Pearson correlation shows linear relationships, while the Spearman correlation shows monotonic relationships (whether ranked values increase or decrease together). Values range from -1 to 1, where:
+- 1 indicates perfect positive correlation
+- 0 indicates no correlation
+- -1 indicates perfect negative correlation
+
+Just insert this code into your existing script, keeping all other parts the same. The correlations will automatically appear in the dashboard summary.
