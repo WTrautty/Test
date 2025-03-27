@@ -1,48 +1,38 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-from scipy.stats import pearsonr
+    result = func(left, right)
+             ^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\computation\expressions.py", line 242, in evaluate
+    return _evaluate(op, op_str, a, b)  # type: ignore[misc]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\computation\expressions.py", line 73, in _evaluate_standard
+    return op(a, b)
+           ^^^^^^^^
+TypeError: unsupported operand type(s) for /: 'str' and 'float'
 
-# Load the Excel file
-file_path = r"C:\U"  # <-- change this to your file
-df = pd.read_excel(file_path, sheet_name='Sheet2', engine='openpyxl')
+During handling of the above exception, another exception occurred:
 
-# === Extract Column L (LEC Name) ===
-lec_names = df.iloc[:, 0]  # Assuming LEC Name is in the first column
-
-# === Extract Failures and Usages (Indexes 0 & 1) ===
-failures = df.iloc[:, 1]  # Assuming failures are in the second column
-usages = df.iloc[:, 2]    # Assuming usages are in the third column
-
-# === Group by LEC Name ===
-lec_data = df.groupby(lec_names)[[df.columns[1], df.columns[2]]].sum()
-
-# === Compute Failure Rate ===
-lec_data["Failure Rate"] = lec_data.iloc[:, 0] / lec_data.iloc[:, 1]
-
-# === Remove LECs with no usages (to prevent divide by zero) ===
-lec_data = lec_data[lec_data.iloc[:, 1] > 0]
-
-# === Compute Correlation ===
-correlation, _ = pearsonr(lec_data.iloc[:, 1], lec_data["Failure Rate"])
-
-# === Visualization ===
-fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-# Pie Chart for LEC Selection
-lec_counts = lec_names.value_counts()
-top_lecs = lec_counts[lec_counts > 5]
-misc_count = lec_counts[lec_counts <= 5].sum()
-if misc_count > 0:
-    top_lecs["Misc."] = misc_count
-axes[0].pie(top_lecs, labels=top_lecs.index, autopct='%1.1f%%', colors=cm.tab10.colors)
-axes[0].set_title("LEC Selection Distribution")
-
-# Scatter Plot for Correlation
-axes[1].scatter(lec_data.iloc[:, 1], lec_data["Failure Rate"], alpha=0.7)
-axes[1].set_xlabel("Number of Usages")
-axes[1].set_ylabel("Failure Rate")
-axes[1].set_title(f"Correlation: {correlation:.2f}")
-
-plt.tight_layout()
-plt.show()
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Lec Check Graph.py", line 21, in <module>
+    lec_data["Failure Rate"] = lec_data.iloc[:, 0] / lec_data.iloc[:, 1]
+                               ~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\ops\common.py", line 76, in new_method
+    return method(self, other)
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\arraylike.py", line 210, in __truediv__
+    return self._arith_method(other, operator.truediv)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\series.py", line 6135, in _arith_method
+    return base.IndexOpsMixin._arith_method(self, other, op)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\base.py", line 1382, in _arith_method
+    result = ops.arithmetic_op(lvalues, rvalues, op)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\ops\array_ops.py", line 283, in arithmetic_op
+    res_values = _na_arithmetic_op(left, right, op)  # type: ignore[arg-type]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\ops\array_ops.py", line 227, in _na_arithmetic_op
+    result = _masked_arith_op(left, right, op)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\ops\array_ops.py", line 163, in _masked_arith_op
+    result[mask] = op(xrav[mask], yrav[mask])
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported operand type(s) for /: 'str' and 'float'
