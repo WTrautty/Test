@@ -1,17 +1,51 @@
-# === Split config into true chunks based on `vprn` blocks ===
-chunks = []
-current_chunk = []
-inside_chunk = False
+import re
+import os
 
-for line in config_lines:
-    if re.match(r"\s*vprn\s+\d+", line):
-        if current_chunk:
-            chunks.append(current_chunk)
-        current_chunk = [line]
-        inside_chunk = True
-    elif inside_chunk:
-        current_chunk.append(line)
+def mb_to_kbps(mb_str):
+    return int(mb_str.lower().replace("mb", "")) * 1000
 
-# Append final chunk if it exists
-if current_chunk:
-    chunks.append(current_chunk)
+# === File paths ===
+config_path = "/path/to/your/config.txt"
+bandwidths_path = "/path/to/your/bandwidths.txt"
+
+# === Load bandwidths ===
+with open(bandwidths_path, "r") as bw_file:
+    raw_bandwidths = [line.strip() for line in bw_file if line.strip()]
+    bandwidths = [mb_to_kbps(bw) for bw in raw_bandwidths]
+
+# === Load config ===
+with open(config_path, "r") as config_file:
+    config_data = config_file.read()
+
+# === Split config into chunks using 'admin display' as the delimiter ===
+raw_chunks = config_data.split("admin display")
+chunks = [chunk.strip().splitlines() for chunk in raw_chunks if chunk.strip()]
+
+# === Sanity check ===
+print(f"\n🔍 Found {len(chunks)} chunks, {len(bandwidths)} bandwidth entries.")
+
+# === Compare each chunk to its expected bandwidth ===
+for i, chunk in enumerate(chunks):
+    if i >= len(bandwidths):
+        print(f"\n⚠️ Not enough bandwidths provided. Chunk {i+1} has no corresponding value.")
+        continue
+
+    expected = bandwidths[i]
+    bw_line_number = i + 1
+    chunk_has_mismatch = False
+
+    for line_number, line in enumerate(chunk):
+        rate_match = re.search(r"\brate\s+(\d+)", line)
+        cir_match = re.search(r"\bcir\s+(\d+)", line)
+
+        for label, match in [("rate", rate_match), ("cir", cir_match)]:
+            if match:
+                actual = int(match.group(1))
+                if actual != expected:
+                    if not chunk_has_mismatch:
+                        print(f"\n❌ Mismatch in Chunk {i+1} (Bandwidth line {bw_line_number}): Expected {expected} Kbps")
+                        chunk_has_mismatch = True
+                    print(f"  → Line {line_number+1} in chunk: Found {label} {actual}")
+
+    if not chunk_has_mismatch:
+        print(f"[✅] Chunk {i+1} matched expected {expected} Kbps (from bandwidth line {bw_line_number})")
