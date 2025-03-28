@@ -1,63 +1,58 @@
-import re
-import os
+[✅] Chunk 1 matched expected 500000 Kbps (from bandwidth line 1)
+[✅] Chunk 2 matched expected 2000000 Kbps (from bandwidth line 2)
 
-def mb_to_kbps(mb_str):
-    return int(mb_str.lower().replace("mb", "")) * 1000
+❌ Mismatch in Chunk 3 (Bandwidth line 3): Expected 1000000 Kbps
+  → Line 14 in chunk: Found rate 500000
+  → Line 14 in chunk: Found cir 500000
+  → Line 23 in chunk: Found rate 500000
+[✅] Chunk 4 matched expected 500000 Kbps (from bandwidth line 4)
 
-# === File Paths ===
-config_path = "/path/to/your/config.txt"
-bandwidths_path = "/path/to/your/bandwidths.txt"
+❌ Mismatch in Chunk 5 (Bandwidth line 5): Expected 200000 Kbps
+  → Line 14 in chunk: Found rate 2000000
+  → Line 14 in chunk: Found cir 2000000
+  → Line 23 in chunk: Found rate 2000000
+[✅] Chunk 6 matched expected 200000 Kbps (from bandwidth line 6)
 
-# === Validate paths ===
-if not os.path.exists(config_path):
-    raise FileNotFoundError(f"Config file not found at: {config_path}")
-if not os.path.exists(bandwidths_path):
-    raise FileNotFoundError(f"Bandwidths file not found at: {bandwidths_path}")
+❌ Mismatch in Chunk 7 (Bandwidth line 7): Expected 500000 Kbps
+  → Line 14 in chunk: Found rate 1000000
+  → Line 14 in chunk: Found cir 1000000
+  → Line 23 in chunk: Found rate 1000000
+[✅] Chunk 8 matched expected 2000000 Kbps (from bandwidth line 8)
 
-# === Load bandwidths ===
-with open(bandwidths_path, "r") as bw_file:
-    raw_bandwidths = [line.strip() for line in bw_file if line.strip()]
-    bandwidths = [mb_to_kbps(bw) for bw in raw_bandwidths]
+❌ Mismatch in Chunk 9 (Bandwidth line 9): Expected 1000000 Kbps
+  → Line 14 in chunk: Found rate 500000
+  → Line 14 in chunk: Found cir 500000
+  → Line 23 in chunk: Found rate 500000
+[✅] Chunk 10 matched expected 200000 Kbps (from bandwidth line 10)
 
-# === Load config ===
-with open(config_path, "r") as config_file:
-    config_lines = config_file.readlines()
+❌ Mismatch in Chunk 11 (Bandwidth line 11): Expected 200000 Kbps
+  → Line 14 in chunk: Found rate 200000
+  → Line 14 in chunk: Found cir 200000
+  → Line 23 in chunk: Found rate 200000
+[✅] Chunk 12 matched expected 200000 Kbps (from bandwidth line 12)
 
-# === Split config into chunks based on 'vprn' ===
-chunks = []
-current_chunk = []
-for line in config_lines:
-    if "vprn" in line:
-        if current_chunk:
-            chunks.append(current_chunk)
-            current_chunk = []
-    current_chunk.append(line)
-if current_chunk:
-    chunks.append(current_chunk)
+⚠️ Not enough bandwidths provided. Chunk 13 has no corresponding value.
 
-# === Compare each chunk's rates/cirs to expected bandwidth ===
-for i, chunk in enumerate(chunks):
-    if i >= len(bandwidths):
-        print(f"\n⚠️ Not enough bandwidths provided. Chunk {i+1} has no corresponding value.")
-        continue
+⚠️ Not enough bandwidths provided. Chunk 14 has no corresponding value.
 
-    expected = bandwidths[i]
-    bw_line_number = i + 1
-    chunk_has_mismatch = False
+⚠️ Not enough bandwidths provided. Chunk 15 has no corresponding value.
 
-    for line_number, line in enumerate(chunk):
-        # Match rate or cir
-        rate_match = re.search(r"\brate\s+(\d+)", line)
-        cir_match = re.search(r"\bcir\s+(\d+)", line)
+⚠️ Not enough bandwidths provided. Chunk 16 has no corresponding value.
 
-        for label, match in [("rate", rate_match), ("cir", cir_match)]:
-            if match:
-                actual = int(match.group(1))
-                if actual != expected:
-                    if not chunk_has_mismatch:
-                        print(f"\n❌ Mismatch in Chunk {i+1} (Bandwidth line {bw_line_number}): Expected {expected} Kbps")
-                        chunk_has_mismatch = True
-                    print(f"  → Line {line_number+1} in chunk: Found {label} {actual}")
+⚠️ Not enough bandwidths provided. Chunk 17 has no corresponding value.
 
-    if not chunk_has_mismatch:
-        print(f"[✅] Chunk {i+1} matched expected {expected} Kbps (from bandwidth line {bw_line_number})")
+⚠️ Not enough bandwidths provided. Chunk 18 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 19 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 20 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 21 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 22 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 23 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 24 has no corresponding value.
+
+⚠️ Not enough bandwidths provided. Chunk 25 has no corresponding value.
