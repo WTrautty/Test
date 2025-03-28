@@ -2,12 +2,11 @@ import re
 import os
 
 def mb_to_kbps(mb_str):
-    return str(int(mb_str.lower().replace("mb", "")) * 1000)
+    return int(mb_str.lower().replace("mb", "")) * 1000
 
-# === Set your file paths here ===
+# === Set file paths ===
 config_path = "/path/to/your/config.txt"
 bandwidths_path = "/path/to/your/bandwidths.txt"
-output_path = "/path/to/your/updated_config.txt"
 
 # === Validate paths ===
 if not os.path.exists(config_path):
@@ -15,11 +14,11 @@ if not os.path.exists(config_path):
 if not os.path.exists(bandwidths_path):
     raise FileNotFoundError(f"Bandwidths file not found at: {bandwidths_path}")
 
-# === Read bandwidths ===
+# === Load bandwidths ===
 with open(bandwidths_path, "r") as bw_file:
     bandwidths = [mb_to_kbps(line.strip()) for line in bw_file if line.strip()]
 
-# === Read config ===
+# === Load config ===
 with open(config_path, "r") as config_file:
     config_lines = config_file.readlines()
 
@@ -35,23 +34,21 @@ for line in config_lines:
 if current_chunk:
     chunks.append(current_chunk)
 
-# === Replace rate/cir values ===
-updated_chunks = []
+# === Compare expected bandwidth with rates in each chunk ===
 for i, chunk in enumerate(chunks):
     if i >= len(bandwidths):
-        print(f"⚠️ Not enough bandwidth entries for all chunks. Skipping chunk {i}.")
+        print(f"⚠️ Not enough bandwidth entries for all chunks. Stopping at chunk {i}.")
         break
-    bw_kbps = bandwidths[i]
-    new_chunk = []
-    for line in chunk:
-        line = re.sub(r"(rate\s+)\d+", r"\1" + bw_kbps, line)
-        line = re.sub(r"(cir\s+)\d+", r"\1" + bw_kbps, line)
-        new_chunk.append(line)
-    updated_chunks.append(new_chunk)
 
-# === Write to output file ===
-with open(output_path, "w") as out_file:
-    for chunk in updated_chunks:
-        out_file.writelines(chunk)
+    expected_kbps = bandwidths[i]
+    chunk_text = ''.join(chunk)
+    rates = re.findall(r"\brate\s+(\d+)", chunk_text)
+    cirs = re.findall(r"\bcir\s+(\d+)", chunk_text)
 
-print(f"✅ Configuration updated and written to: {output_path}")
+    all_rates = rates + cirs
+    mismatches = [val for val in all_rates if int(val) != expected_kbps]
+
+    if mismatches:
+        print(f"\n❌ Mismatch in Chunk {i+1}:")
+        print(f"  Expected: {expected_kbps} Kbps")
+        print(f"  Found: {', '.join(all_rates)}")
