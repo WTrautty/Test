@@ -1,57 +1,53 @@
-import re
-import os
+❌ Mismatch in Chunk 2:
+  Expected: 2000000 Kbps
+  Found: 2000000, 2000000, 2000000
+Chunk 3: Expected 1000000, Found: [1000000, 1000000, 1000000]
 
-def mb_to_kbps(mb_str):
-    return int(mb_str.lower().replace("mb", "")) * 1000
+❌ Mismatch in Chunk 3:
+  Expected: 1000000 Kbps
+  Found: 1000000, 1000000, 1000000
+Chunk 4: Expected 500000, Found: [500000, 500000, 500000]
 
-# === File Paths ===
-config_path = "/path/to/your/config.txt"
-bandwidths_path = "/path/to/your/bandwidths.txt"
+❌ Mismatch in Chunk 4:
+  Expected: 500000 Kbps
+  Found: 500000, 500000, 500000
+Chunk 5: Expected 200000, Found: [200000, 200000, 200000]
 
-# === Validate paths ===
-if not os.path.exists(config_path):
-    raise FileNotFoundError(f"Config file not found at: {config_path}")
-if not os.path.exists(bandwidths_path):
-    raise FileNotFoundError(f"Bandwidths file not found at: {bandwidths_path}")
+❌ Mismatch in Chunk 5:
+  Expected: 200000 Kbps
+  Found: 200000, 200000, 200000
+Chunk 6: Expected 200000, Found: [200000, 200000, 200000]
 
-# === Load bandwidths ===
-with open(bandwidths_path, "r") as bw_file:
-    bandwidths = [mb_to_kbps(line.strip()) for line in bw_file if line.strip()]
+❌ Mismatch in Chunk 6:
+  Expected: 200000 Kbps
+  Found: 200000, 200000, 200000
+Chunk 7: Expected 500000, Found: [500000, 500000, 500000]
 
-# === Load config ===
-with open(config_path, "r") as config_file:
-    config_lines = config_file.readlines()
+❌ Mismatch in Chunk 7:
+  Expected: 500000 Kbps
+  Found: 500000, 500000, 500000
+Chunk 8: Expected 2000000, Found: [2000000, 2000000, 2000000]
 
-# === Split config into chunks ===
-chunks = []
-current_chunk = []
-for line in config_lines:
-    if "vprn" in line:
-        if current_chunk:
-            chunks.append(current_chunk)
-            current_chunk = []
-    current_chunk.append(line)
-if current_chunk:
-    chunks.append(current_chunk)
+❌ Mismatch in Chunk 8:
+  Expected: 2000000 Kbps
+  Found: 2000000, 2000000, 2000000
+Chunk 9: Expected 1000000, Found: [1000000, 1000000, 1000000]
 
-# === Compare expected bandwidth with rate/cir in each chunk ===
-for i, chunk in enumerate(chunks):
-    if i >= len(bandwidths):
-        print(f"⚠️ Not enough bandwidth entries for all chunks. Stopping at chunk {i}.")
-        break
+❌ Mismatch in Chunk 9:
+  Expected: 1000000 Kbps
+  Found: 1000000, 1000000, 1000000
+Chunk 10: Expected 200000, Found: [200000, 200000, 200000]
 
-    expected_kbps = bandwidths[i]
-    chunk_text = ''.join(chunk)
+❌ Mismatch in Chunk 10:
+  Expected: 200000 Kbps
+  Found: 200000, 200000, 200000
+Chunk 11: Expected 200000, Found: [200000, 200000, 200000]
 
-    # Extract all rate and cir values as integers
-    rates = [int(val) for val in re.findall(r"\brate\s+(\d+)", chunk_text)]
-    cirs = [int(val) for val in re.findall(r"\bcir\s+(\d+)", chunk_text)]
-    all_rates = rates + cirs
+❌ Mismatch in Chunk 11:
+  Expected: 200000 Kbps
+  Found: 200000, 200000, 200000
+Chunk 12: Expected 200000, Found: [200000, 200000, 200000]
 
-    # Debug print (optional):
-    # print(f"Chunk {i+1}: Expected {expected_kbps}, Found: {all_rates}")
-
-    if any(val != expected_kbps for val in all_rates):
-        print(f"\n❌ Mismatch in Chunk {i+1}:")
-        print(f"  Expected: {expected_kbps} Kbps")
-        print(f"  Found: {', '.join(map(str, all_rates))}")
+❌ Mismatch in Chunk 12:
+  Expected: 200000 Kbps
+  Found: 200000, 200000, 200000
