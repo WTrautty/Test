@@ -7,9 +7,17 @@ def extract_mismatches(input_path, output_path):
     chunks = content.split('[')
     issues = []
 
-    for idx, chunk in enumerate(chunks[1:], 1):  # Skip the first if it doesn't start with '['
-        chunk_issues = []
+    for chunk in chunks[1:]:  # Skip the first non-chunk part
         lines = chunk.splitlines()
+
+        chunk_issues = []
+
+        # Get identifiers for output
+        first_line = lines[0].strip().rstrip(']')
+        interface_line = next((line for line in lines if "interface" in line), "")
+        interface_info = interface_line.split("create")[0].strip() if "create" in interface_line else interface_line.strip()
+        device_match = re.search(r'A:(.*?)>', chunk)
+        device_info = device_match.group(1).strip() if device_match else "Unknown Device"
 
         # Check vprn consistency
         vprn_numbers = re.findall(r'\bvprn\s+(\d+)', chunk)
@@ -77,8 +85,15 @@ def extract_mismatches(input_path, output_path):
                 f"  From '/' lines: {sorted(queue_numbers_from_slash)}"
             )
 
+        # Compile results
         if chunk_issues:
-            issues.append(f"--- Chunk #{idx} ---\n" + '\n'.join(chunk_issues) + '\n')
+            readable_header = (
+                f"--- Issue Found ---\n"
+                f"Chunk ID: {first_line}\n"
+                f"Interface: {interface_info}\n"
+                f"Device: {device_info}\n"
+            )
+            issues.append(readable_header + '\n'.join(chunk_issues) + '\n')
 
     # Write issues to output
     with open(output_path, 'w') as out:
