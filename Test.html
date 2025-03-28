@@ -1,34 +1,93 @@
 import re
-import os
 
-# === Set the path to your input file ===
-config_path = "/path/to/your/config.txt"
+def extract_mismatches(input_path, output_path):
+    with open(input_path, 'r') as file:
+        content = file.read()
 
-# === Read the text file ===
-with open(config_path, "r") as file:
-    content = file.read()
+    chunks = content.split('[')
+    issues = []
 
-# === Split by 'CHANGE COMMANDS' ===
-chunks = content.split("CHANGE COMMANDS")
-chunks = [chunk.strip().splitlines() for chunk in chunks if chunk.strip()]
+    for idx, chunk in enumerate(chunks[1:], 1):  # Skip the first if it doesn't start with '['
+        chunk_issues = []
+        lines = chunk.splitlines()
 
-print(f"🔍 Found {len(chunks)} chunks delimited by 'CHANGE COMMANDS'.")
+        # Check vprn consistency
+        vprn_numbers = re.findall(r'\bvprn\s+(\d+)', chunk)
+        if vprn_numbers and len(set(vprn_numbers)) > 1:
+            chunk_issues.append(f"Inconsistent vprn numbers: {set(vprn_numbers)}")
 
-# === Process each chunk ===
-for i, chunk in enumerate(chunks, start=1):
-    values = []
+        # Check qos consistency
+        qos_numbers = []
+        for match in re.finditer(r'\bqos\s+(sap-ingress|\d+)', chunk):
+            next_part = match.group(1)
+            if next_part == 'sap-ingress':
+                sap_match = re.search(r'sap-ingress.*?(\d+)', chunk[match.end():])
+                if sap_match:
+                    qos_numbers.append(sap_match.group(1))
+            else:
+                qos_numbers.append(next_part)
+        if qos_numbers and len(set(qos_numbers)) > 1:
+            chunk_issues.append(f"Inconsistent qos numbers: {set(qos_numbers)}")
 
-    for line in chunk:
-        if line.strip().startswith("/"):
-            # Find all rate and cir values
-            matches = re.findall(r"\b(?:rate|cir)\s+(\d+)", line, re.IGNORECASE)
-            values.extend(matches)
+        # Check cir/rate consistency in lines starting with '/'
+        cir_rate_values = []
+        for line in lines:
+            if line.strip().startswith('/'):
+                matches = re.findall(r'\b(?:cir|rate)\s+(\d+)', line)
+                cir_rate_values.extend(matches)
+        if cir_rate_values and len(set(cir_rate_values)) > 1:
+            chunk_issues.append(f"Inconsistent cir/rate values in '/' lines: {set(cir_rate_values)}")
 
-    unique_values = set(values)
+        # Check queue number consistency
+        queue_numbers_from_sections = []
+        queue_numbers_from_slash = []
 
-    if len(unique_values) == 0:
-        print(f"⚠️  Chunk {i}: No rate or cir values found.")
-    elif len(unique_values) == 1:
-        print(f"[✅] Chunk {i}: All rate/cir values match ({list(unique_values)[0]}).")
-    else:
-        print(f"\n❌ Mismatch in Chunk {i}: Found multiple values: {', '.join(unique_values)}")
+        in_queue_section = False
+        current_queue_rate_number = None
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # "/" queue handling
+            if stripped.startswith('/') and 'queue' in stripped:
+                match = re.search(r'queue\s+(\d+)', stripped)
+                if match:
+                    queue_numbers_from_slash.append(match.group(1))
+
+            # non-"/" queue handling
+            if not stripped.startswith('/') and 'queue' in stripped:
+                in_queue_section = True
+                match = re.search(r'queue\s+(\d+)', stripped)
+                if match:
+                    current_queue_rate_number = match.group(1)
+                # look ahead until next "queue" or end of chunk
+                for j in range(i + 1, len(lines)):
+                    next_line = lines[j].strip()
+                    if 'queue' in next_line:
+                        break
+                    rate_match = re.search(r'rate\s+(\d+)', next_line)
+                    if rate_match and current_queue_rate_number:
+                        queue_numbers_from_sections.append(current_queue_rate_number)
+                        break
+
+        if sorted(queue_numbers_from_sections) != sorted(queue_numbers_from_slash):
+            chunk_issues.append(
+                f"Mismatch in queue numbers:\n"
+                f"  From sections: {sorted(queue_numbers_from_sections)}\n"
+                f"  From '/' lines: {sorted(queue_numbers_from_slash)}"
+            )
+
+        if chunk_issues:
+            issues.append(f"--- Chunk #{idx} ---\n" + '\n'.join(chunk_issues) + '\n')
+
+    # Write issues to output
+    with open(output_path, 'w') as out:
+        if issues:
+            out.writelines('\n'.join(issues))
+        else:
+            out.write("No issues found.")
+
+# Example usage
+input_path = 'path_to_your_input_file.txt'
+output_path = 'path_to_your_output_file.txt'
+extract_mismatches(input_path, output_path)
