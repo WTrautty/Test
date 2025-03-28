@@ -1,51 +1,34 @@
 import re
 import os
 
-def mb_to_kbps(mb_str):
-    return int(mb_str.lower().replace("mb", "")) * 1000
-
-# === File paths ===
+# === Set the path to your input file ===
 config_path = "/path/to/your/config.txt"
-bandwidths_path = "/path/to/your/bandwidths.txt"
 
-# === Load bandwidths ===
-with open(bandwidths_path, "r") as bw_file:
-    raw_bandwidths = [line.strip() for line in bw_file if line.strip()]
-    bandwidths = [mb_to_kbps(bw) for bw in raw_bandwidths]
+# === Read the text file ===
+with open(config_path, "r") as file:
+    content = file.read()
 
-# === Load config ===
-with open(config_path, "r") as config_file:
-    config_data = config_file.read()
+# === Split by 'CHANGE COMMANDS' ===
+chunks = content.split("CHANGE COMMANDS")
+chunks = [chunk.strip().splitlines() for chunk in chunks if chunk.strip()]
 
-# === Split config into chunks using 'admin display' as the delimiter ===
-raw_chunks = config_data.split("admin display")
-chunks = [chunk.strip().splitlines() for chunk in raw_chunks if chunk.strip()]
+print(f"🔍 Found {len(chunks)} chunks delimited by 'CHANGE COMMANDS'.")
 
-# === Sanity check ===
-print(f"\n🔍 Found {len(chunks)} chunks, {len(bandwidths)} bandwidth entries.")
+# === Process each chunk ===
+for i, chunk in enumerate(chunks, start=1):
+    values = []
 
-# === Compare each chunk to its expected bandwidth ===
-for i, chunk in enumerate(chunks):
-    if i >= len(bandwidths):
-        print(f"\n⚠️ Not enough bandwidths provided. Chunk {i+1} has no corresponding value.")
-        continue
+    for line in chunk:
+        if line.strip().startswith("/"):
+            # Find all rate and cir values
+            matches = re.findall(r"\b(?:rate|cir)\s+(\d+)", line, re.IGNORECASE)
+            values.extend(matches)
 
-    expected = bandwidths[i]
-    bw_line_number = i + 1
-    chunk_has_mismatch = False
+    unique_values = set(values)
 
-    for line_number, line in enumerate(chunk):
-        rate_match = re.search(r"\brate\s+(\d+)", line)
-        cir_match = re.search(r"\bcir\s+(\d+)", line)
-
-        for label, match in [("rate", rate_match), ("cir", cir_match)]:
-            if match:
-                actual = int(match.group(1))
-                if actual != expected:
-                    if not chunk_has_mismatch:
-                        print(f"\n❌ Mismatch in Chunk {i+1} (Bandwidth line {bw_line_number}): Expected {expected} Kbps")
-                        chunk_has_mismatch = True
-                    print(f"  → Line {line_number+1} in chunk: Found {label} {actual}")
-
-    if not chunk_has_mismatch:
-        print(f"[✅] Chunk {i+1} matched expected {expected} Kbps (from bandwidth line {bw_line_number})")
+    if len(unique_values) == 0:
+        print(f"⚠️  Chunk {i}: No rate or cir values found.")
+    elif len(unique_values) == 1:
+        print(f"[✅] Chunk {i}: All rate/cir values match ({list(unique_values)[0]}).")
+    else:
+        print(f"\n❌ Mismatch in Chunk {i}: Found multiple values: {', '.join(unique_values)}")
