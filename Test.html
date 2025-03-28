@@ -1,58 +1,17 @@
-[✅] Chunk 1 matched expected 500000 Kbps (from bandwidth line 1)
-[✅] Chunk 2 matched expected 2000000 Kbps (from bandwidth line 2)
+# === Split config into true chunks based on `vprn` blocks ===
+chunks = []
+current_chunk = []
+inside_chunk = False
 
-❌ Mismatch in Chunk 3 (Bandwidth line 3): Expected 1000000 Kbps
-  → Line 14 in chunk: Found rate 500000
-  → Line 14 in chunk: Found cir 500000
-  → Line 23 in chunk: Found rate 500000
-[✅] Chunk 4 matched expected 500000 Kbps (from bandwidth line 4)
+for line in config_lines:
+    if re.match(r"\s*vprn\s+\d+", line):
+        if current_chunk:
+            chunks.append(current_chunk)
+        current_chunk = [line]
+        inside_chunk = True
+    elif inside_chunk:
+        current_chunk.append(line)
 
-❌ Mismatch in Chunk 5 (Bandwidth line 5): Expected 200000 Kbps
-  → Line 14 in chunk: Found rate 2000000
-  → Line 14 in chunk: Found cir 2000000
-  → Line 23 in chunk: Found rate 2000000
-[✅] Chunk 6 matched expected 200000 Kbps (from bandwidth line 6)
-
-❌ Mismatch in Chunk 7 (Bandwidth line 7): Expected 500000 Kbps
-  → Line 14 in chunk: Found rate 1000000
-  → Line 14 in chunk: Found cir 1000000
-  → Line 23 in chunk: Found rate 1000000
-[✅] Chunk 8 matched expected 2000000 Kbps (from bandwidth line 8)
-
-❌ Mismatch in Chunk 9 (Bandwidth line 9): Expected 1000000 Kbps
-  → Line 14 in chunk: Found rate 500000
-  → Line 14 in chunk: Found cir 500000
-  → Line 23 in chunk: Found rate 500000
-[✅] Chunk 10 matched expected 200000 Kbps (from bandwidth line 10)
-
-❌ Mismatch in Chunk 11 (Bandwidth line 11): Expected 200000 Kbps
-  → Line 14 in chunk: Found rate 200000
-  → Line 14 in chunk: Found cir 200000
-  → Line 23 in chunk: Found rate 200000
-[✅] Chunk 12 matched expected 200000 Kbps (from bandwidth line 12)
-
-⚠️ Not enough bandwidths provided. Chunk 13 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 14 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 15 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 16 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 17 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 18 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 19 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 20 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 21 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 22 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 23 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 24 has no corresponding value.
-
-⚠️ Not enough bandwidths provided. Chunk 25 has no corresponding value.
+# Append final chunk if it exists
+if current_chunk:
+    chunks.append(current_chunk)
