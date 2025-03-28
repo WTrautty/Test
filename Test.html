@@ -1,17 +1,29 @@
 import re
+import os
 
 def mb_to_kbps(mb_str):
     return str(int(mb_str.lower().replace("mb", "")) * 1000)
 
-# Read bandwidths from file
-with open("bandwidths.txt", "r") as bw_file:
+# === Set your file paths here ===
+config_path = "/path/to/your/config.txt"
+bandwidths_path = "/path/to/your/bandwidths.txt"
+output_path = "/path/to/your/updated_config.txt"
+
+# === Validate paths ===
+if not os.path.exists(config_path):
+    raise FileNotFoundError(f"Config file not found at: {config_path}")
+if not os.path.exists(bandwidths_path):
+    raise FileNotFoundError(f"Bandwidths file not found at: {bandwidths_path}")
+
+# === Read bandwidths ===
+with open(bandwidths_path, "r") as bw_file:
     bandwidths = [mb_to_kbps(line.strip()) for line in bw_file if line.strip()]
 
-# Read the config file
-with open("config.txt", "r") as config_file:
+# === Read config ===
+with open(config_path, "r") as config_file:
     config_lines = config_file.readlines()
 
-# Split config into chunks using 'vprn' as the delimiter
+# === Split config into chunks ===
 chunks = []
 current_chunk = []
 for line in config_lines:
@@ -23,7 +35,7 @@ for line in config_lines:
 if current_chunk:
     chunks.append(current_chunk)
 
-# Replace rates in each chunk
+# === Replace rate/cir values ===
 updated_chunks = []
 for i, chunk in enumerate(chunks):
     if i >= len(bandwidths):
@@ -32,15 +44,14 @@ for i, chunk in enumerate(chunks):
     bw_kbps = bandwidths[i]
     new_chunk = []
     for line in chunk:
-        # Replace rate and cir values
         line = re.sub(r"(rate\s+)\d+", r"\1" + bw_kbps, line)
         line = re.sub(r"(cir\s+)\d+", r"\1" + bw_kbps, line)
         new_chunk.append(line)
     updated_chunks.append(new_chunk)
 
-# Flatten and write the updated config to a new file
-with open("updated_config.txt", "w") as out_file:
+# === Write to output file ===
+with open(output_path, "w") as out_file:
     for chunk in updated_chunks:
         out_file.writelines(chunk)
 
-print("✅ Configuration updated and written to 'updated_config.txt'.")
+print(f"✅ Configuration updated and written to: {output_path}")
