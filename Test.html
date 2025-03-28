@@ -1,68 +1,83 @@
-I'll add a correlation calculation between failures and usage, and display it in the dashboard summary. Here's the modified part of the script (just add this before the dashboard creation and modify the dashboard summary):
+*A:esp21.den1# admin display-config | match xe-6/1/6:4020 context all 
+#--------------------------------------------------
+    service
+        vprn 26504015 name "26504015" customer 26504000 create
+            interface "xe-6/1/6:4020" create
+        vprn 26504015 name "26504015" customer 26504000 create
+            interface "xe-6/1/6:4020" create
+                description "FRO2006984489::EIS0061::9929-1-EIS0061-2006984417-L3VPN::1068HNVK"
+                address 100.90.221.201/29
+                ip-mtu 1514
+                ipv6
+                    address 2001:4870:f000:1::4951/125
+                exit
+                sap 6/1/6:4020 create
+                    ingress
+                        scheduler-policy "GENERIC-i-Tier1"
+                        scheduler-override
+                            scheduler "GENERIC-i-Tier1" create
+                                rate 200000 cir 200000
+                            exit
+                        exit
+                        qos 392
+                    exit
+                    egress
+                        scheduler-policy "GENERIC-e-Tier1"
+                        scheduler-override
+                            scheduler "GENERIC-e-Tier1" create
+                                rate 200000
+                            exit
+                        exit
+                        qos 392
+                    exit
+                exit
+*A:esp21.den1# 
+*A:esp21.den1# admin display-config | match xe-6/1/6:4021 context all 
+#--------------------------------------------------
+    service
+        vprn 26504018 name "26504018" customer 26504000 create
+            interface "xe-6/1/6:4021" create
+        vprn 26504018 name "26504018" customer 26504000 create
+            interface "xe-6/1/6:4021" create
+                description "FRO2006984492::EIS0061::9932-1-EIS0061-2006984420-L3VPN::1068HNVK"
+                address 100.90.221.225/29
+                ip-mtu 1514
+                ipv6
+                    address 2001:4870:f000:1::4939/125
+                exit
+                sap 6/1/6:4021 create
+                    ingress
+                        scheduler-policy "GENERIC-i-Tier1"
+                        scheduler-override
+                            scheduler "GENERIC-i-Tier1" create
+                                rate 200000 cir 200000
+                            exit
+                        exit
+                        qos 395
+                    exit
+                    egress
+                        scheduler-policy "GENERIC-e-Tier1"
+                        scheduler-override
+                            scheduler "GENERIC-e-Tier1" create
+                                rate 200000
+                            exit
+                        exit
+                        qos 395
+                    exit
+                exit
 
-```python
-# Add this after loading the data and before the dashboard creation:
 
-# === CORRELATION ANALYSIS ===
-def calculate_correlations():
-    """Calculate correlations between failures and usage."""
-    # Create a DataFrame with both failures and usage
-    combined_df = pd.DataFrame({
-        'Failures': failures,
-        'Usage': usages
-    }).fillna(0)
-    
-    # Calculate Pearson correlation
-    pearson_corr = combined_df['Failures'].corr(combined_df['Usage'])
-    
-    # Calculate Spearman rank correlation
-    spearman_corr = combined_df['Failures'].corr(combined_df['Usage'], method='spearman')
-    
-    return pearson_corr, spearman_corr
 
-# Then modify the create_dashboard function's summary text to include correlations:
 
-def create_dashboard(filename="lec_dashboard.png"):
-    """Create a comprehensive dashboard combining all visualizations."""
-    # Calculate summary statistics
-    total_failures = failures.sum()
-    total_usages = usages.sum()
-    overall_failure_rate = (total_failures / total_usages) * 100
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Calculate correlations
-    pearson_corr, spearman_corr = calculate_correlations()
-    
-    # Create figure with grid layout
-    fig = plt.figure(figsize=(20, 16))
-    gs = GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 1.2])
-    
-    # Title and summary
-    ax_title = fig.add_subplot(gs[0, :])
-    ax_title.axis('off')
-    title_text = "LEC Analysis Dashboard"
-    summary_text = (
-        f"Total Failures: {total_failures}\n"
-        f"Total Usages: {total_usages}\n"
-        f"Overall Failure Rate: {overall_failure_rate:.2f}%\n"
-        f"Pearson Correlation (Failures vs Usage): {pearson_corr:.3f}\n"
-        f"Spearman Correlation (Failures vs Usage): {spearman_corr:.3f}\n"
-        f"Generated: {timestamp}"
-    )
-    ax_title.text(0.5, 0.7, title_text, fontsize=24, fontweight='bold', ha='center')
-    ax_title.text(0.5, 0.3, summary_text, fontsize=14, ha='center')
-    
-    # ... rest of the function remains the same ...
-```
-
-This addition will:
-1. Calculate both Pearson (linear) and Spearman (rank) correlations between failures and usage
-2. Display these correlations in the dashboard summary
-3. Help identify if there's a relationship between how often a LEC is used and how often it fails
-
-The Pearson correlation shows linear relationships, while the Spearman correlation shows monotonic relationships (whether ranked values increase or decrease together). Values range from -1 to 1, where:
-- 1 indicates perfect positive correlation
-- 0 indicates no correlation
-- -1 indicates perfect negative correlation
-
-Just insert this code into your existing script, keeping all other parts the same. The correlations will automatically appear in the dashboard summary.
+500Mb
+2000Mb
+1000Mb
+500Mb
+200Mb
+200Mb
+500Mb
+2000Mb
+1000Mb
+200Mb
+200Mb
+200Mb
