@@ -1,83 +1,46 @@
-*A:esp21.den1# admin display-config | match xe-6/1/6:4020 context all 
-#--------------------------------------------------
-    service
-        vprn 26504015 name "26504015" customer 26504000 create
-            interface "xe-6/1/6:4020" create
-        vprn 26504015 name "26504015" customer 26504000 create
-            interface "xe-6/1/6:4020" create
-                description "FRO2006984489::EIS0061::9929-1-EIS0061-2006984417-L3VPN::1068HNVK"
-                address 100.90.221.201/29
-                ip-mtu 1514
-                ipv6
-                    address 2001:4870:f000:1::4951/125
-                exit
-                sap 6/1/6:4020 create
-                    ingress
-                        scheduler-policy "GENERIC-i-Tier1"
-                        scheduler-override
-                            scheduler "GENERIC-i-Tier1" create
-                                rate 200000 cir 200000
-                            exit
-                        exit
-                        qos 392
-                    exit
-                    egress
-                        scheduler-policy "GENERIC-e-Tier1"
-                        scheduler-override
-                            scheduler "GENERIC-e-Tier1" create
-                                rate 200000
-                            exit
-                        exit
-                        qos 392
-                    exit
-                exit
-*A:esp21.den1# 
-*A:esp21.den1# admin display-config | match xe-6/1/6:4021 context all 
-#--------------------------------------------------
-    service
-        vprn 26504018 name "26504018" customer 26504000 create
-            interface "xe-6/1/6:4021" create
-        vprn 26504018 name "26504018" customer 26504000 create
-            interface "xe-6/1/6:4021" create
-                description "FRO2006984492::EIS0061::9932-1-EIS0061-2006984420-L3VPN::1068HNVK"
-                address 100.90.221.225/29
-                ip-mtu 1514
-                ipv6
-                    address 2001:4870:f000:1::4939/125
-                exit
-                sap 6/1/6:4021 create
-                    ingress
-                        scheduler-policy "GENERIC-i-Tier1"
-                        scheduler-override
-                            scheduler "GENERIC-i-Tier1" create
-                                rate 200000 cir 200000
-                            exit
-                        exit
-                        qos 395
-                    exit
-                    egress
-                        scheduler-policy "GENERIC-e-Tier1"
-                        scheduler-override
-                            scheduler "GENERIC-e-Tier1" create
-                                rate 200000
-                            exit
-                        exit
-                        qos 395
-                    exit
-                exit
+import re
 
+def mb_to_kbps(mb_str):
+    return str(int(mb_str.lower().replace("mb", "")) * 1000)
 
+# Read bandwidths from file
+with open("bandwidths.txt", "r") as bw_file:
+    bandwidths = [mb_to_kbps(line.strip()) for line in bw_file if line.strip()]
 
+# Read the config file
+with open("config.txt", "r") as config_file:
+    config_lines = config_file.readlines()
 
-500Mb
-2000Mb
-1000Mb
-500Mb
-200Mb
-200Mb
-500Mb
-2000Mb
-1000Mb
-200Mb
-200Mb
-200Mb
+# Split config into chunks using 'vprn' as the delimiter
+chunks = []
+current_chunk = []
+for line in config_lines:
+    if "vprn" in line:
+        if current_chunk:
+            chunks.append(current_chunk)
+            current_chunk = []
+    current_chunk.append(line)
+if current_chunk:
+    chunks.append(current_chunk)
+
+# Replace rates in each chunk
+updated_chunks = []
+for i, chunk in enumerate(chunks):
+    if i >= len(bandwidths):
+        print(f"⚠️ Not enough bandwidth entries for all chunks. Skipping chunk {i}.")
+        break
+    bw_kbps = bandwidths[i]
+    new_chunk = []
+    for line in chunk:
+        # Replace rate and cir values
+        line = re.sub(r"(rate\s+)\d+", r"\1" + bw_kbps, line)
+        line = re.sub(r"(cir\s+)\d+", r"\1" + bw_kbps, line)
+        new_chunk.append(line)
+    updated_chunks.append(new_chunk)
+
+# Flatten and write the updated config to a new file
+with open("updated_config.txt", "w") as out_file:
+    for chunk in updated_chunks:
+        out_file.writelines(chunk)
+
+print("✅ Configuration updated and written to 'updated_config.txt'.")
