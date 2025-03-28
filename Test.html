@@ -1,3 +1,4 @@
-❌ Mismatch in Chunk 12:
-  Expected: 200000 Kbps
-  Found: 200000, 200000, 200000
+if any(int(val) != expected_kbps for val in all_rates):
+    print(f"\n❌ Mismatch in Chunk {i+1}:")
+    print(f"  Expected: {expected_kbps} Kbps")
+    print(f"  Found: {', '.join(all_rates)}")
