@@ -1,57 +1,453 @@
+import openpyxl
+import numpy as np
+import warnings
+from openpyxl import Workbook
 import os
+from datetime import datetime
+import pandas as pd
+import hashlib
 import re
+import traceback
 
-# === USER INPUT ===
-input_path = r"your\input\directory\here"
-output_path = r"your\output\file\here.txt"
-# ===================
+# ---------------- Configuration ----------------
 
-nsc_tech_map = {}
-all_nsc_codes = set()
-pdf_files = []
+EXCEL_FILE = r"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
+LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+SCHEDULER_EXCEL = r"C:\Users\AD39644\OneDrive - Lumen\General - DOI Remote VPNS Activations\Lumen_DOI Remote VPNS Activations Tracker.xlsx" 
 
-# Walk through all files
-for root, _, files in os.walk(input_path):
-    for file in files:
-        file_path = os.path.join(root, file)
+# CSV file to store processed orders
+PROCESSED_CSV = r"C:\Users\AD39644\IPv6_Test_Files\processed_orders.csv"
 
-        # Collect all PDFs
-        if file.lower().endswith(".pdf"):
-            pdf_files.append(file)
+# Debugging output to verify correct file path usage 
+print(f"Using file path: {EXCEL_FILE}")
 
-        # Process TXT files
-        elif file.lower().endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
-                tech = None
-                nsc = None
+# Suppress openpyxl warnings about cell errors 
+warnings.simplefilter("ignore", category=UserWarning)
 
-                for line in lines:
-                    line = line.strip()
+# Define the sheets and columns to search for order numbers 
+SEARCH_CONFIG = {
+    "Main": {
+        "search_columns": ["Ops Console Ticket"],  # Column that holds the order number
+        "extract_columns": [
+            "Ops Console Ticket",
+            "IPv6 Status",
+            "Service ID",
+            "IPv6 WAN",
+            "IPv6 LAN",
+            "IPv6 Loopback",
+            "DOI_Bureau",
+            "WHD_Location",
+            "Node Name",
+            "IP Address",
+            "Address",
+            "City",
+            "State",
+            "Vendor",
+            "iSE Design Link",
+        ]
+    },
+}
 
-                    if line.startswith("Activation Technician:"):
-                        tech_match = re.search(r"Activation Technician:\s*(.*)", line)
-                        if tech_match:
-                            tech = tech_match.group(1).strip()
+SEARCH_LASER = {
+    "Sheet1": {
+        "service_match": ["circuitID"],  # Key used to search for the Service ID
+        "extract_columns": ["device", "interface", "scid", "location", "ipv4", "vrf"]
+    },
+}
 
-                    if line.startswith("NSC Code:"):
-                        nsc_match = re.search(r"NSC Code:\s*(\S+)", line)
-                        if nsc_match:
-                            nsc = nsc_match.group(1).strip()
-                            all_nsc_codes.add(nsc)
+# ---------------- Helper Functions ----------------
 
-                if nsc:
-                    nsc_tech_map[nsc] = tech or "Unknown"
+def identify_region(wan_ipv6):
+    try:
+        return wan_ipv6.split(":")[2][1]
+    except IndexError:
+        return None
 
-# Find missing NSC PDFs
-missing_nscs = [
-    nsc for nsc in all_nsc_codes
-    if not any(nsc in pdf for pdf in pdf_files)
-]
+def lan_subnet_fix(lan_ipv6):
+    try:
+        address, subnet = lan_ipv6.split("/")
+        hex_groups = address.split(":")
+        if len(hex_groups[3]) == 3:
+            hex_groups[3] = "0" + hex_groups[3]
+        return ":".join(hex_groups) + "/56"
+    except Exception:
+        return None
 
-# Write missing NSC info to file
-with open(output_path, "w", encoding="utf-8") as out_file:
-    for nsc in sorted(missing_nscs):
-        out_file.write(f"NSC Code: {nsc} | Activation Technician: {nsc_tech_map.get(nsc, 'Unknown')}\n")
+def ce_wan_address(ce_wan_ipv6):
+    try:
+        address, subnet = ce_wan_ipv6.split("/")
+        hex_groups = address.split(":")
+        hex_groups[-1] = format(int(hex_groups[-1], 16) + 1, "x")
+        return ":".join(hex_groups) + f"/{subnet}"
+    except Exception:
+        return None
 
-print(f"✅ Export complete! Missing NSC PDFs written to:\n{output_path}")
+def j_barton(lan_ipv6):
+    try:
+        address = lan_ipv6.split("/")[0]
+        return address + "[0-3]"
+    except Exception:
+        return None
+
+def ipv6_region_map(ipv6_region):
+    mapping = {
+        "1": "East",
+        "2": "North",
+        "3": "Central",
+        "4": "West",
+        "5": "Alaska"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def md_pw_map(ipv6_region):
+    mapping = {
+        "1": "5CB60CDAE77980D14277994BB",
+        "2": "17A75FE44D8F532715E369E86",
+        "3": "A78BA5E3FFFB4F9FE4DDEFC2D",
+        "4": "38CE4A74D0004E037471A27B9",
+        "5": "D4196D7DF1087CA41E8B5CF72"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def juniper_RI_map(ipv6_region):
+    mapping = {
+       "1": "8192-1-EIS0176-2006932628-L3VPN",
+       "2": "8193-1-EIS0176-2006932629-L3VPN",
+       "3": "8194-1-EIS0176-2006932623-L3VPN",
+       "4": "8195-1-EIS0176-2006932630-L3VPN",
+       "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def Nokia_vprn_map(ipv6_region):
+    mapping = {
+       "1": "22826008",
+       "2": "22826009",
+       "3": "22826010",
+       "4": "22826011",
+       "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+# Finds the header row in a given sheet using NumPy for efficiency
+def find_header_row(sheet):
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
+    for row_idx, row in enumerate(data, start=1):
+        non_empty_cells = np.count_nonzero(row)
+        if non_empty_cells > 2:
+            return list(row), row_idx
+    return None, None
+
+# Returns all orders (rows) from the main sheet that have a value in the "Ops Console Ticket" column
+def get_all_orders():
+    results = []
+    for sheet_name, config in SEARCH_CONFIG.items():
+        if sheet_name in wb_main.sheetnames:
+            ws = wb_main[sheet_name]
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            search_cols = [header for header in headers 
+                           if any(header.startswith(col) for col in config["search_columns"]) 
+                           and header not in ["", "0"]]
+            extract_cols = [header for header in headers if any(header.startswith(col) for col in config["extract_columns"])]
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for search_col in search_cols:
+                    cell_val = row[headers[search_col]]
+                    if cell_val is not None and str(cell_val).strip() not in ["", "0"]:
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+                        break
+    return results
+
+# Searches the LASER file for a given Service ID
+def search_circuit(Service_ID):
+    results = []
+    for sheet_name, config in SEARCH_LASER.items():
+        if sheet_name in wb_laser.sheetnames:
+            ws = wb_laser[sheet_name]
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            search_key = config.get("service_match", config.get("search_columns", []))
+            search_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in search_key)]
+            extract_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in config["extract_columns"])]
+            if not search_cols:
+                continue
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for col_name in search_cols:
+                    col_idx = headers[col_name]
+                    cell_value = str(row[col_idx]) if row[col_idx] is not None else ""
+                    if Service_ID.lower() in cell_value.lower():
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+    return results
+
+# Returns the default interface details from the LASER results
+def get_default_interface(laser_matches, ipv6_region):
+    """
+    Loop through laser_matches and return the first entry
+    where the 'interface' ends with "80{ipv6_region}".
+    Returns a tuple: (default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf)
+    """
+    default_interface = ""
+    default_device = ""
+    default_scid = ""
+    default_location = ""
+    default_wan_ip = ""
+    default_vrf = ""
+
+    target_suffix = f"80{ipv6_region}"
+    for lm in laser_matches:
+        interface_val = str(lm["Data"].get("interface", "")).strip()
+        if interface_val.lower().endswith(target_suffix.lower()):
+            default_interface = interface_val
+            default_device = str(lm["Data"].get("device", "")).strip()
+            default_scid = str(lm["Data"].get("scid", "")).strip()
+            default_location = str(lm["Data"].get("location", "")).strip()
+            default_wan_ip = str(lm["Data"].get("ipv4", "")).strip()
+            default_vrf = str(lm["Data"].get("vrf", "")).strip()
+            break
+    return default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf
+
+def compute_order_hash(order_data: dict) -> str:
+    """
+    Computes an MD5 hash from the order_data dictionary.
+    It uses a sorted concatenation of key-value pairs.
+    """
+    items = sorted(order_data.items())
+    concatenated = ""
+    for key, value in items:
+        concatenated += f"{key}:{value if value is not None else ''}|"
+    return hashlib.md5(concatenated.encode('utf-8')).hexdigest()
+
+# ---------------- Main Processing ----------------
+
+# Open main workbook and get all orders
+try:
+    wb_main = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"Error [E001]: The main file '{EXCEL_FILE}' was not found. Please verify the file path and try again.")
+    exit()
+
+all_orders = get_all_orders()
+wb_main.close()
+
+if not all_orders:
+    print("No orders found in the main spreadsheet.")
+    exit()
+
+# Open the LASER workbook once for use in all orders
+try:
+    wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"Error [E002]: The LASER file '{LASER_FILE}' was not found. Please verify the file path and try again.")
+    exit()
+
+# Load the scheduler workbook (if it exists) and create a lookup dictionary keyed by OPS Ticket#
+if os.path.exists(SCHEDULER_EXCEL):
+    try:
+        scheduler_df = pd.read_excel(SCHEDULER_EXCEL, sheet_name="IPV6", dtype=str)
+        scheduler_lookup = {}
+        for idx, row in scheduler_df.iterrows():
+            ticket = str(row.get("OPS Ticket#", "")).strip()
+            scheduler_lookup[ticket] = {
+                "Activation Technician": row.get("Activation Technician", "").strip() if pd.notnull(row.get("Activation Technician", "")) else "",
+                "STATUS": row.get("STATUS", "").strip() if pd.notnull(row.get("STATUS", "")) else ""
+            }
+    except Exception as e:
+        print(f"Error loading scheduler file: {e}")
+        scheduler_lookup = {}
+else:
+    scheduler_lookup = {}
+
+# Load the persistent CSV (if it exists) that stores processed orders
+if os.path.exists(PROCESSED_CSV):
+    processed_df = pd.read_csv(PROCESSED_CSV, dtype=str)
+else:
+    processed_df = pd.DataFrame(columns=["Ops Console Ticket", "order_hash"])
+
+# Create a lookup dictionary for quick comparison
+processed_orders = dict(zip(processed_df["Ops Console Ticket"], processed_df["order_hash"]))
+
+# Get current date string for file naming
+current_date = datetime.now().strftime("%Y-%m-%d")
+output_directory = fr"C:\Users\AD39644\IPv6_Test_Files\{current_date}"
+
+# Create the directory for the current date if it doesn't exist
+if not os.path.exists(output_directory):
+    os.makedirs(output_directory)
+
+# Process each order
+for order in all_orders:
+    try:
+        data = order["Data"]
+        # Get order number from "Ops Console Ticket"
+        order_number = str(data.get("Ops Console Ticket", "")).strip()
+        if order_number in ["", "0"]:
+            continue  # Skip rows with an empty order number or "0"
+
+        # Compute a hash for this order's data
+        order_hash = compute_order_hash(data)
+
+        # Skip processing if this order has been seen before and has not changed
+        if order_number in processed_orders and processed_orders[order_number] == order_hash:
+            print(f"Order {order_number} has not changed. Skipping text file creation.")
+            continue
+
+        service_id = str(data.get("Service ID", "")).strip()
+        ipv6_region = identify_region(data.get("IPv6 WAN", ""))
+        fixed_lan = lan_subnet_fix(data.get("IPv6 LAN", ""))
+        ce_wan = ce_wan_address(data.get("IPv6 WAN", ""))
+        area = ipv6_region_map(ipv6_region)
+        md_pw = md_pw_map(ipv6_region)
+        jRI = juniper_RI_map(ipv6_region)
+        vprn = Nokia_vprn_map(ipv6_region)
+        j_bar = j_barton(data.get("IPv6 LAN", ""))
+
+        # Search LASER file for this order's Service ID
+        laser_matches = search_circuit(service_id)
+
+        # Get default interface details from laser matches
+        default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf = get_default_interface(laser_matches, ipv6_region)
+
+        # Choose a template based on the device type; for example, if default_device starts with "ESP" use one template.
+        if default_device.upper().startswith("ESP"):
+            template_path = r"C:\Users\AD39644\Service Information ESP.txt"
+            pe_type = "Alcatel"
+        else:
+            if default_interface.upper().startswith("LSQ"):
+                template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+                pe_type = "Juniper"
+            else:
+                template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
+                pe_type = "Juniper"
+
+        with open(template_path, 'r', encoding='utf-8') as file:
+            template = file.read()
+
+        # Replace placeholders from the main file
+        template = template.replace('{Ops Console Ticket}', order_number.strip())
+        ise_design_link = data.get("iSE Design Link", "")
+        template = template.replace('{iSE Design Link}', ise_design_link.strip() if ise_design_link else "Not in Inventory")
+        template = template.replace('{Region}', (ipv6_region if ipv6_region else "").strip())
+        template = template.replace('{Lan (Data 1)}', (fixed_lan if fixed_lan else "").strip())
+        template = template.replace('{WAN/126 CE}', (ce_wan if ce_wan else "").strip())
+        template = template.replace('{WAN/126 CEnoSub}', (ce_wan.split('/')[0] if ce_wan else "").strip())
+        template = template.replace('{md_pw}', md_pw.strip())
+        template = template.replace('{j_bar}', (j_bar if j_bar else "").strip())
+        template = template.replace('{jRI}', jRI.strip())
+        template = template.replace('{jRI_conf}', (jRI.strip()).split('-200')[0])
+        template = template.replace('{vprn}', vprn.strip())
+        template = template.replace('{area}', area.strip())
+        template = template.replace('{IPv6_wan_noSub}', (data.get("IPv6 WAN", "").split('/')[0]).strip())
+        template = template.replace('{IPv6_lan_noSub}', data.get("IPv6 LAN", "").split('/')[0].strip())
+        template = template.replace('{IPv6_lan_noSuband1}', data.get("IPv6 LAN", "").split('/')[0].strip() + "1")
+        template = template.replace('{IPv6_lan_Sub64and1}', data.get("IPv6 LAN", "").split('/')[0].strip() + "1/64")
+        template = template.replace('{IPv6_lan_and1}', data.get("IPv6 LAN", "").split('/')[0].strip() + "1")
+        template = template.replace('{WAN_CE}', data.get("IPv6 WAN", "").split('/')[0].strip())
+        template = template.replace('{Node_Only}', (data.get("Node Name", "").split('.')[0].strip()).upper())
+        template = template.replace('{regional_vlan}', "80" + (ipv6_region if ipv6_region else "").strip())
+        template = template.replace('{IPv6 Status}', data.get("IPv6 Status", "").strip())
+        if data.get("IPv6 Loopback", ""):
+            loopback_parts = data.get("IPv6 Loopback", "").split('/')
+            if len(loopback_parts) > 1:
+                template = template.replace('{IPv6 Loopback_andone}', loopback_parts[0].strip() + "/" + loopback_parts[1].strip())
+        template = template.replace('{Service ID}', data.get("Service ID", "").strip())
+        template = template.replace('{IPv6 WAN}', data.get("IPv6 WAN", "").strip())
+        template = template.replace('{IPv6 LAN}', data.get("IPv6 LAN", "").strip())
+        template = template.replace('{IPv6 Loopback}', data.get("IPv6 Loopback", "").strip())
+        template = template.replace('{DOI_Bureau}', data.get("DOI_Bureau", "").strip())
+        template = template.replace('{WHD_Location}', data.get("WHD_Location", "").strip())
+        template = template.replace('{Node Name}', data.get("Node Name", "").strip())
+        template = template.replace('{IP Address}', data.get("IP Address", "").strip())
+        template = template.replace('{Address}', data.get("Address", "").strip())
+        template = template.replace('{City}', data.get("City", "").strip())
+        template = template.replace('{State}', data.get("State", "").strip())
+        template = template.replace('{Vendor}', data.get("Vendor", "").strip())
+        template = template.replace('{pe_type}', pe_type.strip())
+        template = template.replace(
+            '{WHD_Location_City}',
+            (lambda m: (m.group(1).replace('_', ' ') if m else "").strip())(
+                re.search(r'-(?P<group>[^-]*)-(?!.*-)', data.get("WHD_Location", " "))
+            )
+        )
+
+        # Replace new placeholders from LASER results
+        template = template.replace('{default_interface}', default_interface.strip())
+        template = template.replace('{default_device}', default_device.strip())
+        template = template.replace('{default_scid}', default_scid.strip())
+        template = template.replace('{default_location}', default_location.strip())
+        template = template.replace('{default_wan_ip}', default_wan_ip.strip())
+        if default_wan_ip:
+            wan_parts = default_wan_ip.split('/')[0].split('.')
+            wan_parts[-1] = str(int(wan_parts[-1]) + 1)
+            template = template.replace('{default_wan_ipand1}', '.'.join(wan_parts).strip())
+        else:
+            template = template.replace('{default_wan_ipand1}', "")
+        template = template.replace('{default_vrf}', default_vrf.strip())
+        if default_interface:
+            template = template.replace('{def_int_noSub}', default_interface.split('.')[0].strip())
+        else:
+            template = template.replace('{def_int_noSub}', "")
+        template = template.replace('{lsq_int}', default_interface.split('.')[0].replace(':', '.').strip())
+        
+        # Append network match details from LASER search
+        network_info = "\n\nNetwork Matches:\n\n"
+        for lm in laser_matches:
+            lm_data = lm["Data"]
+            for key, value in lm_data.items():
+                network_info += f"{key}: {value}\n"
+            network_info += "\n-----------------\n\n"
+        template += network_info
+
+        # --- New Scheduler Replacement ---
+        # Look up the order number in the scheduler lookup dictionary (matching "OPS Ticket#")
+        if order_number in scheduler_lookup:
+            activation_technician_val = scheduler_lookup[order_number].get("Activation Technician", "")
+            scheduler_status_val = scheduler_lookup[order_number].get("STATUS", "")
+        else:
+            activation_technician_val = ""
+            scheduler_status_val = "Did not Find in Schedule"
+        # Replace placeholders in the template
+        template = template.replace('{Activation Technician}', activation_technician_val)
+        template = template.replace('{scheduler}', scheduler_status_val)
+        
+        # --- End Scheduler Replacement ---
+
+        sanitized_order_number = order_number.replace("/", "_").replace("\\", "_").strip()
+        output_filename = f"{sanitized_order_number} - {current_date} - Pre-Checks.txt"
+        output_path = os.path.join(output_directory, output_filename)
+
+        # Write the final text file
+        with open(output_path, 'w', encoding='utf-8') as file:
+            file.write(template)
+        print(f"New text file '{output_path}' created successfully!")
+
+        # Update the processed orders lookup with the new hash
+        processed_orders[order_number] = order_hash
+
+    except Exception as e:
+        error_details = traceback.format_exc()
+        error_text = (
+            f"Error processing order {order_number}.\n"
+            f"Error Code: [OP-001]\n"
+            f"Error Type: {type(e).__name__}\n"
+            f"Error Message: {str(e)}\n\n"
+            f"Traceback:\n{error_details}"
+        )
+        error_filename = f"Error - {order_number.replace('/', '_').replace('\\', '_').strip()} - {current_date} - Pre-Checks.txt"
+        error_path = os.path.join(output_directory, error_filename)
+        
+        with open(error_path, 'w', encoding='utf-8') as file:
+            file.write(error_text)
+        print(f"Issue with order {order_number}: {error_text}")
+
+# Save the updated processed orders back to the CSV
+updated_df = pd.DataFrame(list(processed_orders.items()), columns=["Ops Console Ticket", "order_hash"])
+updated_df.to_csv(PROCESSED_CSV, index=False)
+print("Processed orders CSV updated.")
+
+                    
