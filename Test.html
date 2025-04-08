@@ -45,8 +45,8 @@ for filename in os.listdir(source_folder):
         else:
             print(f"Placeholder {{Fort Configs}} not found in {filename}")
 
-        if '{fort config file found}' in new_content:
-            new_content = new_content.replace('{fort config file found}', matching_file)
+        if '{filename found}' in new_content:
+            new_content = new_content.replace('{filename found}', matching_file)
         else:
             print(f"Placeholder {{fort config file found}} not found in {filename}")
 
