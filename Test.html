@@ -1,11 +1,11 @@
 import os
 import re
 
-# Set these paths to match your directories
+# Set your actual folder paths here
 source_folder = "path/to/source_folder"
 reference_folder = "path/to/reference_folder"
 
-# Regex pattern to extract the value after "Node Name" up to the next "."
+# Regex to extract the Node Name value before the first "."
 node_pattern = re.compile(r"Node Name\s*:\s*(\S+?)\.", re.IGNORECASE)
 
 for filename in os.listdir(source_folder):
@@ -15,7 +15,7 @@ for filename in os.listdir(source_folder):
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Search for the node name
+        # Extract node name
         match = node_pattern.search(content)
         if not match:
             print(f"No Node Name found in {filename}")
@@ -24,7 +24,7 @@ for filename in os.listdir(source_folder):
         node_name = match.group(1)
         print(f"Found Node: {node_name} in {filename}")
 
-        # Find matching file in reference folder
+        # Find the matching reference file
         matching_file = next(
             (f for f in os.listdir(reference_folder) if f.startswith(node_name) and f.endswith('.txt')),
             None
@@ -38,13 +38,19 @@ for filename in os.listdir(source_folder):
         with open(reference_path, 'r', encoding='utf-8') as ref_file:
             ref_content = ref_file.read()
 
-        # Replace {Fort Configs} with the content of the matching file
-        if '{Fort Configs}' in content:
-            new_content = content.replace('{Fort Configs}', ref_content)
-
-            # Write the updated content back to the same file
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-            print(f"Updated {filename} with Fort Configs from {matching_file}")
+        # Perform replacements
+        new_content = content
+        if '{Fort Configs}' in new_content:
+            new_content = new_content.replace('{Fort Configs}', ref_content)
         else:
             print(f"Placeholder {{Fort Configs}} not found in {filename}")
+
+        if '{fort config file found}' in new_content:
+            new_content = new_content.replace('{fort config file found}', matching_file)
+        else:
+            print(f"Placeholder {{fort config file found}} not found in {filename}")
+
+        # Save the updated content
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        print(f"Updated {filename} with content from {matching_file}")
