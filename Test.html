@@ -24,10 +24,6 @@ EXTRACT_COLUMNS = [
     "LEC ID", "SHIPPING ADDRESS", "Notes"
 ]
 
-# === Normalize helper ===
-def normalize_key(key):
-    return key.strip().lower().replace(" ", "_").replace("(", "").replace(")", "").replace("#", "").replace("/", "").replace("&", "and")
-
 # === Step 1: Get output file path
 output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
 
@@ -51,7 +47,7 @@ def find_header_row(sheet):
     data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
     for row_idx, row in enumerate(data, start=1):
         if np.count_nonzero(row) > 2:
-            return list(row), row_idx
+            return [str(cell).strip() if cell else "" for cell in row], row_idx
     return None, None
 
 # === Search for order ===
@@ -63,12 +59,12 @@ def search_order(sheet, order_num):
         return None
 
     print(f"✅ Header row found at row {header_row_idx}\n")
-    headers = {cell.replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+    headers = {cell.replace('\n', ' ').strip(): idx for idx, cell in enumerate(header_row) if cell}
 
     print(f"🧠 Available headers: {list(headers.keys())[:5]} ... ({len(headers)} total)")
 
-    search_cols = [col for col in headers if any(col.startswith(s) for s in SEARCH_COLUMNS)]
-    extract_cols = {col: headers[col] for col in headers if col in EXTRACT_COLUMNS}
+    search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
+    extract_cols = {col: headers[col] for col in headers if col.strip() in EXTRACT_COLUMNS}
 
     print(f"🔍 Search columns matched: {search_cols}")
     print(f"📦 Extract columns matched: {list(extract_cols.keys())}\n")
@@ -79,7 +75,7 @@ def search_order(sheet, order_num):
             cell_value = str(row[col_idx]) if row[col_idx] else ""
             if order_number in cell_value:
                 print(f"✅ Match found: {cell_value}\n")
-                return {col: row[idx] for col, idx in extract_cols.items()}
+                return {col.strip(): row[idx] for col, idx in extract_cols.items()}
 
     print("❌ No matching order number found.\n")
     return None
@@ -105,22 +101,20 @@ except FileNotFoundError:
     print(f"❌ Error: Template file '{template_path}' not found.")
     exit()
 
-# === Replace tags ===
+# === Replace {FieldName} style placeholders ===
 if result_data:
     print("🛠 Available keys for replacement:\n")
     for key in result_data:
-        print(f"  - {{ {key} }}: {result_data[key]}")
-
-    # Normalize all keys for simpler matching
-    normalized_data = {normalize_key(k): v for k, v in result_data.items()}
-    template = template.replace("{{ordernumber}}", order_number)
+        print(f"  - {{{key}}}: {result_data[key]}")
 
     print("\n🔁 Performing replacements...")
-    for norm_key, value in normalized_data.items():
-        tag = f"{{{{{norm_key}}}}}"
+    for key, value in result_data.items():
+        tag = f"{{{key}}}"
         if tag in template:
             print(f"  -> Replacing {tag}")
         template = template.replace(tag, str(value) if value is not None else "")
+
+    template = template.replace("{OrderNumber}", order_number)
 
     # === Write to file ===
     try:
