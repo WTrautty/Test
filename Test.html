@@ -1,1 +1,255 @@
-node_pattern = re.compile(r"Node Name\s*:\s*([^\s.]+)", re.IGNORECASE)
+import openpyxl 
+
+import numpy as np 
+
+import warnings 
+
+from openpyxl import Workbook 
+
+import os 
+
+ 
+
+# Function to extract user ID from the current working directory
+def extract_user_id_from_path():
+    cwd = os.getcwd()
+    try:
+        user_id = cwd.split("Users\\")[1][:7]
+        return user_id
+    except IndexError:
+        return None
+
+# Extract the user ID from the current working directory
+user_id = extract_user_id_from_path()
+
+if user_id:
+    print(f"User ID '{user_id}' has been set.")
+else:
+    print("User ID could not be extracted from the current working directory.")
+
+ 
+
+# Now the user_id is available for dynamic file paths 
+
+EXCEL_FILE = fr"C:\Users\{user_id}\OneDrive - Lumen\General - DOI FortiGate Internal Team\Fortinet_Master expanded.xlsx"
+
+ 
+
+# Debugging output to verify correct file path usage 
+
+print(f"Using file path: {EXCEL_FILE}") 
+
+
+# Suppress openpyxl warnings about cell errors 
+
+warnings.simplefilter("ignore", category=UserWarning) 
+
+
+ 
+
+# Define the sheets and columns to search for the order number 
+
+SEARCH_CONFIG = { 
+
+    "Router Refresh": { 
+
+        "search_columns": ["Ops Ticket"],  # Columns where we search for the order number 
+
+        "extract_columns": ["CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type", "EIS Order# (VPNS) orig site", "Lumen Order#", "Service ID", "SRE Order# orig site", "Core ENG", "Subject Line (FIT fills this out)", "Lumen Installing Equipment?", "Router Model", "HOST NAME (Fortigate)", "S/N", "Equipment PO orig site", "Install PO orig site (CFIT IPIC.705 X1 if needed for GFEs)", "Activation PO CFIT gets this", "[IF SWAP] USE SRE#", "STATUS", "CFIT NOTES", "ROUTER SHIPMENT STATUS", "Router Refresh Activation DATE", "Scheduled START Time", "OPS Ticket #", "Scheduled Activation Technician", "Activation Status: Complete/Failed", "Acceptance: Time & Who Accepted", "If FAILED, detail on failure:", "Reschedule Action Owner", "Ready to Reschedule?", "SOCN Date", "Customer Address", "Customer City", "Customer State", "Customer Zip code", "LCON", "LCON Ph#", "LCON EMAIL", "CC Email", "Access Rate/Speed", "LEC ID", "SHIPPING ADDRESS", "Notes"]  # Columns to extract data from 
+
+    }, 
+
+} 
+
+
+# Prompt the user for the order number 
+
+order_number = input("Enter the order number: ").strip() 
+
+ 
+
+# Open the workbook in read-only mode 
+
+try: 
+
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True) 
+
+except FileNotFoundError: 
+
+    print(f"Error: The file '{EXCEL_FILE}' was not found.") 
+
+    exit() 
+
+
+ 
+
+# Function to find the header row dynamically using NumPy 
+
+def find_header_row(sheet): 
+
+    """Find the first row with valid column headers using NumPy for efficiency.""" 
+
+     
+
+    # Convert sheet data into a NumPy array for fast operations 
+
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object) 
+
+ 
+
+    for row_idx, row in enumerate(data, start=1): 
+
+        non_empty_cells = np.count_nonzero(row)  # Count non-empty cells 
+
+ 
+
+        if non_empty_cells > 2:  # Assuming a valid header has at least 3 non-empty columns 
+
+
+            return list(row), row_idx  # Convert NumPy array row back to list 
+
+ 
+
+
+    return None, None  # Return None if no header row is found 
+
+ 
+
+ 
+
+ 
+
+def search_order(order_num):
+    results = []
+
+    for sheet_name, config in SEARCH_CONFIG.items():
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+
+            # Find the header row dynamically
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue  # Skip if no valid header is found
+
+            # Replace newline characters in headers with spaces
+            headers = {cell.replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+
+            # Ensure search and extract columns exist
+            search_cols = [header for header in headers if any(header.startswith(col) for col in config["search_columns"])]
+            extract_cols = [header for header in headers if any(header.startswith(col) for col in config["extract_columns"])]
+
+            if not search_cols:
+                continue  # Skip sheet if search columns are missing
+
+            # Search for the order number using partial match
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):  # Start after header
+                for col_name in search_cols:
+                    col_idx = headers[col_name]  # Get the integer index of the column name
+                    cell_value = str(row[col_idx]) if row[col_idx] is not None else ""  # Ensure it's a string
+                    if order_num in cell_value:  # Partial match instead of exact match
+                        extracted_data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": extracted_data})
+
+    return results
+
+ 
+
+# Perform the search 
+
+matches = search_order(order_number) 
+
+ 
+
+# Close the workbook 
+
+wb.close() 
+
+
+ 
+
+if matches:   
+
+    for match in matches:   
+
+        sheet_name = match["Sheet"]  
+
+        data = match.get("Data", {})  # Ensure 'data' is always a dictionary 
+
+ 
+
+        # Custom output format based on sheet name   
+
+        if sheet_name == "StarLink":   
+            print(f"\n ----------------------------------------------- \n\n") 
+            print(f"Found in StarLink \n")
+            print(f"\n ----------------------------------------------- \n") 
+            print("\nAccess: Starlink")   
+            print(f"Build Tech: {data.get('DigOpsPerf', '')}") 
+            print(f"Bureau: {data.get('Bureau', '')}") 
+            print(f"EIS Order: {order_number}")   
+            print(f"Kit#: {data.get('Starlink Serial Number ', '')}") 
+            print("\nCPE Details:")   
+            print(f"Hostname: {data.get('Host Name', '')}") 
+            print(f"Model#: {data.get('New Device', 'N/A')} | {data.get('Fortinet Device', 'N/A')}") 
+            print(f"LAN IP(s): {data.get('LAN IPs', '')}") 
+            print(f"MGMT Loopback: {data.get('Loopback IP /32  Management IP', '')}") 
+            print(f"BGP Loopback: {data.get('Loopback IP /32 Routing IP', '')}") 
+            print(f"DHCP: {data.get('DHCP Type', '')}") 
+            print(f"IP Helpers: {data.get('IP Helper', '')}")
+            print(f"DHCP Range: {data.get('DHCP Range (Start to End)', '')}") 
+            print(f"LAN Static Routes: {data.get('Static Routes', '')}") 
+            print(f"Primary Region: {data.get('Region (community string (65005:X where X = 1 for Reston, 2 for Sioux Falls, 3 for Denver, 4 for Santa Clara, 5 for Alaska)', '')}") 
+            print(f"\n ----------------------------------------------- \n") 
+
+
+ 
+
+        elif sheet_name == "L2L Site Data Template":   
+            print(f"\n ----------------------------------------------- \n\n") 
+            print(f"Found in L2L Site Data Template \n") 
+            print(f"\n ----------------------------------------------- \n") 
+            print(f"Build Tech: {data.get(' DigOpsPerf', '')}")
+            print(f"Bureau: {data.get('Bureau', '')}")
+            print(f"Order Number: {data.get('EIS SRE Order', 'N/A')} | {data.get('Core Order', 'N/A')}")
+            print(f"ISP: {data.get('Gateway ISP provider and static IP', 'N/A')} | {data.get('ISP Static IP and Mask', 'N/A')}")
+
+            # CPE Details
+            print(f"Hostname: {data.get('Host Name', '')}")
+            print(f"Model#: {data.get('New Router model', '')}")
+            print(f"BYOIP (yes/no): {data.get('Is this BYOIP (yes/no)', '')}")
+            print(f"LAN IP(s): {data.get('NEW LAN IPs (Non BYOIP)', '')}")
+            print(f"MGMT Loopback: {data.get('Loopback IP /32  Management IP', '')}")
+            print(f"BGP Loopback: {data.get('Loopback IP /32 Routing IP', '')}")
+            print(f"DHCP: {data.get('DHCP Type', '')}")
+            print(f"DHCP Range: {data.get('DHCP Range (Start to End)', '')}")
+            print(f"LAN Voice/Static: {data.get('VOICE IP', '')}")
+            print(f"Primary Region: {data.get('Region (community string (65005:X where X = 1 for Reston, 2 for Sioux Falls, 3 for Denver, 4 for Santa Clara, 5 for Alaska)', '')}")
+            print(f"Notes: {data.get('Notes', '')}")
+            print(f"\n ----------------------------------------------- \n") 
+
+ 
+
+        elif sheet_name == "VPNS Site Data Template":   
+            print(f"\n ----------------------------------------------- \n\n") 
+            print(f"Found in VPNS Site Data Template \n") 
+            print(f"\n ----------------------------------------------- \n") 
+            print(f"Access: VPNS") 
+            print(f"Build Tech: {data.get('DigOpsPerf', '')}")
+            print(f"Bureau: {data.get('Bureau', '')}") 
+            print(f"Hostname: {data.get('Host Name', '')}") 
+            print(f"Order Number: {data.get('EIS SRE Order', 'N/A')} | {data.get('Core Order', 'N/A')}")
+            print(f"Existing Router: {data.get('Existing Router', 'N/A')} | {data.get('Existing Router IP address', 'N/A')}") 
+            print(f"Notes: {data.get('Notes', '')}") 
+            print(f"\n ----------------------------------------------- \n") 
+
+ 
+
+else:   
+
+    print(f"Order number {order_number} not found in any sheet.")   
+
+ 
+
+ 
+
+ 
