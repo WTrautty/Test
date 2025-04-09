@@ -5,6 +5,7 @@ import warnings
 
 warnings.simplefilter("ignore", category=UserWarning)
 
+# === Config ===
 EXCEL_FILE = r"C:\Us.xlsx"
 SHEET_NAME = "Router Refresh"
 SEARCH_COLUMNS = ["OPS Ticket #"]
@@ -23,20 +24,29 @@ EXTRACT_COLUMNS = [
     "LEC ID", "SHIPPING ADDRESS", "Notes"
 ]
 
+# === Normalize helper ===
+def normalize_key(key):
+    return key.strip().lower().replace(" ", "_").replace("(", "").replace(")", "").replace("#", "").replace("/", "").replace("&", "and")
+
+# === Step 1: Get output file path
 output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
+
+# === Step 2: Get template file path
 template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
+
+# === Step 3: Get order number
 order_number = input("Enter the order number: ").strip()
 
-# === Load Workbook ===
+# === Load Excel ===
 try:
-    print(f"Loading workbook: {EXCEL_FILE}")
+    print(f"\n📂 Loading workbook: {EXCEL_FILE}")
     wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
-    print("Workbook loaded successfully.")
+    print("✅ Workbook loaded.\n")
 except FileNotFoundError:
-    print(f"Error: File not found - {EXCEL_FILE}")
+    print(f"❌ Error: File not found - {EXCEL_FILE}")
     exit()
 
-# === Header Row Finder ===
+# === Find header row ===
 def find_header_row(sheet):
     data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
     for row_idx, row in enumerate(data, start=1):
@@ -44,75 +54,80 @@ def find_header_row(sheet):
             return list(row), row_idx
     return None, None
 
-# === Search Function ===
+# === Search for order ===
 def search_order(sheet, order_num):
-    print("Searching for header row...")
+    print("🔍 Searching for header row...")
     header_row, header_row_idx = find_header_row(sheet)
     if not header_row:
         print("❌ No valid header row found.")
         return None
-    print(f"Header row found at row {header_row_idx}")
 
+    print(f"✅ Header row found at row {header_row_idx}\n")
     headers = {cell.replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
-    print(f"Header keys: {list(headers.keys())[:5]} ... ({len(headers)} total)")
+
+    print(f"🧠 Available headers: {list(headers.keys())[:5]} ... ({len(headers)} total)")
 
     search_cols = [col for col in headers if any(col.startswith(s) for s in SEARCH_COLUMNS)]
     extract_cols = {col: headers[col] for col in headers if col in EXTRACT_COLUMNS}
 
-    print(f"Search columns matched: {search_cols}")
-    print(f"Extract columns matched: {list(extract_cols.keys())}")
+    print(f"🔍 Search columns matched: {search_cols}")
+    print(f"📦 Extract columns matched: {list(extract_cols.keys())}\n")
 
-    found = False
     for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
         for col in search_cols:
             col_idx = headers[col]
             cell_value = str(row[col_idx]) if row[col_idx] else ""
             if order_number in cell_value:
-                found = True
-                print(f"✅ Match found: {cell_value}")
+                print(f"✅ Match found: {cell_value}\n")
                 return {col: row[idx] for col, idx in extract_cols.items()}
-    if not found:
-        print("❌ No matching order number found.")
+
+    print("❌ No matching order number found.\n")
     return None
 
-# === Perform Search ===
+# === Perform search ===
 if SHEET_NAME not in wb.sheetnames:
-    print(f"Error: Sheet '{SHEET_NAME}' not found.")
+    print(f"❌ Error: Sheet '{SHEET_NAME}' not found.")
     wb.close()
     exit()
 
-print(f"Accessing sheet: {SHEET_NAME}")
+print(f"📄 Accessing sheet: {SHEET_NAME}")
 ws = wb[SHEET_NAME]
 result_data = search_order(ws, order_number)
 wb.close()
 
-# === Load Template ===
-print(f"Loading template file: {template_path}")
+# === Load template ===
+print(f"📄 Loading template from: {template_path}")
 try:
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
-    print("Template loaded successfully.")
+    print("✅ Template loaded successfully.\n")
 except FileNotFoundError:
-    print(f"Error: Template file '{template_path}' not found.")
+    print(f"❌ Error: Template file '{template_path}' not found.")
     exit()
 
-# === Replace Template Placeholders ===
+# === Replace tags ===
 if result_data:
-    print("Performing template replacements...")
-    for key, value in result_data.items():
-        tag = f"{{{{{key}}}}}"
+    print("🛠 Available keys for replacement:\n")
+    for key in result_data:
+        print(f"  - {{ {key} }}: {result_data[key]}")
+
+    # Normalize all keys for simpler matching
+    normalized_data = {normalize_key(k): v for k, v in result_data.items()}
+    template = template.replace("{{ordernumber}}", order_number)
+
+    print("\n🔁 Performing replacements...")
+    for norm_key, value in normalized_data.items():
+        tag = f"{{{{{norm_key}}}}}"
         if tag in template:
-            print(f"Replacing {tag}")
+            print(f"  -> Replacing {tag}")
         template = template.replace(tag, str(value) if value is not None else "")
 
-    template = template.replace("{{OrderNumber}}", order_number)
-
-    # === Save to file ===
+    # === Write to file ===
     try:
         with open(output_file_path, "w", encoding="utf-8") as out_file:
             out_file.write(template)
-        print(f"\n✅ Success! Output written to:\n{output_file_path}")
+        print(f"\n✅ Output written to: {output_file_path}")
     except Exception as e:
-        print(f"❌ Failed to write to file: {e}")
+        print(f"❌ Failed to write to output file: {e}")
 else:
-    print(f"\n❌ Order number '{order_number}' not found.")
+    print(f"\n❌ Order number '{order_number}' not found in data.")
