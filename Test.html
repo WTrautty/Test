@@ -3,11 +3,9 @@ import numpy as np
 import os
 import warnings
 
-# Suppress openpyxl warnings
 warnings.simplefilter("ignore", category=UserWarning)
 
-# === Configuration ===
-EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
+EXCEL_FILE = r"C:\Us.xlsx"
 SHEET_NAME = "Router Refresh"
 SEARCH_COLUMNS = ["OPS Ticket #"]
 EXTRACT_COLUMNS = [
@@ -25,18 +23,15 @@ EXTRACT_COLUMNS = [
     "LEC ID", "SHIPPING ADDRESS", "Notes"
 ]
 
-# === Step 1: Prompt for output file path ===
 output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
-
-# === Step 2: Prompt for template file path ===
 template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
-
-# === Step 3: Prompt for the order number ===
 order_number = input("Enter the order number: ").strip()
 
 # === Load Workbook ===
 try:
+    print(f"Loading workbook: {EXCEL_FILE}")
     wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+    print("Workbook loaded successfully.")
 except FileNotFoundError:
     print(f"Error: File not found - {EXCEL_FILE}")
     exit()
@@ -51,22 +46,33 @@ def find_header_row(sheet):
 
 # === Search Function ===
 def search_order(sheet, order_num):
+    print("Searching for header row...")
     header_row, header_row_idx = find_header_row(sheet)
     if not header_row:
+        print("❌ No valid header row found.")
         return None
+    print(f"Header row found at row {header_row_idx}")
 
     headers = {cell.replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+    print(f"Header keys: {list(headers.keys())[:5]} ... ({len(headers)} total)")
 
     search_cols = [col for col in headers if any(col.startswith(s) for s in SEARCH_COLUMNS)]
     extract_cols = {col: headers[col] for col in headers if col in EXTRACT_COLUMNS}
 
+    print(f"Search columns matched: {search_cols}")
+    print(f"Extract columns matched: {list(extract_cols.keys())}")
+
+    found = False
     for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
         for col in search_cols:
             col_idx = headers[col]
             cell_value = str(row[col_idx]) if row[col_idx] else ""
             if order_number in cell_value:
+                found = True
+                print(f"✅ Match found: {cell_value}")
                 return {col: row[idx] for col, idx in extract_cols.items()}
-
+    if not found:
+        print("❌ No matching order number found.")
     return None
 
 # === Perform Search ===
@@ -75,22 +81,28 @@ if SHEET_NAME not in wb.sheetnames:
     wb.close()
     exit()
 
+print(f"Accessing sheet: {SHEET_NAME}")
 ws = wb[SHEET_NAME]
 result_data = search_order(ws, order_number)
 wb.close()
 
 # === Load Template ===
+print(f"Loading template file: {template_path}")
 try:
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
+    print("Template loaded successfully.")
 except FileNotFoundError:
     print(f"Error: Template file '{template_path}' not found.")
     exit()
 
 # === Replace Template Placeholders ===
 if result_data:
+    print("Performing template replacements...")
     for key, value in result_data.items():
-        tag = f"{{{{{key}}}}}"  # e.g., {{CFIT PM}}
+        tag = f"{{{{{key}}}}}"
+        if tag in template:
+            print(f"Replacing {tag}")
         template = template.replace(tag, str(value) if value is not None else "")
 
     template = template.replace("{{OrderNumber}}", order_number)
@@ -99,14 +111,8 @@ if result_data:
     try:
         with open(output_file_path, "w", encoding="utf-8") as out_file:
             out_file.write(template)
-        print(f"\nSuccess! Output written to:\n{output_file_path}")
+        print(f"\n✅ Success! Output written to:\n{output_file_path}")
     except Exception as e:
-        print(f"Failed to write to file: {e}")
+        print(f"❌ Failed to write to file: {e}")
 else:
-    print(f"Order number '{order_number}' not found.")
-
- 
-
- 
-
- 
+    print(f"\n❌ Order number '{order_number}' not found.")
