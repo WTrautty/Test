@@ -30,7 +30,7 @@ EXTRACT_COLUMNS = [
 LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
 LASER_MATCH_COLUMN = "circuitID"
 
-# === Input paths
+# === Get user input
 output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
 template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
 order_number = input("Enter the order number: ").strip()
@@ -63,7 +63,7 @@ def search_order(sheet, order_num):
         for col in search_cols:
             col_idx = headers[col]
             cell_value = str(row[col_idx]) if row[col_idx] else ""
-            if order_number in cell_value:
+            if order_num in cell_value:
                 return {col.strip(): row[idx] for col, idx in extract_cols.items()}
     return None
 
@@ -108,7 +108,28 @@ def search_laser_by_service_id(service_id):
 
     return matches
 
-# === Load Lumetions workbook
+# === Format Laser Matches
+def format_laser_matches(matches):
+    if not matches:
+        return "No matches found in LASER Export."
+    output = []
+    for i, row in enumerate(matches, start=1):
+        block = [f"- Match {i}:"]
+        for key in LASER_EXTRACT_COLUMNS:
+            value = row.get(key, "")
+            block.append(f"  {key.capitalize()}: {value}")
+        output.append("\n".join(block))
+    return "\n\n".join(output)
+
+# === Identify default match
+def find_default_match(matches):
+    for match in matches:
+        interface = str(match.get("interface", ""))
+        if interface.endswith(("801", "802", "803", "804", "805")):
+            return match
+    return None
+
+# === Load and search Lumetions Tracker
 try:
     print(f"\n📂 Loading Lumetions Tracker: {EXCEL_FILE}")
     wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
@@ -133,35 +154,36 @@ except FileNotFoundError:
     print(f"❌ Error: Template file '{template_path}' not found.")
     exit()
 
-# === Format Laser Matches
-def format_laser_matches(matches):
-    if not matches:
-        return "No matches found in LASER Export."
-    output = []
-    for i, row in enumerate(matches, start=1):
-        block = [f"- Match {i}:"]
-        for key in LASER_EXTRACT_COLUMNS:
-            value = row.get(key, "")
-            block.append(f"  {key.capitalize()}: {value}")
-        output.append("\n".join(block))
-    return "\n\n".join(output)
-
-# === Process + Replace
+# === Process and export
 if result_data:
     service_id = str(result_data.get("Service ID", "")).strip()
     laser_matches = search_laser_by_service_id(service_id)
+    default_match = find_default_match(laser_matches)
 
     filled_template = template
 
+    # Replace Lumetions fields
     for key in EXTRACT_COLUMNS:
         placeholder = f"{{{key.strip()}}}"
         filled_template = filled_template.replace(placeholder, str(result_data.get(key.strip(), "")))
 
-    # Replace entire Laser_Find block
+    # Replace Laser_Find block
     filled_template = filled_template.replace("{Laser_Find}", format_laser_matches(laser_matches))
+
+    # Replace default_* fields
+    if default_match:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_{key}}}"
+            filled_template = filled_template.replace(placeholder, str(default_match.get(key, "")))
+    else:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_{key}}}"
+            filled_template = filled_template.replace(placeholder, "N/A")
+
+    # Replace OrderNumber
     filled_template = filled_template.replace("{OrderNumber}", order_number)
 
-    # === Write to file
+    # === Write output
     try:
         with open(output_file_path, "w", encoding="utf-8") as out_file:
             out_file.write(filled_template)
