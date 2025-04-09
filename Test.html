@@ -59,16 +59,25 @@ def search_order(sheet, order_num):
         return None
 
     print(f"✅ Header row found at row {header_row_idx}\n")
-    headers = {cell.replace('\n', ' ').strip(): idx for idx, cell in enumerate(header_row) if cell}
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
 
-    print(f"🧠 Available headers: {list(headers.keys())[:5]} ... ({len(headers)} total)")
+    print(f"🧠 Available headers from Excel: {list(headers.keys())[:5]} ... ({len(headers)} total)")
 
+    # Match search columns (exact)
     search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
-    extract_cols = {col: headers[col] for col in headers if col.strip() in EXTRACT_COLUMNS}
+
+    # Match extract columns by partial start match
+    extract_cols = {}
+    for extract_key in EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.strip().startswith(extract_key.strip()):
+                extract_cols[extract_key] = headers[header_key]
+                break
 
     print(f"🔍 Search columns matched: {search_cols}")
     print(f"📦 Extract columns matched: {list(extract_cols.keys())}\n")
 
+    # Look for match
     for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
         for col in search_cols:
             col_idx = headers[col]
@@ -106,9 +115,9 @@ if result_data:
     print("🛠 Starting manual replacements:\n")
 
     for key in EXTRACT_COLUMNS:
-        key = key.strip()
-        value = result_data.get(key, "")
-        placeholder = f"{{{key}}}"
+        clean_key = key.strip()
+        value = result_data.get(clean_key, "")
+        placeholder = f"{{{clean_key}}}"
         if placeholder in template:
             print(f"  -> Replacing {placeholder} with: {value}")
         template = template.replace(placeholder, str(value))
