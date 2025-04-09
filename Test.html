@@ -30,9 +30,9 @@ EXTRACT_COLUMNS = [
 LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
 LASER_MATCH_COLUMN = "circuitID"
 
-# === Get Inputs
-output_file_path = input("Enter full path for the output .txt file: ").strip()
-template_path = input("Enter full path for the .txt template file: ").strip()
+# === Step 1: Get user input
+output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
+template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
 order_number = input("Enter the order number: ").strip()
 
 # === Utility: Find header row
@@ -43,15 +43,7 @@ def find_header_row(sheet):
             return [str(cell).strip() if cell else "" for cell in row], row_idx
     return None, None
 
-# === Load Lumetions Tracker ===
-try:
-    print(f"\n📂 Loading Lumetions Tracker: {EXCEL_FILE}")
-    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
-except FileNotFoundError:
-    print(f"❌ Error: File not found - {EXCEL_FILE}")
-    exit()
-
-# === Search for order ===
+# === Search Lumetions Tracker ===
 def search_order(sheet, order_num):
     header_row, header_row_idx = find_header_row(sheet)
     if not header_row:
@@ -75,22 +67,22 @@ def search_order(sheet, order_num):
                 return {col.strip(): row[idx] for col, idx in extract_cols.items()}
     return None
 
-# === Search for matching LASER row ===
+# === Search LASER Export for ALL matching Service IDs ===
 def search_laser_by_service_id(service_id):
     try:
         laser_wb = openpyxl.load_workbook(LASER_FILE, read_only=True)
     except FileNotFoundError:
         print(f"❌ Error: LASER file not found - {LASER_FILE}")
-        return {}
+        return []
 
     if LASER_SHEET not in laser_wb.sheetnames:
         print(f"❌ Error: Sheet '{LASER_SHEET}' not found in LASER file.")
-        return {}
+        return []
 
     ws = laser_wb[LASER_SHEET]
     header_row, header_row_idx = find_header_row(ws)
     if not header_row:
-        return {}
+        return []
 
     headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
 
@@ -100,10 +92,6 @@ def search_laser_by_service_id(service_id):
             match_col = headers[key]
             break
 
-    if match_col is None:
-        print(f"❌ Error: Could not find match column '{LASER_MATCH_COLUMN}' in LASER headers.")
-        return {}
-
     extract_cols = {}
     for extract_key in LASER_EXTRACT_COLUMNS:
         for header_key in headers:
@@ -111,14 +99,23 @@ def search_laser_by_service_id(service_id):
                 extract_cols[extract_key] = headers[header_key]
                 break
 
+    matches = []
     for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
         cell_value = str(row[match_col]) if row[match_col] else ""
         if service_id in cell_value:
-            return {col: row[idx] for col, idx in extract_cols.items()}
+            match = {col: row[idx] for col, idx in extract_cols.items()}
+            matches.append(match)
 
-    return {}
+    return matches
 
-# === Perform Lumetions Search
+# === Load Lumetions workbook and search
+try:
+    print(f"\n📂 Loading Lumetions Tracker: {EXCEL_FILE}")
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"❌ Error: File not found - {EXCEL_FILE}")
+    exit()
+
 if SHEET_NAME not in wb.sheetnames:
     print(f"❌ Error: Sheet '{SHEET_NAME}' not found.")
     wb.close()
@@ -127,39 +124,44 @@ if SHEET_NAME not in wb.sheetnames:
 result_data = search_order(wb[SHEET_NAME], order_number)
 wb.close()
 
-# === Perform LASER Search (if Service ID found)
-laser_data = {}
-if result_data and "Service ID" in result_data and result_data["Service ID"]:
-    laser_data = search_laser_by_service_id(str(result_data["Service ID"]))
-
 # === Load template
 try:
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
+    print("✅ Template loaded.\n")
 except FileNotFoundError:
     print(f"❌ Error: Template file '{template_path}' not found.")
     exit()
 
-# === Manual replacements from Lumetions + LASER data
+# === Fill and export
 if result_data:
-    for key in EXTRACT_COLUMNS:
-        clean_key = key.strip()
-        value = result_data.get(clean_key, "")
-        placeholder = f"{{{clean_key}}}"
-        template = template.replace(placeholder, str(value))
+    service_id = str(result_data.get("Service ID", "")).strip()
+    laser_matches = search_laser_by_service_id(service_id)
 
-    for key in LASER_EXTRACT_COLUMNS:
-        value = laser_data.get(key, "")
-        placeholder = f"{{{key}}}"
-        template = template.replace(placeholder, str(value))
+    if not laser_matches:
+        laser_matches = [{}]  # fallback: no matches, but still output 1 result
 
-    template = template.replace("{OrderNumber}", order_number)
+    for i, laser_data in enumerate(laser_matches, start=1):
+        filled_template = template
 
-    try:
-        with open(output_file_path, "w", encoding="utf-8") as out_file:
-            out_file.write(template)
-        print(f"\n✅ Output written to: {output_file_path}")
-    except Exception as e:
-        print(f"❌ Failed to write to output file: {e}")
+        for key in EXTRACT_COLUMNS:
+            placeholder = f"{{{key.strip()}}}"
+            filled_template = filled_template.replace(placeholder, str(result_data.get(key.strip(), "")))
+
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{{key}}}"
+            filled_template = filled_template.replace(placeholder, str(laser_data.get(key, "")))
+
+        filled_template = filled_template.replace("{OrderNumber}", order_number)
+
+        # Handle output file naming
+        output_path = output_file_path if len(laser_matches) == 1 else output_file_path.replace(".txt", f"_{i}.txt")
+
+        try:
+            with open(output_path, "w", encoding="utf-8") as out_file:
+                out_file.write(filled_template)
+            print(f"✅ Output written to: {output_path}")
+        except Exception as e:
+            print(f"❌ Failed to write to output file: {e}")
 else:
     print(f"❌ Order number '{order_number}' not found in Lumetions Tracker.")
