@@ -101,19 +101,19 @@ except FileNotFoundError:
     print(f"❌ Error: Template file '{template_path}' not found.")
     exit()
 
-# === Replace {FieldName} style placeholders ===
+# === Manual replacements
 if result_data:
-    print("🛠 Available keys for replacement:\n")
-    for key in result_data:
-        print(f"  - {{{key}}}: {result_data[key]}")
+    print("🛠 Starting manual replacements:\n")
 
-    print("\n🔁 Performing replacements...")
-    for key, value in result_data.items():
-        tag = f"{{{key}}}"
-        if tag in template:
-            print(f"  -> Replacing {tag}")
-        template = template.replace(tag, str(value) if value is not None else "")
+    for key in EXTRACT_COLUMNS:
+        key = key.strip()
+        value = result_data.get(key, "")
+        placeholder = f"{{{key}}}"
+        if placeholder in template:
+            print(f"  -> Replacing {placeholder} with: {value}")
+        template = template.replace(placeholder, str(value))
 
+    # Replace OrderNumber
     template = template.replace("{OrderNumber}", order_number)
 
     # === Write to file ===
