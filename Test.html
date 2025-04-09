@@ -1,382 +1,146 @@
-Activation Information
-==================================================================================================
-Slider Subject line: {Subject Line (FIT fills this out)}
-Outlook Subject line: {Subject Line (FIT fills this out)}
-==================================================================================================
-Scheduled Time: 
-
-Order Details
-
-Bureau: 				{Bureau}
-Ops Console Ticket:		{OPS Ticket #}
-Order (Pipeline): 		{Lumen Order#}
-Order (Core/SRE):   	{Core ENG}  {SRE Order# orig site}
-Service ID: 			{Service ID}
-
-ADDRESS: {Customer Address}
-
-DEMARC & Notes from Outlook Invite: 
-
-
-Contacts:
-{LCON}, {LCON Ph#}, {LCON EMAIL}
-
-CIRCUIT INFO
-
-
-PE/Interface (LASER link):
-
-
-==================================================================================================
-NOTES: 
-
-==================================================================================================
-
-Existing CPE Info
-TID:
-Model:
-Serial Number:
-MGMT IP Address:
-WAN Port:		
-LAN Port(s):	
-
-
-
-New CPE Info (If refresh)
-TID: {HOST NAME (Fortigate)}
-Model: {Router Model}
-MGMT IP Address: _MgmtLoopbackIP_
-WAN Port: 		_WANint_
-LAN Port(s): 	_LANint_
-
-
-==================================================================================================
-
-NID: 
- 
-==================================================================================================
-
-Circuit Components (Pipeline: Ex: FROxxxxxxx)
-
-
-search.pl -i=
-
-search.pl -i=
-
-==================================================================================================
-CIRCUIT PATH:
-
-
-
-================================================================================================== 
-
-Circuit Path checks (PE Through NID) here
-Some Considerations:
-•	PE
-		o	QoS Sap-ingress/egress
-		o	Multi Service Policy
-		o	IPs / VLANs / BGP
-
-<sap>
-<Neighbor_MGMT_IP>
-<Neighbor_REG_IP>
-
-show service sap-using | match <sap>
-
-admin display-config  | match <sap> context all 
-
-admin display-config | match FROxxxxxxx-DSRxxxxxxx context all 
-
-configure qos sap-egress _qos_
-
-configure qos sap-ingress _qos_
-
-admin display-config | match expression "<Neighbor_MGMT_IP>|<Neighbor_REG_IP>" context all 
-
-show service id MGMT_VPRN arp | match <sap>
-
-show router MGMT_VPRN bgp neighbor <Neighbor_MGMT_IP> received-routes 
-
-
-•	Circuit Path
-		o	Validate any remaining shapers
-		
-•	NID/Drop Switch
-		o	MAC check
-		o	Flows (single if orange, per-logical if red)
-		o	Rate-limiting (on Flows and/or network port if red)
-		o	Media type/speed duplex on access 3
-
-
-
-==================================================================================================
-EXISTING CPE PRE CHECKS
-================================================================================================== 
-
-Some Considerations:
-•	You may want to capture a “show run” of existing CPE and retain in personal notes (don’t paste full show run in scrub)
-
-•	Validate routing
-		o	“show run | s router” will capture any dynamic protocols  --- (s = section)
-		o	“show run | s ip route” or “show ip route static” will capture static routes
-		o	If OSPF is configured, “show ip route ospf” will capture dynamically learned OSPF routes from customer
-		
-•	Validate Interfaces
-		o	Capture media type (pay attention to SFPs if fiber) - show inv 
-		o	Capture speed/duplex settings
-		o	Capture arp “show arp dynamic”
-
-
-show ip int br
-show arp dynamic
-show run | s router
-show inv
-show ver
-
-
-==================================================================================================
-NEW CPE PRE CHECKS
-==================================================================================================
-*** ELOW - CORE # to find New Cisco Config ***
-
-* Download new config files(Cisco (in CORE) or FortiGate) - validate configs
- 
-==================================================================================================
-MOP
-==================================================================================================
- 
-* Not as Common - some will have MOPs - if so, include them here. Check for MOPs in FlightDeck global notes and/or sharepoint for CPE
-
-
-
-======================================================================
-======================================================================
-Closing EMAIL: 
-
-Hello,
-
-This activation and on-boarding is complete.
-Accepted by: 
- 
-PRE SPEED TESTS: 
-
-
-POST SPEED TESTS: 
-
-
-Was a new device installed (Yes/No): Yes
-NEW DEVICE TYPE (CISCO/FORTIGATE): CISCO 8K
-BUREAU: {Bureau}
-CONNECTION TYPE (L2L/VPNS): VPNS
-MGMT LOOPBACK IP ADDRESS: _MgmtLoopbackIP_
-COMPLETE LOCATION (ADDRESS, CITY, STATE, ZIP CODE): {Customer Address}
-HOSTNAME: {HOST NAME (Fortigate)}
-SERIAL NUMBER: {S/N}
-LOCAL CONTACT NAME/EMAIL/PHONE: {LCON}, {LCON Ph#}, {LCON EMAIL}
-Additional Notes: 
-
-
-======================================================================
-======================================================================
-
-
-==================================================================================================
-Activation: 
-==================================================================================================
-
-Duration of the call
---------------------
-Start: 
-Stop: 
-
-Order Details
---------------
-Customer Name: DOI / {Bureau}
-Ops Console Ticket: {Ops Ticket}
-Order/Circuit ID (Pipeline/Core/SRE): {Lumen Order#} / {Core ENG} / {Service ID}
-Activation Date: 
-
-Product Details
-----------------
-Type: EIS0176 Activation
-Plug and Play (Yes or No): No
-Region: North America
-
-Activation Call Attendees
----------------------------
-Blake Westerby - Lumen Technologies
-************** - Concert Technologies
-************** - Concert Technologies
-
-
-
-
-
-Activation Call Details
------------------------
-CALL SUMMARY: 
--
-
-Service Accepted By: *****
-
-PRE SPEED TESTS: 
-
-POST SPEED TESTS: 
-
-
-Customer contact information (First/Last Name): 
-
-
-Next Steps and Pending Actions
-----------------------------------
-
-Details provided to Customer: 
-Subcase assigned to: 
-
-Test Results 
------------------------------------------------------------
-Cisco Test Commands
------------------------------------------------------------
-
-show ip int brief
-show int descrip
-show run int _WANint_
-show run int _WANint_.80x
-show run int _WANint_.
-
-show run int _LANint_
-show ip bgp all sum
-clear counters
-
-
-(WAN Pings - PE/CPE)
-ping ip <Neighbor_MGMT_IP> source X.X.X.X repeat 2500 size 1500
-
-
-(LAN Pings - Any pingable IP)
-ping ip X.X.X.X source X.X.X.X repeat 2500 size 1500
-
-
-
-############CAVEAT############
-
-##If observing filtered loss, temporarily remove the CoP filter##
-conf t
-control-plane
-no service-policy input CoP
-##Add back after testing##
-conf t
-control-plane
-service-policy input CoP
-
-##############################
-
-
-show int _WANint_
-show int _WANint_
-show int _WANint_
-
-show int _LANint_
-
-show version 
-<< Check current Code version (current code can be found in DOI database)
-
-
-show snmp user
-
-<< Should see "DOIMONITORv2" & "sw_1n3snmpv3"
-	snmp-server user DOIMONITORv2 DOIGROUPv2 v3 auth SHA vT&75W15D8G3NABOILom priv AES 128 qoqAHB28!9ERUYIwItRg
-	snmp-server user sw_1n3snmpv3 0ri0n v3 auth SHA 1oDg0vt3cHN01og1e51uM3n priv AES 128 1oDg0vt3cHN01og1e51uM3n
-
-
-show inventory
-show ip bgp all sum
-show ip bgp neighbor x.x.x.x advertised-routes		<<< Data WAN 80X peer
-
-
-clear log
-wr
-
-
-
-------
-
------------------------------------------------------------
-Checklist/Cleanup
------------------------------------------------------------
-
-#cleanup lines#
-
-line con 0 
-exec-timeout 10 0
-transport preferred ssh
-!
-line vty 0 4
-exec-timeout 10 0
-transport preferred ssh
-transport input ssh
-!
-line aux 0
-transport preferred none
-transport input none
-transport output none
-no exec
-!
-line vty 5 15
-transport input none
-transport output none
-transport preferred none
-!
- 
-#These should already be configured, but let's make sure#
-no ip http authentication local
-service-password encryption
-
-#DOI Logging - REGION Based - VLANs below#
-801 - Reston
-802 - Sioux Falls
-803 - Denver
-804 - Santa Clara
-805 - Alaska
-
-
-(Reston - WAN VLAN 801)
-
-config t
-logging host 10.10.27.123
-logging trap informational
-no logging host 137.227.3.36 transport udp port 5014
-end
-wr
-
-(Sioux Falls - WAN VLAN 802)
-
-config t
-logging host 10.10.136.204
-no logging host 137.227.3.36 transport udp port 5014
-end
-wr
-
-(Denver - WAN VLAN 803)
-
-config t
-logging host 10.10.81.123
-no logging host 137.227.3.36 transport udp port 5014
-end
-wr
-
-(Santa Clara - WAN VLAN 804)
-
-config t
-logging host 10.2.251.12
-no logging host 137.227.3.36 transport udp port 5014
-end
-wr
-
-(Alaska - WAN VLAN 805)
-
-config t
-logging host 10.2.252.12
-no logging host 137.227.3.36 transport udp port 5014
-end
-wr
+import openpyxl
+import numpy as np
+import os
+import warnings
+
+# Suppress openpyxl warnings
+warnings.simplefilter("ignore", category=UserWarning)
+
+# === Configuration ===
+EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
+LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+SHEET_NAME = "Router Refresh"
+SEARCH_COLUMNS = ["OPS Ticket #"]
+EXTRACT_COLUMNS = [
+    "CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type",
+    "EIS Order# (VPNS) orig site", "Lumen Order#", "Service ID",
+    "SRE Order# orig site", "Core ENG", "Subject Line (FIT fills this out)",
+    "Lumen Installing Equipment?", "Router Model", "HOST NAME (Fortigate)", "S/N",
+    "Equipment PO orig site", "Install PO orig site (CFIT IPIC.705 X1 if needed for GFEs)",
+    "Activation PO CFIT gets this", "[IF SWAP] USE SRE#", "STATUS", "CFIT NOTES",
+    "ROUTER SHIPMENT STATUS", "Router Refresh Activation DATE", "Scheduled START Time",
+    "OPS Ticket #", "Scheduled Activation Technician", "Activation Status: Complete/Failed",
+    "Acceptance: Time & Who Accepted", "If FAILED, detail on failure:", "Reschedule Action Owner",
+    "Ready to Reschedule?", "SOCN Date", "Customer Address", "Customer City", "Customer State",
+    "Customer Zip code", "LCON", "LCON Ph#", "LCON EMAIL", "CC Email", "Access Rate/Speed",
+    "LEC ID", "SHIPPING ADDRESS", "Notes"
+]
+
+
+SEARCH_LASER = {
+    "Sheet1": {
+        "service_match": ["circuitID"],  # Key used to search for the Service ID
+        "extract_columns": ["device", "interface", "scid", "location", "ipv4", "vrf"]
+    },
+}
+
+# === Step 1: Get output file path
+output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
+
+# === Step 2: Get template file path
+template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
+
+# === Step 3: Get order number
+order_number = input("Enter the order number: ").strip()
+
+# === Load Excel ===
+try:
+    print(f"\n📂 Loading workbook: {EXCEL_FILE}")
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+    print("✅ Workbook loaded.\n")
+except FileNotFoundError:
+    print(f"❌ Error: File not found - {EXCEL_FILE}")
+    exit()
+
+# === Find header row ===
+def find_header_row(sheet):
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
+    for row_idx, row in enumerate(data, start=1):
+        if np.count_nonzero(row) > 2:
+            return [str(cell).strip() if cell else "" for cell in row], row_idx
+    return None, None
+
+# === Search for order ===
+def search_order(sheet, order_num):
+    print("🔍 Searching for header row...")
+    header_row, header_row_idx = find_header_row(sheet)
+    if not header_row:
+        print("❌ No valid header row found.")
+        return None
+
+    print(f"✅ Header row found at row {header_row_idx}\n")
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+
+    print(f"🧠 Available headers from Excel: {list(headers.keys())[:5]} ... ({len(headers)} total)")
+
+    # Match search columns (exact)
+    search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
+
+    # Match extract columns by partial start match
+    extract_cols = {}
+    for extract_key in EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.strip().startswith(extract_key.strip()):
+                extract_cols[extract_key] = headers[header_key]
+                break
+
+    print(f"🔍 Search columns matched: {search_cols}")
+    print(f"📦 Extract columns matched: {list(extract_cols.keys())}\n")
+
+    # Look for match
+    for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        for col in search_cols:
+            col_idx = headers[col]
+            cell_value = str(row[col_idx]) if row[col_idx] else ""
+            if order_number in cell_value:
+                print(f"✅ Match found: {cell_value}\n")
+                return {col.strip(): row[idx] for col, idx in extract_cols.items()}
+
+    print("❌ No matching order number found.\n")
+    return None
+
+# === Perform search ===
+if SHEET_NAME not in wb.sheetnames:
+    print(f"❌ Error: Sheet '{SHEET_NAME}' not found.")
+    wb.close()
+    exit()
+
+print(f"📄 Accessing sheet: {SHEET_NAME}")
+ws = wb[SHEET_NAME]
+result_data = search_order(ws, order_number)
+wb.close()
+
+# === Load template ===
+print(f"📄 Loading template from: {template_path}")
+try:
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+    print("✅ Template loaded successfully.\n")
+except FileNotFoundError:
+    print(f"❌ Error: Template file '{template_path}' not found.")
+    exit()
+
+# === Manual replacements
+if result_data:
+    print("🛠 Starting manual replacements:\n")
+
+    for key in EXTRACT_COLUMNS:
+        clean_key = key.strip()
+        value = result_data.get(clean_key, "")
+        placeholder = f"{{{clean_key}}}"
+        if placeholder in template:
+            print(f"  -> Replacing {placeholder} with: {value}")
+        template = template.replace(placeholder, str(value))
+
+    # Replace OrderNumber
+    template = template.replace("{OrderNumber}", order_number)
+
+    # === Write to file ===
+    try:
+        with open(output_file_path, "w", encoding="utf-8") as out_file:
+            out_file.write(template)
+        print(f"\n✅ Output written to: {output_file_path}")
+    except Exception as e:
+        print(f"❌ Failed to write to output file: {e}")
+else:
+    print(f"\n❌ Order number '{order_number}' not found in data.")
