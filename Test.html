@@ -3,13 +3,14 @@ import numpy as np
 import os
 import warnings
 
-# Suppress openpyxl warnings
 warnings.simplefilter("ignore", category=UserWarning)
 
 # === Configuration ===
-EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
+EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumetions Tracker.xlsx"
 LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
 SHEET_NAME = "Router Refresh"
+LASER_SHEET = "Sheet1"
+
 SEARCH_COLUMNS = ["OPS Ticket #"]
 EXTRACT_COLUMNS = [
     "CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type",
@@ -26,33 +27,15 @@ EXTRACT_COLUMNS = [
     "LEC ID", "SHIPPING ADDRESS", "Notes"
 ]
 
+LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
+LASER_MATCH_COLUMN = "circuitID"
 
-SEARCH_LASER = {
-    "Sheet1": {
-        "service_match": ["circuitID"],  # Key used to search for the Service ID
-        "extract_columns": ["device", "interface", "scid", "location", "ipv4", "vrf"]
-    },
-}
-
-# === Step 1: Get output file path
-output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
-
-# === Step 2: Get template file path
-template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
-
-# === Step 3: Get order number
+# === Get Inputs
+output_file_path = input("Enter full path for the output .txt file: ").strip()
+template_path = input("Enter full path for the .txt template file: ").strip()
 order_number = input("Enter the order number: ").strip()
 
-# === Load Excel ===
-try:
-    print(f"\n📂 Loading workbook: {EXCEL_FILE}")
-    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
-    print("✅ Workbook loaded.\n")
-except FileNotFoundError:
-    print(f"❌ Error: File not found - {EXCEL_FILE}")
-    exit()
-
-# === Find header row ===
+# === Utility: Find header row
 def find_header_row(sheet):
     data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
     for row_idx, row in enumerate(data, start=1):
@@ -60,23 +43,23 @@ def find_header_row(sheet):
             return [str(cell).strip() if cell else "" for cell in row], row_idx
     return None, None
 
+# === Load Lumetions Tracker ===
+try:
+    print(f"\n📂 Loading Lumetions Tracker: {EXCEL_FILE}")
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"❌ Error: File not found - {EXCEL_FILE}")
+    exit()
+
 # === Search for order ===
 def search_order(sheet, order_num):
-    print("🔍 Searching for header row...")
     header_row, header_row_idx = find_header_row(sheet)
     if not header_row:
-        print("❌ No valid header row found.")
         return None
 
-    print(f"✅ Header row found at row {header_row_idx}\n")
     headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
-
-    print(f"🧠 Available headers from Excel: {list(headers.keys())[:5]} ... ({len(headers)} total)")
-
-    # Match search columns (exact)
     search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
 
-    # Match extract columns by partial start match
     extract_cols = {}
     for extract_key in EXTRACT_COLUMNS:
         for header_key in headers:
@@ -84,58 +67,94 @@ def search_order(sheet, order_num):
                 extract_cols[extract_key] = headers[header_key]
                 break
 
-    print(f"🔍 Search columns matched: {search_cols}")
-    print(f"📦 Extract columns matched: {list(extract_cols.keys())}\n")
-
-    # Look for match
     for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
         for col in search_cols:
             col_idx = headers[col]
             cell_value = str(row[col_idx]) if row[col_idx] else ""
-            if order_number in cell_value:
-                print(f"✅ Match found: {cell_value}\n")
+            if order_num in cell_value:
                 return {col.strip(): row[idx] for col, idx in extract_cols.items()}
-
-    print("❌ No matching order number found.\n")
     return None
 
-# === Perform search ===
+# === Search for matching LASER row ===
+def search_laser_by_service_id(service_id):
+    try:
+        laser_wb = openpyxl.load_workbook(LASER_FILE, read_only=True)
+    except FileNotFoundError:
+        print(f"❌ Error: LASER file not found - {LASER_FILE}")
+        return {}
+
+    if LASER_SHEET not in laser_wb.sheetnames:
+        print(f"❌ Error: Sheet '{LASER_SHEET}' not found in LASER file.")
+        return {}
+
+    ws = laser_wb[LASER_SHEET]
+    header_row, header_row_idx = find_header_row(ws)
+    if not header_row:
+        return {}
+
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+
+    match_col = None
+    for key in headers:
+        if key.lower().startswith(LASER_MATCH_COLUMN.lower()):
+            match_col = headers[key]
+            break
+
+    if match_col is None:
+        print(f"❌ Error: Could not find match column '{LASER_MATCH_COLUMN}' in LASER headers.")
+        return {}
+
+    extract_cols = {}
+    for extract_key in LASER_EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.lower().startswith(extract_key.lower()):
+                extract_cols[extract_key] = headers[header_key]
+                break
+
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        cell_value = str(row[match_col]) if row[match_col] else ""
+        if service_id in cell_value:
+            return {col: row[idx] for col, idx in extract_cols.items()}
+
+    return {}
+
+# === Perform Lumetions Search
 if SHEET_NAME not in wb.sheetnames:
     print(f"❌ Error: Sheet '{SHEET_NAME}' not found.")
     wb.close()
     exit()
 
-print(f"📄 Accessing sheet: {SHEET_NAME}")
-ws = wb[SHEET_NAME]
-result_data = search_order(ws, order_number)
+result_data = search_order(wb[SHEET_NAME], order_number)
 wb.close()
 
-# === Load template ===
-print(f"📄 Loading template from: {template_path}")
+# === Perform LASER Search (if Service ID found)
+laser_data = {}
+if result_data and "Service ID" in result_data and result_data["Service ID"]:
+    laser_data = search_laser_by_service_id(str(result_data["Service ID"]))
+
+# === Load template
 try:
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
-    print("✅ Template loaded successfully.\n")
 except FileNotFoundError:
     print(f"❌ Error: Template file '{template_path}' not found.")
     exit()
 
-# === Manual replacements
+# === Manual replacements from Lumetions + LASER data
 if result_data:
-    print("🛠 Starting manual replacements:\n")
-
     for key in EXTRACT_COLUMNS:
         clean_key = key.strip()
         value = result_data.get(clean_key, "")
         placeholder = f"{{{clean_key}}}"
-        if placeholder in template:
-            print(f"  -> Replacing {placeholder} with: {value}")
         template = template.replace(placeholder, str(value))
 
-    # Replace OrderNumber
+    for key in LASER_EXTRACT_COLUMNS:
+        value = laser_data.get(key, "")
+        placeholder = f"{{{key}}}"
+        template = template.replace(placeholder, str(value))
+
     template = template.replace("{OrderNumber}", order_number)
 
-    # === Write to file ===
     try:
         with open(output_file_path, "w", encoding="utf-8") as out_file:
             out_file.write(template)
@@ -143,4 +162,4 @@ if result_data:
     except Exception as e:
         print(f"❌ Failed to write to output file: {e}")
 else:
-    print(f"\n❌ Order number '{order_number}' not found in data.")
+    print(f"❌ Order number '{order_number}' not found in Lumetions Tracker.")
