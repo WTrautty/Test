@@ -7,9 +7,9 @@ import warnings
 warnings.simplefilter("ignore", category=UserWarning)
 
 # === Configuration ===
-EXCEL_FILE = r"C:\Us.xlsx"
+EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
 SHEET_NAME = "Router Refresh"
-SEARCH_COLUMNS = ["Ops Ticket"]
+SEARCH_COLUMNS = ["OPS Ticket #"]
 EXTRACT_COLUMNS = [
     "CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type",
     "EIS Order# (VPNS) orig site", "Lumen Order#", "Service ID",
@@ -99,8 +99,14 @@ if result_data:
     try:
         with open(output_file_path, "w", encoding="utf-8") as out_file:
             out_file.write(template)
-        print(f"\n✅ Success! Output written to:\n{output_file_path}")
+        print(f"\nSuccess! Output written to:\n{output_file_path}")
     except Exception as e:
-        print(f"❌ Failed to write to file: {e}")
+        print(f"Failed to write to file: {e}")
 else:
-    print(f"❌ Order number '{order_number}' not found.")
+    print(f"Order number '{order_number}' not found.")
+
+ 
+
+ 
+
+ 
