@@ -1,6 +1,54 @@
-I need a python script. I have a txt file. I need it to delimit the text by appearqance of the word "routing-instance". Every chunk of text needs a couple of text checks. If the word Service-Engine0/1/0 exists. The chunk also needs to have a line containing "NIM subslot 0/1.*NIM Voice Analog Module" with the .* being a wildcard. If the word Service-Engine0/2/0 exists. The chunk also needs to have a line containing "NIM subslot 0/2.* Voice Analog Module" with the .* being a wildcard.
-If the word "interface GigabitEthernet0/1/" exists, it needs to have the words "NIM subslot 0/1.* DESCR: "NIM-ES2"
-If the word "interface GigabitEthernet0/2/" exists, it needs to have the words "NIM subslot 0/2.* DESCR: "NIM-ES2"
+import re
 
-I want a line where I can insert the file path for the txt file statically.
-I want a line where I can designate the file path for the exported txt file with all of the mismatches statically.
+# === Set your file paths here ===
+input_file_path = r"C:\Path\To\Your\Input.txt"
+output_file_path = r"C:\Path\To\Your\Output_Mismatches.txt"
+
+# === Read and split the input file ===
+with open(input_file_path, 'r', encoding='utf-8', errors='ignore') as file:
+    content = file.read()
+
+chunks = content.split("routing-instance")
+
+# === Define mismatch storage ===
+mismatches = []
+
+# === Process each chunk ===
+for index, chunk in enumerate(chunks[1:], start=1):  # Skip the first part before first 'routing-instance'
+    chunk_summary = f"[Chunk {index}]"
+    reasons = []
+
+    # Check for Service-Engine0/1/0
+    if "Service-Engine0/1/0" in chunk:
+        if not re.search(r"NIM subslot 0/1.*NIM Voice Analog Module", chunk):
+            reasons.append("Missing required Voice Analog Module line for Service-Engine0/1/0")
+
+    # Check for Service-Engine0/2/0
+    if "Service-Engine0/2/0" in chunk:
+        if not re.search(r"NIM subslot 0/2.*Voice Analog Module", chunk):
+            reasons.append("Missing required Voice Analog Module line for Service-Engine0/2/0")
+
+    # Check for GigabitEthernet0/1/
+    if "interface GigabitEthernet0/1/" in chunk:
+        if not re.search(r'NIM subslot 0/1.*DESCR:\s*"NIM-ES2"', chunk):
+            reasons.append('Missing "NIM-ES2" DESCR line for interface GigabitEthernet0/1/')
+
+    # Check for GigabitEthernet0/2/
+    if "interface GigabitEthernet0/2/" in chunk:
+        if not re.search(r'NIM subslot 0/2.*DESCR:\s*"NIM-ES2"', chunk):
+            reasons.append('Missing "NIM-ES2" DESCR line for interface GigabitEthernet0/2/')
+
+    # Save mismatch info if needed
+    if reasons:
+        mismatches.append(chunk_summary)
+        mismatches.extend(f"- {reason}" for reason in reasons)
+        mismatches.append("")  # Blank line between chunks
+
+# === Write output ===
+with open(output_file_path, 'w', encoding='utf-8') as out_file:
+    if mismatches:
+        out_file.write("\n".join(mismatches))
+        print(f"[!] Found {len(mismatches) // 3} mismatched chunks. Results written to:\n{output_file_path}")
+    else:
+        out_file.write("No mismatches found.")
+        print("[✓] No mismatches found.")
