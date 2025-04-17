@@ -1,21 +1,47 @@
-for cmd in commands:
-    f.write(f"$ {cmd}\n")
-    stdin, stdout, stderr = client.exec_command(cmd)
+import os
+import re
 
-    out = stdout.read().decode()
-    err = stderr.read().decode()
+# === CONFIGURATION ===
+input_folder = r"C:\Path\To\Your\TextFiles"  # <- Update this to your folder
+output_path = r"C:\Path\To\Your\prefix_issues_report.txt"  # <- Update this to your desired export path
 
-    # Write stdout
-    if out:
-        f.write(out)
+# === HELPER FUNCTION ===
+def find_issue_after_marker(lines, marker):
+    found_marker = False
+    for line in lines:
+        if marker in line:
+            found_marker = True
+        elif found_marker and "set prefix6" in line:
+            match = re.search(r"set prefix6\s+\S+", line)
+            if match:
+                prefix = match.group(0).split()[-1]
+                if not prefix.endswith("/56"):
+                    return line.strip()
+            break
+    return None
 
-    # Write stderr, excluding the common stty warning
-    filtered_err_lines = [
-        line for line in err.splitlines()
-        if "stty: standard input: Inappropriate ioctl for device" not in line
-    ]
-    if filtered_err_lines:
-        f.write("\n[stderr]\n")
-        f.write("\n".join(filtered_err_lines))
+# === MAIN SCRIPT ===
+issues = []
 
-    f.write("\n" + "-" * 40 + "\n")
+for root, _, files in os.walk(input_folder):
+    for file in files:
+        if file.lower().endswith(".txt"):
+            file_path = os.path.join(root, file)
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+
+            issue_prefix = find_issue_after_marker(lines, "CONFIGURE PREFIX-LISTS")
+            issue_bgp = find_issue_after_marker(lines, "CONFIGURE BGP")
+
+            if issue_prefix:
+                issues.append(f"{file} - PREFIX-LISTS mismatch: {issue_prefix}")
+            if issue_bgp:
+                issues.append(f"{file} - BGP mismatch: {issue_bgp}")
+
+# === EXPORT RESULTS ===
+with open(output_path, "w", encoding="utf-8") as out:
+    if issues:
+        out.write("Prefix Mismatch Report:\n\n")
+        out.write("\n".join(issues))
+    else:
+        out.write("No issues found.")
