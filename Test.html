@@ -1,2 +1,21 @@
-[stderr]
-stty: standard input: Inappropriate ioctl for device
+for cmd in commands:
+    f.write(f"$ {cmd}\n")
+    stdin, stdout, stderr = client.exec_command(cmd)
+
+    out = stdout.read().decode()
+    err = stderr.read().decode()
+
+    # Write stdout
+    if out:
+        f.write(out)
+
+    # Write stderr, excluding the common stty warning
+    filtered_err_lines = [
+        line for line in err.splitlines()
+        if "stty: standard input: Inappropriate ioctl for device" not in line
+    ]
+    if filtered_err_lines:
+        f.write("\n[stderr]\n")
+        f.write("\n".join(filtered_err_lines))
+
+    f.write("\n" + "-" * 40 + "\n")
