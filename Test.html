@@ -1,55 +1,195 @@
-import re
+import openpyxl
+import numpy as np
+import os
+import warnings
 
-# === Set your file paths here ===
-input_file_path = r"C:\Path\To\Your\Input.txt"
-output_file_path = r"C:\Path\To\Your\Output_Mismatches.txt"
+# Suppress openpyxl warnings
+warnings.simplefilter("ignore", category=UserWarning)
 
-# === Read and split the input file ===
-with open(input_file_path, 'r', encoding='utf-8', errors='ignore') as file:
-    content = file.read()
+# === Configuration ===
+EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
+LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+SHEET_NAME = "Router Refresh"
+LASER_SHEET = "Sheet1"
 
-chunks = content.split("routing-instance")
+SEARCH_COLUMNS = ["OPS Ticket #"]
+EXTRACT_COLUMNS = [
+    "CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type",
+    "EIS Order# (VPNS) orig site", "Lumen Order#", "Service ID",
+    "SRE Order# orig site", "Core ENG", "Subject Line (FIT fills this out)",
+    "Lumen Installing Equipment?", "Router Model", "HOST NAME (Fortigate)", "S/N",
+    "Equipment PO orig site", "Install PO orig site (CFIT IPIC.705 X1 if needed for GFEs)",
+    "Activation PO CFIT gets this", "[IF SWAP] USE SRE#", "STATUS", "CFIT NOTES",
+    "ROUTER SHIPMENT STATUS", "Router Refresh Activation DATE", "Scheduled START Time",
+    "OPS Ticket #", "Scheduled Activation Technician", "Activation Status: Complete/Failed",
+    "Acceptance: Time & Who Accepted", "If FAILED, detail on failure:", "Reschedule Action Owner",
+    "Ready to Reschedule?", "SOCN Date", "Customer Address", "Customer City", "Customer State",
+    "Customer Zip code", "LCON", "LCON Ph#", "LCON EMAIL", "CC Email", "Access Rate/Speed",
+    "LEC ID", "SHIPPING ADDRESS", "Notes"
+]
 
-# === Define mismatch storage ===
-mismatched_chunks = []
+LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
+LASER_MATCH_COLUMN = "circuitID"
 
-# === Process each chunk ===
-for index, chunk in enumerate(chunks[1:], start=1):  # Skip the part before the first 'routing-instance'
-    full_chunk = "routing-instance" + chunk  # Add back the delimiter for context
-    reasons = []
+# === Get user input
+output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
+template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
+order_number = input("Enter the order number: ").strip()
 
-    # Check for Service-Engine0/1/0
-    if "Service-Engine0/1/0" in full_chunk:
-        if not re.search(r"NIM subslot 0/1.*NIM Voice Analog Module", full_chunk):
-            reasons.append("Missing Voice Analog Module for Service-Engine0/1/0")
+# === Utility: Find header row
+def find_header_row(sheet):
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
+    for row_idx, row in enumerate(data, start=1):
+        if np.count_nonzero(row) > 2:
+            return [str(cell).strip() if cell else "" for cell in row], row_idx
+    return None, None
 
-    # Check for Service-Engine0/2/0
-    if "Service-Engine0/2/0" in full_chunk:
-        if not re.search(r"NIM subslot 0/2.*Voice Analog Module", full_chunk):
-            reasons.append("Missing Voice Analog Module for Service-Engine0/2/0")
+# === Search Lumetions Tracker
+def search_order(sheet, order_num):
+    header_row, header_row_idx = find_header_row(sheet)
+    if not header_row:
+        return None
 
-    # Check for interface GigabitEthernet0/1/
-    if "interface GigabitEthernet0/1/" in full_chunk:
-        if not re.search(r'NIM subslot 0/1.*DESCR:\s*"NIM-ES2"', full_chunk):
-            reasons.append('Missing DESCR: "NIM-ES2" for GigabitEthernet0/1/')
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+    search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
 
-    # Check for interface GigabitEthernet0/2/
-    if "interface GigabitEthernet0/2/" in full_chunk:
-        if not re.search(r'NIM subslot 0/2.*DESCR:\s*"NIM-ES2"', full_chunk):
-            reasons.append('Missing DESCR: "NIM-ES2" for GigabitEthernet0/2/')
+    extract_cols = {}
+    for extract_key in EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.strip().startswith(extract_key.strip()):
+                extract_cols[extract_key] = headers[header_key]
+                break
 
-    # Save full chunk if any reason failed
-    if reasons:
-        mismatched_chunks.append("==== MISMATCH FOUND ====")
-        mismatched_chunks.extend([f"Reason: {r}" for r in reasons])
-        mismatched_chunks.append(full_chunk.strip())
-        mismatched_chunks.append("\n")  # Extra line between mismatches
+    for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        for col in search_cols:
+            col_idx = headers[col]
+            cell_value = str(row[col_idx]) if row[col_idx] else ""
+            if order_num in cell_value:
+                return {col.strip(): row[idx] for col, idx in extract_cols.items()}
+    return None
 
-# === Write to output file ===
-with open(output_file_path, 'w', encoding='utf-8') as out_file:
-    if mismatched_chunks:
-        out_file.write("\n".join(mismatched_chunks))
-        print(f"[!] Mismatches found. Details written to:\n{output_file_path}")
+# === Search LASER Export for ALL matches
+def search_laser_by_service_id(service_id):
+    try:
+        laser_wb = openpyxl.load_workbook(LASER_FILE, read_only=True)
+    except FileNotFoundError:
+        print(f"❌ Error: LASER file not found - {LASER_FILE}")
+        return []
+
+    if LASER_SHEET not in laser_wb.sheetnames:
+        print(f"❌ Error: Sheet '{LASER_SHEET}' not found.")
+        return []
+
+    ws = laser_wb[LASER_SHEET]
+    header_row, header_row_idx = find_header_row(ws)
+    if not header_row:
+        return []
+
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+
+    match_col = None
+    for key in headers:
+        if key.lower().startswith(LASER_MATCH_COLUMN.lower()):
+            match_col = headers[key]
+            break
+
+    extract_cols = {}
+    for extract_key in LASER_EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.lower().startswith(extract_key.lower()):
+                extract_cols[extract_key] = headers[header_key]
+                break
+
+    matches = []
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        cell_value = str(row[match_col]) if row[match_col] else ""
+        if service_id in cell_value:
+            match = {col: row[idx] for col, idx in extract_cols.items()}
+            matches.append(match)
+
+    return matches
+
+# === Format Laser Matches
+def format_laser_matches(matches):
+    if not matches:
+        return "No matches found in LASER Export."
+    output = []
+    for i, row in enumerate(matches, start=1):
+        block = [f"- Match {i}:"]
+        for key in LASER_EXTRACT_COLUMNS:
+            value = row.get(key, "")
+            block.append(f"  {key.capitalize()}: {value}")
+        output.append("\n".join(block))
+    return "\n\n".join(output)
+
+# === Identify default match
+def find_default_match(matches):
+    for match in matches:
+        interface = str(match.get("interface", ""))
+        if interface.endswith(("801", "802", "803", "804", "805")):
+            return match
+    return None
+
+# === Load and search Lumetions Tracker
+try:
+    print(f"\n Loading Lumetions Tracker: {EXCEL_FILE}")
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"❌ Error: File not found - {EXCEL_FILE}")
+    exit()
+
+if SHEET_NAME not in wb.sheetnames:
+    print(f"❌ Error: Sheet '{SHEET_NAME}' not found.")
+    wb.close()
+    exit()
+
+result_data = search_order(wb[SHEET_NAME], order_number)
+wb.close()
+
+# === Load template
+try:
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+    print("✅ Template loaded.\n")
+except FileNotFoundError:
+    print(f"❌ Error: Template file '{template_path}' not found.")
+    exit()
+
+# === Process and export
+if result_data:
+    service_id = str(result_data.get("Service ID", "")).strip()
+    laser_matches = search_laser_by_service_id(service_id)
+    default_match = find_default_match(laser_matches)
+
+    filled_template = template
+
+    # Replace Lumetions fields
+    for key in EXTRACT_COLUMNS:
+        placeholder = f"{{{key.strip()}}}"
+        filled_template = filled_template.replace(placeholder, str(result_data.get(key.strip(), "")))
+
+    # Replace Laser_Find block
+    filled_template = filled_template.replace("{Laser_Find}", format_laser_matches(laser_matches))
+
+    # Replace default_* fields
+    if default_match:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_{key}}}"
+            filled_template = filled_template.replace(placeholder, str(default_match.get(key, "")))
     else:
-        out_file.write("No mismatches found.")
-        print("[✓] No mismatches found.")
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_{key}}}"
+            filled_template = filled_template.replace(placeholder, "N/A")
+
+    # Replace OrderNumber
+    filled_template = filled_template.replace("{OrderNumber}", order_number)
+
+    # === Write output
+    try:
+        with open(output_file_path, "w", encoding="utf-8") as out_file:
+            out_file.write(filled_template)
+        print(f"\n✅ Output written to: {output_file_path}")
+    except Exception as e:
+        print(f"❌ Failed to write to output file: {e}")
+else:
+    print(f"❌ Order number '{order_number}' not found in Lumetions Tracker.")
