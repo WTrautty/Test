@@ -1,195 +1,53 @@
-import openpyxl
-import numpy as np
-import os
-import warnings
-
-# Suppress openpyxl warnings
-warnings.simplefilter("ignore", category=UserWarning)
+import paramiko
+import getpass
 
 # === Configuration ===
-EXCEL_FILE = r"C:\Users\AD39644\Downloads\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
-LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
-SHEET_NAME = "Router Refresh"
-LASER_SHEET = "Sheet1"
+BASTION = input("Enter bastion IP or hostname: ").strip()
+USER = input("Enter SSH username: ").strip()
+PASSWORD = getpass.getpass("Enter MFA password: ").strip()
+OUTPUT_FILE = r"C:\Users\AD39644\Downloads\ssh_output.txt"  # <-- Change this if needed
 
-SEARCH_COLUMNS = ["OPS Ticket #"]
-EXTRACT_COLUMNS = [
-    "CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type",
-    "EIS Order# (VPNS) orig site", "Lumen Order#", "Service ID",
-    "SRE Order# orig site", "Core ENG", "Subject Line (FIT fills this out)",
-    "Lumen Installing Equipment?", "Router Model", "HOST NAME (Fortigate)", "S/N",
-    "Equipment PO orig site", "Install PO orig site (CFIT IPIC.705 X1 if needed for GFEs)",
-    "Activation PO CFIT gets this", "[IF SWAP] USE SRE#", "STATUS", "CFIT NOTES",
-    "ROUTER SHIPMENT STATUS", "Router Refresh Activation DATE", "Scheduled START Time",
-    "OPS Ticket #", "Scheduled Activation Technician", "Activation Status: Complete/Failed",
-    "Acceptance: Time & Who Accepted", "If FAILED, detail on failure:", "Reschedule Action Owner",
-    "Ready to Reschedule?", "SOCN Date", "Customer Address", "Customer City", "Customer State",
-    "Customer Zip code", "LCON", "LCON Ph#", "LCON EMAIL", "CC Email", "Access Rate/Speed",
-    "LEC ID", "SHIPPING ADDRESS", "Notes"
+# === Commands to Run ===
+COMMANDS = [
+    "whoami",
+    "hostname",
+    "uptime",
+    # Add more commands here
 ]
 
-LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
-LASER_MATCH_COLUMN = "circuitID"
+def ssh_and_run_commands(host, username, password, commands, output_path):
+    print(f"\n🔐 Connecting to {host} as {username}...")
 
-# === Get user input
-output_file_path = input("Enter full path for the output .txt file (e.g., C:\\output\\report.txt): ").strip()
-template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
-order_number = input("Enter the order number: ").strip()
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-# === Utility: Find header row
-def find_header_row(sheet):
-    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
-    for row_idx, row in enumerate(data, start=1):
-        if np.count_nonzero(row) > 2:
-            return [str(cell).strip() if cell else "" for cell in row], row_idx
-    return None, None
-
-# === Search Lumetions Tracker
-def search_order(sheet, order_num):
-    header_row, header_row_idx = find_header_row(sheet)
-    if not header_row:
-        return None
-
-    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
-    search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
-
-    extract_cols = {}
-    for extract_key in EXTRACT_COLUMNS:
-        for header_key in headers:
-            if header_key.strip().startswith(extract_key.strip()):
-                extract_cols[extract_key] = headers[header_key]
-                break
-
-    for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        for col in search_cols:
-            col_idx = headers[col]
-            cell_value = str(row[col_idx]) if row[col_idx] else ""
-            if order_num in cell_value:
-                return {col.strip(): row[idx] for col, idx in extract_cols.items()}
-    return None
-
-# === Search LASER Export for ALL matches
-def search_laser_by_service_id(service_id):
     try:
-        laser_wb = openpyxl.load_workbook(LASER_FILE, read_only=True)
-    except FileNotFoundError:
-        print(f"❌ Error: LASER file not found - {LASER_FILE}")
-        return []
+        client.connect(hostname=host, username=username, password=password)
+        print("✅ Connection established.\n")
 
-    if LASER_SHEET not in laser_wb.sheetnames:
-        print(f"❌ Error: Sheet '{LASER_SHEET}' not found.")
-        return []
+        with open(output_path, "a", encoding="utf-8") as f:
+            f.write(f"\n--- SSH Session to {host} as {username} ---\n\n")
 
-    ws = laser_wb[LASER_SHEET]
-    header_row, header_row_idx = find_header_row(ws)
-    if not header_row:
-        return []
+            for cmd in commands:
+                f.write(f"$ {cmd}\n")
+                stdin, stdout, stderr = client.exec_command(cmd)
+                out = stdout.read().decode()
+                err = stderr.read().decode()
 
-    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+                if out:
+                    f.write(out)
+                if err:
+                    f.write("\n[stderr]\n" + err)
 
-    match_col = None
-    for key in headers:
-        if key.lower().startswith(LASER_MATCH_COLUMN.lower()):
-            match_col = headers[key]
-            break
+                f.write("\n" + "-" * 40 + "\n")
 
-    extract_cols = {}
-    for extract_key in LASER_EXTRACT_COLUMNS:
-        for header_key in headers:
-            if header_key.lower().startswith(extract_key.lower()):
-                extract_cols[extract_key] = headers[header_key]
-                break
+        print(f"📄 Output appended to: {output_path}")
 
-    matches = []
-    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        cell_value = str(row[match_col]) if row[match_col] else ""
-        if service_id in cell_value:
-            match = {col: row[idx] for col, idx in extract_cols.items()}
-            matches.append(match)
-
-    return matches
-
-# === Format Laser Matches
-def format_laser_matches(matches):
-    if not matches:
-        return "No matches found in LASER Export."
-    output = []
-    for i, row in enumerate(matches, start=1):
-        block = [f"- Match {i}:"]
-        for key in LASER_EXTRACT_COLUMNS:
-            value = row.get(key, "")
-            block.append(f"  {key.capitalize()}: {value}")
-        output.append("\n".join(block))
-    return "\n\n".join(output)
-
-# === Identify default match
-def find_default_match(matches):
-    for match in matches:
-        interface = str(match.get("interface", ""))
-        if interface.endswith(("801", "802", "803", "804", "805")):
-            return match
-    return None
-
-# === Load and search Lumetions Tracker
-try:
-    print(f"\n Loading Lumetions Tracker: {EXCEL_FILE}")
-    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
-except FileNotFoundError:
-    print(f"❌ Error: File not found - {EXCEL_FILE}")
-    exit()
-
-if SHEET_NAME not in wb.sheetnames:
-    print(f"❌ Error: Sheet '{SHEET_NAME}' not found.")
-    wb.close()
-    exit()
-
-result_data = search_order(wb[SHEET_NAME], order_number)
-wb.close()
-
-# === Load template
-try:
-    with open(template_path, "r", encoding="utf-8") as f:
-        template = f.read()
-    print("✅ Template loaded.\n")
-except FileNotFoundError:
-    print(f"❌ Error: Template file '{template_path}' not found.")
-    exit()
-
-# === Process and export
-if result_data:
-    service_id = str(result_data.get("Service ID", "")).strip()
-    laser_matches = search_laser_by_service_id(service_id)
-    default_match = find_default_match(laser_matches)
-
-    filled_template = template
-
-    # Replace Lumetions fields
-    for key in EXTRACT_COLUMNS:
-        placeholder = f"{{{key.strip()}}}"
-        filled_template = filled_template.replace(placeholder, str(result_data.get(key.strip(), "")))
-
-    # Replace Laser_Find block
-    filled_template = filled_template.replace("{Laser_Find}", format_laser_matches(laser_matches))
-
-    # Replace default_* fields
-    if default_match:
-        for key in LASER_EXTRACT_COLUMNS:
-            placeholder = f"{{default_{key}}}"
-            filled_template = filled_template.replace(placeholder, str(default_match.get(key, "")))
-    else:
-        for key in LASER_EXTRACT_COLUMNS:
-            placeholder = f"{{default_{key}}}"
-            filled_template = filled_template.replace(placeholder, "N/A")
-
-    # Replace OrderNumber
-    filled_template = filled_template.replace("{OrderNumber}", order_number)
-
-    # === Write output
-    try:
-        with open(output_file_path, "w", encoding="utf-8") as out_file:
-            out_file.write(filled_template)
-        print(f"\n✅ Output written to: {output_file_path}")
     except Exception as e:
-        print(f"❌ Failed to write to output file: {e}")
-else:
-    print(f"❌ Order number '{order_number}' not found in Lumetions Tracker.")
+        print(f"❌ SSH connection or command error: {e}")
+    finally:
+        client.close()
+        print("🔒 SSH session closed.")
+
+# === Run it
+ssh_and_run_commands(BASTION, USER, PASSWORD, COMMANDS, OUTPUT_FILE)
