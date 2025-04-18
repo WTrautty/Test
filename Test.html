@@ -1,52 +1,7 @@
-import os
-from collections import defaultdict
-
-# === Configuration ===
-input_dir = r'PUT\YOUR\FOLDER\PATH\HERE'
-output_file = r'results.txt'
-
-# === Results storage ===
-results = []
-
-# === Traverse directory ===
-for root, dirs, files in os.walk(input_dir):
-    incoming_issues = []
-    outgoing_count = 0
-    file_outgoing_counts = defaultdict(int)
-
-    for file in files:
-        if file.endswith('.txt'):
-            file_path = os.path.join(root, file)
-
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-
-                incoming_count = content.count("CDM - MGMT Access Incoming - IPv6")
-                outgoing_count += content.count("CDM - MGMT Access Outgoing - IPv6")
-                file_outgoing_counts[file] = content.count("CDM - MGMT Access Outgoing - IPv6")
-
-                if incoming_count != 1:
-                    condition = f"[❌] Incoming count = {incoming_count} (Expected 1)"
-                    incoming_issues.append(f"{file}: {condition}")
-
-    # Log per-file incoming issues
-    results.extend(incoming_issues)
-
-    # Log folder-level outgoing issue
-    if outgoing_count != 1:
-        files_with_outgoing = [f"{fname} (count={cnt})" for fname, cnt in file_outgoing_counts.items() if cnt != 0]
-        result = (
-            f"[❌] Folder: {root}\n"
-            f"→ Outgoing count = {outgoing_count} (Expected 1)\n"
-            f"→ Found in: {', '.join(files_with_outgoing)}\n"
-        )
-        results.append(result)
-
-# === Write results ===
-with open(output_file, 'w') as out:
-    if results:
-        out.write("\n".join(results))
-    else:
-        out.write("[✅] All checks passed. No issues found.")
-
-print("Check complete. See 'results.txt' for details.")
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\MI LEC Perc.py", line 48, in <module>       
+    out.write("\n".join(results))
+  File "C:\Users\AD39644\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 19, in encode        
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u274c' in position 41: character maps to <undefined> 
