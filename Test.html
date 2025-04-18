@@ -1,7 +1,27 @@
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\MI LEC Perc.py", line 48, in <module>       
-    out.write("\n".join(results))
-  File "C:\Users\AD39644\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 19, in encode        
-    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-UnicodeEncodeError: 'charmap' codec can't encode character '\u274c' in position 41: character maps to <undefined> 
+import os
+
+# === Configuration ===
+input_dir = r'PUT\YOUR\FOLDER\PATH\HERE'
+
+# === Traverse directory ===
+for root, _, files in os.walk(input_dir):
+    for file in files:
+        if file.endswith(".txt"):
+            file_path = os.path.join(root, file)
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+
+            modified = False
+            new_lines = lines[:]
+
+            for i in range(len(lines) - 1):
+                if "CDM - MGMT Access Incoming - IPv6" in lines[i]:
+                    if "Loopback10" in lines[i + 1]:
+                        # Inline replacement preserving line structure
+                        new_lines[i] = lines[i].replace("Incoming", "Outgoing")
+                        modified = True
+
+            if modified:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+                print(f"[✔] Corrected: {file_path}")
