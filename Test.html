@@ -1,100 +1,52 @@
 import os
-import re
+from collections import defaultdict
 
-# === CONFIGURATION ===
-FOLDER_PATH = r"C:\path\to\txt\files"  # change this to your folder
-EXPORT_PATH = r"C:\path\to\output\mismatches.txt"
+# === Configuration ===
+input_dir = r'PUT\YOUR\FOLDER\PATH\HERE'
+output_file = r'results.txt'
 
-# === REGEX ===
-ref_patterns = {
-    "LAN": re.compile(r"LAN \(Data 1\)\s*-\s*(\S+)"),
-    "Loopback": re.compile(r"Loopback 10\s*-\s*(\S+)"),
-    "WAN_PE": re.compile(r"WAN/126 PE\s*-\s*(\S+)"),
-    "WAN_CE": re.compile(r"WAN/126 CE\s*-\s*(\S+)"),
-}
-
-# === HELPERS ===
-def extract_refs(content):
-    refs = {}
-    for key, pattern in ref_patterns.items():
-        match = pattern.search(content)
-        if match:
-            refs[key] = match.group(1)
-    return refs
-
-def find_next_line(lines, start_idx, keyword):
-    for i in range(start_idx + 1, len(lines)):
-        if keyword in lines[i]:
-            return lines[i].strip()
-    return ""
-
-def check_match(context, expected, actual_line):
-    if expected and expected not in actual_line:
-        return f"{context}: Expected {expected}, found '{actual_line.strip()}'"
-    return None
-
-# === MAIN SCRIPT ===
+# === Results storage ===
 results = []
 
-for filename in os.listdir(FOLDER_PATH):
-    if not filename.endswith(".txt"):
-        continue
+# === Traverse directory ===
+for root, dirs, files in os.walk(input_dir):
+    incoming_issues = []
+    outgoing_count = 0
+    file_outgoing_counts = defaultdict(int)
 
-    file_path = os.path.join(FOLDER_PATH, filename)
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
-        content = "".join(lines)
+    for file in files:
+        if file.endswith('.txt'):
+            file_path = os.path.join(root, file)
 
-    refs = extract_refs(content)
-    mismatches = []
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
 
-    # Walk line-by-line for config checks
-    for i, line in enumerate(lines):
-        line = line.strip()
+                incoming_count = content.count("CDM - MGMT Access Incoming - IPv6")
+                outgoing_count += content.count("CDM - MGMT Access Outgoing - IPv6")
+                file_outgoing_counts[file] = content.count("CDM - MGMT Access Outgoing - IPv6")
 
-        if line.startswith('edit "Loopback10"'):
-            next_line = find_next_line(lines, i, "set ip6-address")
-            mismatches.append(check_match("Loopback10", refs.get("Loopback"), next_line))
+                if incoming_count != 1:
+                    condition = f"[❌] Incoming count = {incoming_count} (Expected 1)"
+                    incoming_issues.append(f"{file}: {condition}")
 
-        elif line.startswith("edit internal1"):
-            next_line = find_next_line(lines, i, "set ip6-address")
-            mismatches.append(check_match("internal1", refs.get("LAN"), next_line))
+    # Log per-file incoming issues
+    results.extend(incoming_issues)
 
-        elif line.startswith("edit VLAN_80"):
-            next_line = find_next_line(lines, i, "set ip6-address")
-            mismatches.append(check_match("VLAN_80", refs.get("WAN_CE"), next_line))
+    # Log folder-level outgoing issue
+    if outgoing_count != 1:
+        files_with_outgoing = [f"{fname} (count={cnt})" for fname, cnt in file_outgoing_counts.items() if cnt != 0]
+        result = (
+            f"[❌] Folder: {root}\n"
+            f"→ Outgoing count = {outgoing_count} (Expected 1)\n"
+            f"→ Found in: {', '.join(files_with_outgoing)}\n"
+        )
+        results.append(result)
 
-        elif line.startswith("config router prefix-list6"):
-            next_line = find_next_line(lines, i, "ip6-address")
-            mismatches.append(check_match("prefix-list6", refs.get("LAN"), next_line))
+# === Write results ===
+with open(output_file, 'w') as out:
+    if results:
+        out.write("\n".join(results))
+    else:
+        out.write("[✅] All checks passed. No issues found.")
 
-        elif line.startswith("config aggregate-address6"):
-            next_line = find_next_line(lines, i, "set prefix6")
-            mismatches.append(check_match("aggregate-address6", refs.get("LAN"), next_line))
-
-        elif line.startswith("config neighbor"):
-            edit_line = find_next_line(lines, i, "edit")
-            mismatches.append(check_match("neighbor edit", refs.get("WAN_PE"), edit_line))
-
-        elif line.startswith("config network6"):
-            next_line = find_next_line(lines, i, "set prefix6")
-            mismatches.append(check_match("network6", refs.get("Loopback"), next_line))
-
-        elif line.startswith("set prefix6") and refs.get("LAN") in line:
-            # Check if next edit is WAN_PE
-            edit_line = find_next_line(lines, i, "edit")
-            mismatches.append(check_match("prefix6 > edit", refs.get("WAN_PE"), edit_line))
-
-    # Clean mismatches
-    mismatches = [m for m in mismatches if m]
-
-    if mismatches:
-        results.append(f"[{filename}]")
-        results.extend(mismatches)
-        results.append("")
-
-# === EXPORT RESULTS ===
-with open(EXPORT_PATH, "w") as out_file:
-    out_file.write("\n".join(results))
-
-print(f"Done. Mismatches written to {EXPORT_PATH}")
+print("Check complete. See 'results.txt' for details.")
