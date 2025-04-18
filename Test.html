@@ -1,581 +1,100 @@
-
-
-LAN (Data 1) - 2001:49c8:1160:0300::/56
-
-Loopback 10 - 2001:49c8:1160:030e::1/128
-
-WAN/126 PE - 2001:49c8:1160:030f::1/126
-
-WAN/126 CE - 2001:49c8:1160:030f::2/126
- 
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- 
-1.       ########## CONFIGURE FORTIGATE REBOOT IN 15 MIN ##########
-
-## Set cfg-save mode to ‘revert’ ##
-
-## And set revert (reboot) timer to 15 minutes (default is 10 min) ##
-
-#
-
-conf global
-
-conf system global
-
-set cfg-save revert
-
-set cfg-revert-timeout 900
-
-end
-
-end
-
-#
- 
-2.       ########## CONFIGURE INTERFACES ##########
-
-## Loopback Interface ##
-
-#
-
-config system interface
-
-    edit "Loopback10"
-
-        config ipv6
-
-            set ip6-address 2001:49c8:1160:030e::1/128				<--- LOOPBACK 10
-
-            set ip6-allowaccess ping https ssh snmp fgfm
-
-        end
-
-    next
-
-end
-
-#
-
-## LAN Interface ##
-
-#
-
-config system interface
-
-    edit internal1
-
-        config ipv6
-
-            set ip6-send-adv disable
-
-            set autoconf disable
-
-            set ip6-address 2001:49c8:1160:0300::1/64			<---- LAN (Data 1)
-
-            set ip6-allowaccess ping
-
-        end
-
-    next
-
-end
-
-#
-
-## WAN Interface ##
-
-#
-
-config system interface
-
-    edit VLAN_801
-
-        config ipv6
-
-            set ip6-address 2001:49c8:1160:030f::2/126		<----- WAN/126 CE 
-
-            set ip6-allowaccess ping
-
-        end
-
-    next
-
-end
-
-#
- 
-3.       ########## CONFIGURE PREFIX-LISTS ##########
-
-## Inbound Prefix-List (Only allow default IPv6 route) ##
-
-#
-
-config router prefix-list6
-
-    edit "IPv6-DEFAULT_ROUTE"
-
-        set comments "INBOUND - Only allow default IPv6 route"
-
-        config rule
-
-            edit 5
-
-                set prefix6 ::/0
-
-                unset ge
-
-                unset le
-
-            next
-
-        end
-
-    next
-
-end
-
-#
-
-## Outbound Prefix-List (prefix that was assigned to site) ##
-
-#
-
-config router prefix-list6
-
-        edit PFX-FWS-GULFAL-LAN-V6
-
-        set comments "OUTBOUND - Allow LAN prefix assigned to site"
-
-        config rule
-
-            edit 5
-
-		set prefix6 2001:49c8:1160:0300::/56			<----- LAN (Data 1)
-
-                unset ge
-
-                unset le
-
-            next
-
-        end
-
-    next
-
-end
-
-#
- 
-4.       ########## CONFIGURE ROUTE-MAPS ##########
-
-## Inbound route-map ##
-
-#
-
-config router route-map
-
-    edit VPNSv6_ING_VLAN_801
-
-        set comments "IPv6 Inbound Route-Map"
-
-        config rule
-
-            edit 10
-
-                set match-ip6-address "IPv6-DEFAULT_ROUTE"
-
-            next
-
-            edit 100
-
-                set action deny
-
-            next
-
-        end
-
-    next
-
-end
-
-#
-
-## Outbound route-map ##
-
-#
-
-config router route-map
-
-    edit VPNSv6_EGR_VLAN_801
-
-        set comments "IPv6 Outbound Route-Map"
-
-        config rule
-
-            edit 10
-
-                set match-ip6-address PFX-FWS-GULFAL-LAN-V6
-
-                set set-community 50:801
-
-            next
-
-            edit 100
-
-                set action deny
-
-            next
-
-        end
-
-    next
-
-end
-
-#
- 
-5.       ########## CONFIGURE BGP ##########
-
-## BGP IPv6 neighbors ##
-
-#
-
-config router bgp
-
-    config aggregate-address6
-
-        edit 1
-
-	set prefix6 2001:49c8:1160:0300::/56			<---- LAN (Data 1) 
-
-            set summary-only enable
-
-        next
-
-    end
-
-config neighbor
-
-    edit 2001:49c8:1160:030f::1						<--- PE WAN
-
-        set soft-reconfiguration6 enable
-
-        set remote-as 3549
-
-        set route-map-in6 VPNSv6_ING_VLAN_801
-
-        set route-map-out6 VPNSv6_EGR_VLAN_801
-
-        set update-source VLAN_801
-
-        set password 5CB60CDAE77980D14277994BBE961098
-
-        set activate disable
-
-    next
-
-end
-
-    config network6
-
-        edit 1
-
-            set prefix6 2001:49c8:1160:030e::1/128	<---- Loopback 10 
-
-        next
-
-    end
-
-end
-
-#
-
-## BGP IPv4 neighbors ##
-
-#
-
-config router bgp
-
-config neighbor
-
-    edit 10.37.110.145
-
-        set activate6 disable
-
-    next
-
-    edit 10.37.10.145
-
-        set activate6 disable
-
-        next
-
-    end
-
-end
-
-#
-
-## Show BGP neighbor received/advertised routes ##
-
-#
-
-get router info6 bgp neighbors 2001:49c8:1160:030f::1 received-routes
-
-get router info6 bgp neighbors 2001:49c8:1160:030f::1 advertised-routes
-
-get router info6 bgp neighbors 2001:49c8:1160:030f::1 routes
-
-#
- 
-6.       ########## CONFIGURE POLICIES ##########
-
-## IPv6 Address Objects ##
-
-#
-
-config firewall address6
-
-    edit "DOI-ALL_2001:49c8::/32"
-
-        set ip6 2001:49c8::/32
-
-    next
-
-end
-
-config firewall addrgrp6
-
-    edit "DOI-ALL"
-
-        set member "DOI-ALL_2001:49c8::/32"
-
-    next
-
-end
-
-## Policies ##
-
-#
-
-config firewall policy
-
-#
-
-    edit 0
-
-        set status disable
-
-        set name "CDM - MGMT Access Incoming – IPv6"
-
-        set srcintf VLAN_60 VLAN_801
-
-        set dstintf "Loopback10"
-
-        set action accept
-
-        set srcaddr6 "all"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next
-
-    edit 0
-
-        set status disable
-
-        set name "CDM - MGMT Access Incoming – IPv6"
-
-        set srcintf "Loopback10"
-
-        set dstintf VLAN_60 VLAN_801
-
-        set action accept
-
-        set srcaddr6 "all"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next
-
-    edit 0
-
-        set status disable
-
-        set name "CDM to DOI – IPv6"
-
-        set srcintf VLAN_801
-
-        set dstintf internal1
-
-        set action accept
-
-        set srcaddr6 "all"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next    
-
-    edit 0
-
-        set status disable
-
-        set name "DOI to CDM – IPv6"
-
-        set srcintf internal1
-
-        set dstintf VLAN_801
-
-        set action accept
-
-        set srcaddr6 "all"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next
-
-#
-
-    edit 0
-
-        set name "MGMT Access Incoming – IPv6"
-
-        set srcintf VLAN_60 VLAN_801
-
-        set dstintf "Loopback10"
-
-        set action accept
-
-        set srcaddr6 "DOI-ALL"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next
-
-    edit 0
-
-        set name "MGMT Access Outgoing – IPv6"
-
-        set srcintf "Loopback10"
-
-        set dstintf VLAN_60 VLAN_801
-
-        set action accept
-
-        set srcaddr6 "all"
-
-        set dstaddr6 "DOI-ALL"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next
-
-    edit 0
-
-        set name "MPLS to DOI – IPv6"
-
-        set srcintf VLAN_801
-
-        set dstintf internal1
-
-        set action accept
-
-        set srcaddr6 "DOI-ALL"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next    
-
-    edit 0
-
-        set name "DOI to MPLS – IPv6"
-
-        set srcintf internal1
-
-        set dstintf VLAN_801
-
-        set action accept
-
-        set srcaddr6 "all"
-
-        set dstaddr6 "all"
-
-        set schedule "always"
-
-        set service "ALL"
-
-        set logtraffic all
-
-    next
-
-end
-
-#
- 
-7.       ########## CANCEL FORTIGATE REBOOT ##########
-
-## Set cfg-save mode back to ‘automatic’ ##
-
-#
-
-FWS-GULFAL # 
-
-FWS-GULFAL # conf global
- 
-FWS-GULFAL (global) # execute cfg save
-
-..config saved.
- 
-FWS-GULFAL (global) # conf system global
- 
-FWS-GULFAL (global) # set cfg-save automatic
- 
-FWS-GULFAL (global) # end
- 
-FWS-GULFAL (global) # end
- 
-FWS-GULFAL # 
-
-FWS-GULFAL #
- 
- 
+import os
+import re
+
+# === CONFIGURATION ===
+FOLDER_PATH = r"C:\path\to\txt\files"  # change this to your folder
+EXPORT_PATH = r"C:\path\to\output\mismatches.txt"
+
+# === REGEX ===
+ref_patterns = {
+    "LAN": re.compile(r"LAN \(Data 1\)\s*-\s*(\S+)"),
+    "Loopback": re.compile(r"Loopback 10\s*-\s*(\S+)"),
+    "WAN_PE": re.compile(r"WAN/126 PE\s*-\s*(\S+)"),
+    "WAN_CE": re.compile(r"WAN/126 CE\s*-\s*(\S+)"),
+}
+
+# === HELPERS ===
+def extract_refs(content):
+    refs = {}
+    for key, pattern in ref_patterns.items():
+        match = pattern.search(content)
+        if match:
+            refs[key] = match.group(1)
+    return refs
+
+def find_next_line(lines, start_idx, keyword):
+    for i in range(start_idx + 1, len(lines)):
+        if keyword in lines[i]:
+            return lines[i].strip()
+    return ""
+
+def check_match(context, expected, actual_line):
+    if expected and expected not in actual_line:
+        return f"{context}: Expected {expected}, found '{actual_line.strip()}'"
+    return None
+
+# === MAIN SCRIPT ===
+results = []
+
+for filename in os.listdir(FOLDER_PATH):
+    if not filename.endswith(".txt"):
+        continue
+
+    file_path = os.path.join(FOLDER_PATH, filename)
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+        content = "".join(lines)
+
+    refs = extract_refs(content)
+    mismatches = []
+
+    # Walk line-by-line for config checks
+    for i, line in enumerate(lines):
+        line = line.strip()
+
+        if line.startswith('edit "Loopback10"'):
+            next_line = find_next_line(lines, i, "set ip6-address")
+            mismatches.append(check_match("Loopback10", refs.get("Loopback"), next_line))
+
+        elif line.startswith("edit internal1"):
+            next_line = find_next_line(lines, i, "set ip6-address")
+            mismatches.append(check_match("internal1", refs.get("LAN"), next_line))
+
+        elif line.startswith("edit VLAN_80"):
+            next_line = find_next_line(lines, i, "set ip6-address")
+            mismatches.append(check_match("VLAN_80", refs.get("WAN_CE"), next_line))
+
+        elif line.startswith("config router prefix-list6"):
+            next_line = find_next_line(lines, i, "ip6-address")
+            mismatches.append(check_match("prefix-list6", refs.get("LAN"), next_line))
+
+        elif line.startswith("config aggregate-address6"):
+            next_line = find_next_line(lines, i, "set prefix6")
+            mismatches.append(check_match("aggregate-address6", refs.get("LAN"), next_line))
+
+        elif line.startswith("config neighbor"):
+            edit_line = find_next_line(lines, i, "edit")
+            mismatches.append(check_match("neighbor edit", refs.get("WAN_PE"), edit_line))
+
+        elif line.startswith("config network6"):
+            next_line = find_next_line(lines, i, "set prefix6")
+            mismatches.append(check_match("network6", refs.get("Loopback"), next_line))
+
+        elif line.startswith("set prefix6") and refs.get("LAN") in line:
+            # Check if next edit is WAN_PE
+            edit_line = find_next_line(lines, i, "edit")
+            mismatches.append(check_match("prefix6 > edit", refs.get("WAN_PE"), edit_line))
+
+    # Clean mismatches
+    mismatches = [m for m in mismatches if m]
+
+    if mismatches:
+        results.append(f"[{filename}]")
+        results.extend(mismatches)
+        results.append("")
+
+# === EXPORT RESULTS ===
+with open(EXPORT_PATH, "w") as out_file:
+    out_file.write("\n".join(results))
+
+print(f"Done. Mismatches written to {EXPORT_PATH}")
