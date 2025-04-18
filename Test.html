@@ -2,26 +2,33 @@ import os
 
 # === Configuration ===
 input_dir = r'PUT\YOUR\FOLDER\PATH\HERE'
+output_file = "cdm_counts.txt"
 
-# === Traverse directory ===
+results = []
+
 for root, _, files in os.walk(input_dir):
     for file in files:
         if file.endswith(".txt"):
             file_path = os.path.join(root, file)
+
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()
+                content = f.read()
 
-            modified = False
-            new_lines = lines[:]
+            incoming_count = content.count("CDM - MGMT Access Incoming - IPv6")
+            outgoing_count = content.count("CDM - MGMT Access Outgoing - IPv6")
 
-            for i in range(len(lines) - 1):
-                if "CDM - MGMT Access Incoming - IPv6" in lines[i]:
-                    if "Loopback10" in lines[i + 1]:
-                        # Inline replacement preserving line structure
-                        new_lines[i] = lines[i].replace("Incoming", "Outgoing")
-                        modified = True
+            line = (
+                f"{file}:\n"
+                f"    Incoming: {incoming_count}\n"
+                f"    Outgoing: {outgoing_count}\n"
+            )
+            results.append(line)
 
-            if modified:
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.writelines(new_lines)
-                print(f"[✔] Corrected: {file_path}")
+# Write to file
+with open(output_file, "w", encoding="utf-8") as f:
+    f.writelines(results)
+
+# Also print to terminal
+print("=== CDM Occurrence Report ===")
+print("".join(results))
+print(f"\nSaved to: {output_file}")
