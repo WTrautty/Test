@@ -1,32 +1,73 @@
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\9200 wr mem missing.py", line 53, in <module>
+import win32com.client
+from datetime import datetime, timedelta
+import openpyxl
+from openpyxl import Workbook
+import re
+
+# === Settings ===
+EXPORT_FILE = "Outlook_Calendars.xlsx"
+DAYS_FORWARD = 30
+
+# === Helpers ===
+def strip_tz(dt):
+    """Remove timezone info from datetime if present."""
+    return dt.replace(tzinfo=None) if hasattr(dt, 'tzinfo') and dt.tzinfo else dt
+
+def sanitize_sheet_name(name):
+    """Make Excel sheet name safe (max 31 characters, no forbidden chars)."""
+    name = re.sub(r'[\\/*?:\[\]]+', '_', name)
+    return name[:31]
+
+# === Initialize Excel workbook ===
+wb = Workbook()
+wb.remove(wb.active)  # remove default sheet
+
+# === Connect to Outlook ===
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+now = datetime.now()
+future = now + timedelta(days=DAYS_FORWARD)
+
+# === Loop through all mailboxes ===
+for i in range(outlook.Folders.Count):
+    try:
+        mailbox = outlook.Folders.Item(i + 1)
+        calendar = mailbox.Folders("Calendar")
+
+        # Get calendar items
+        items = calendar.Items
+        items.Sort("[Start]")
+        items.IncludeRecurrences = True
+
+        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
+            now.strftime('%m/%d/%Y %I:%M %p'),
+            future.strftime('%m/%d/%Y %I:%M %p')
+        )
+        restricted_items = items.Restrict(restriction)
+
+        # Create Excel sheet
+        sheet_name = sanitize_sheet_name(mailbox.Name)
+        ws = wb.create_sheet(title=sheet_name)
+        ws.append(["Subject", "Start", "End", "Location"])
+
+        for item in restricted_items:
+            try:
+                ws.append([
+                    item.Subject,
+                    strip_tz(item.Start),
+                    strip_tz(item.End),
+                    item.Location
+                ])
+            except Exception as e:
+                ws.append(["Error reading item", "", "", str(e)])
+
+        print(f"✅ Exported: {mailbox.Name}")
+
+    except Exception as e:
+        print(f"❌ Skipping mailbox {i+1}: {e}")
+
+# === Save the Excel file ===
+try:
     wb.save(EXPORT_FILE)
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\workbook\workbook.py", line 386, in save
-    save_workbook(self, filename)
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\writer\excel.py", line 294, in save_workbook
-    writer.save()
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\writer\excel.py", line 275, in save
-    self.write_data()
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\writer\excel.py", line 77, in write_data
-    self._write_worksheets()
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\writer\excel.py", line 215, in _write_worksheets
-    self.write_worksheet(ws)
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\writer\excel.py", line 200, in write_worksheet
-    writer.write()
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 359, in write
-    self.write_rows()
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 125, in write_rows
-    self.write_row(xf, row, row_idx)
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 147, in write_row
-    write_cell(xf, self.ws, cell, cell.has_style)
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\cell\_writer.py", line 47, in etree_write_cell
-    value, attributes = _set_attributes(cell, styled)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\cell\_writer.py", line 30, in _set_attributes
-    raise TypeError("Excel does not support timezones in datetimes. "
-TypeError: Excel does not support timezones in datetimes. The tzinfo in the datetime/time object must be set to None.
-Exception ignored in atexit callback: <function _openpyxl_shutdown at 0x00000271E50684A0>
-Traceback (most recent call last):
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 32, in _openpyxl_shutdown
-    os.remove(path)
-PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Windows\\Temp\\openpyxl.wdrrum4x'
+    print(f"\n✅ Export complete: {EXPORT_FILE}")
+except Exception as e:
+    print(f"\n❌ Failed to save Excel file: {e}")
