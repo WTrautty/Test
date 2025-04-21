@@ -1,34 +1,54 @@
-import os
+import win32com.client
+from datetime import datetime, timedelta
+import openpyxl
+from openpyxl import Workbook
 
-# === Configuration ===
-input_dir = r'PUT\YOUR\FOLDER\PATH\HERE'
-output_file = "cdm_counts.txt"
+# === Settings ===
+EXPORT_FILE = "Outlook_Calendars.xlsx"
+DAYS_FORWARD = 30
 
-results = []
+# Initialize Excel workbook
+wb = Workbook()
+wb.remove(wb.active)  # remove default sheet
 
-for root, _, files in os.walk(input_dir):
-    for file in files:
-        if file.endswith(".txt"):
-            file_path = os.path.join(root, file)
+# Connect to Outlook
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+now = datetime.now()
+future = now + timedelta(days=DAYS_FORWARD)
 
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
+# Loop through all top-level mailboxes
+for i in range(outlook.Folders.Count):
+    try:
+        mailbox = outlook.Folders.Item(i + 1)
+        calendar = mailbox.Folders("Calendar")
+        
+        # Prepare calendar items
+        items = calendar.Items
+        items.Sort("[Start]")
+        items.IncludeRecurrences = True
 
-            incoming_count = content.count("CDM - MGMT Access Incoming - IPv6")
-            outgoing_count = content.count("CDM - MGMT Access Outgoing - IPv6")
+        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
+            now.strftime('%m/%d/%Y %H:%M %p'),
+            future.strftime('%m/%d/%Y %H:%M %p')
+        )
+        restricted_items = items.Restrict(restriction)
 
-            line = (
-                f"{file}:\n"
-                f"    Incoming: {incoming_count}\n"
-                f"    Outgoing: {outgoing_count}\n"
-            )
-            results.append(line)
+        # Create a new sheet for this mailbox calendar
+        sheet_name = mailbox.Name[:31]  # Excel sheet name limit
+        ws = wb.create_sheet(title=sheet_name)
+        ws.append(["Subject", "Start", "End", "Location"])
 
-# Write to file
-with open(output_file, "w", encoding="utf-8") as f:
-    f.writelines(results)
+        for item in restricted_items:
+            try:
+                ws.append([item.Subject, item.Start, item.End, item.Location])
+            except Exception as e:
+                ws.append(["Error reading item", "", "", str(e)])
+        
+        print(f"Exported: {mailbox.Name}")
+    
+    except Exception as e:
+        print(f"Skipping mailbox {i+1}: {e}")
 
-# Also print to terminal
-print("=== CDM Occurrence Report ===")
-print("".join(results))
-print(f"\nSaved to: {output_file}")
+# Save to Excel
+wb.save(EXPORT_FILE)
+print(f"\n✅ Export complete: {EXPORT_FILE}")
