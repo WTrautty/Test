@@ -1,1 +1,33 @@
-"if the next line after' set name "CDM - MGMT Access Incoming – IPv6"' says 'set srcintf "Loopback10"' then change the incoming to Outgoing
+import os
+
+# === CONFIGURATION ===
+FOLDER_PATH = r"C:\Path\To\Your\TextFiles"  # <-- Change this to your folder
+
+target_line_start = 'set name "CDM - MGMT Access Incoming – IPv6"'
+srcintf_check = 'set srcintf "Loopback10"'
+replacement_line = 'set name "CDM - MGMT Access Outgoing – IPv6"'
+
+for filename in os.listdir(FOLDER_PATH):
+    if filename.lower().endswith(".txt"):
+        file_path = os.path.join(FOLDER_PATH, filename)
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        updated = False
+        i = 0
+        while i < len(lines):
+            if lines[i].strip() == target_line_start:
+                j = i + 1
+                # Skip blank lines or comments
+                while j < len(lines) and lines[j].strip() == "":
+                    j += 1
+                if j < len(lines) and srcintf_check in lines[j]:
+                    lines[i] = replacement_line + "\n"
+                    updated = True
+                    i = j  # skip checking this block again
+            i += 1
+
+        if updated:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+            print(f"Updated: {filename}")
