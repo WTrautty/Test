@@ -1,18 +1,32 @@
-# === Pearson Coefficient per Month (Warning-Proof) ===
+# === Pearson Coefficient per Month (Debug Version) ===
+from scipy.stats import pearsonr
+import numpy as np
+
 pearson_labels = []
+print("\n===== Pearson Coefficient Debugging =====")
 for month in monthly_success_data.index:
+    print(f"\nMonth: {month}")
+    
     successes = monthly_success_data.loc[month].get("Successful", 0)
     total = monthly_success_data.loc[month].sum()
     
+    print(f"Successes: {successes}, Total: {total}")
+    
     if total <= 1:
+        print(" -> Skipped (not enough data)")
         pearson_labels.append("r=n/a")
         continue
 
     x = [1] * successes + [0] * (total - successes)
     y = [1] * total
 
-    if np.std(x) == 0:  # Constant input — all 1s or all 0s
+    print(f"x: {x}")
+    print(f"Std Dev of x: {np.std(x)}")
+
+    if np.std(x) == 0:
+        print(" -> Skipped (constant input)")
         pearson_labels.append("r=undefined")
     else:
         r, _ = pearsonr(x, y)
+        print(f"Pearson r: {r}")
         pearson_labels.append(f"r={r:.2f}")
