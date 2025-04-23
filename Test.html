@@ -1,33 +1,73 @@
-import os
+import win32com.client
+from datetime import datetime, timedelta
+import openpyxl
+from openpyxl import Workbook
+import re
 
-# === CONFIGURATION ===
-FOLDER_PATH = r"C:\Path\To\Your\TextFiles"  # <-- Change this to your folder
+# === Settings ===
+EXPORT_FILE = "Outlook_Calendars.xlsx"
+DAYS_FORWARD = 30
 
-target_line_start = 'set name "CDM - MGMT Access Incoming – IPv6"'
-srcintf_check = 'set srcintf "Loopback10"'
-replacement_line = 'set name "CDM - MGMT Access Outgoing – IPv6"'
+# === Helpers ===
+def strip_tz(dt):
+    """Remove timezone info from datetime if present."""
+    return dt.replace(tzinfo=None) if hasattr(dt, 'tzinfo') and dt.tzinfo else dt
 
-for filename in os.listdir(FOLDER_PATH):
-    if filename.lower().endswith(".txt"):
-        file_path = os.path.join(FOLDER_PATH, filename)
-        with open(file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+def sanitize_sheet_name(name):
+    """Make Excel sheet name safe (max 31 characters, no forbidden chars)."""
+    name = re.sub(r'[\\/*?:\[\]]+', '_', name)
+    return name[:31]
 
-        updated = False
-        i = 0
-        while i < len(lines):
-            if lines[i].strip() == target_line_start:
-                j = i + 1
-                # Skip blank lines or comments
-                while j < len(lines) and lines[j].strip() == "":
-                    j += 1
-                if j < len(lines) and srcintf_check in lines[j]:
-                    lines[i] = replacement_line + "\n"
-                    updated = True
-                    i = j  # skip checking this block again
-            i += 1
+# === Initialize Excel workbook ===
+wb = Workbook()
+wb.remove(wb.active)  # remove default sheet
 
-        if updated:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-            print(f"Updated: {filename}")
+# === Connect to Outlook ===
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+now = datetime.now()
+future = now + timedelta(days=DAYS_FORWARD)
+
+# === Loop through all mailboxes ===
+for i in range(outlook.Folders.Count):
+    try:
+        mailbox = outlook.Folders.Item(i + 1)
+        calendar = mailbox.Folders("Calendar")
+
+        # Get calendar items
+        items = calendar.Items
+        items.Sort("[Start]")
+        items.IncludeRecurrences = True
+
+        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
+            now.strftime('%m/%d/%Y %I:%M %p'),
+            future.strftime('%m/%d/%Y %I:%M %p')
+        )
+        restricted_items = items.Restrict(restriction)
+
+        # Create Excel sheet
+        sheet_name = sanitize_sheet_name(mailbox.Name)
+        ws = wb.create_sheet(title=sheet_name)
+        ws.append(["Subject", "Start", "End", "Location"])
+
+        for item in restricted_items:
+            try:
+                ws.append([
+                    item.Subject,
+                    strip_tz(item.Start),
+                    strip_tz(item.End),
+                    item.Location
+                ])
+            except Exception as e:
+                ws.append(["Error reading item", "", "", str(e)])
+
+        print(f"✅ Exported: {mailbox.Name}")
+
+    except Exception as e:
+        print(f"❌ Skipping mailbox {i+1}: {e}")
+
+# === Save the Excel file ===
+try:
+    wb.save(EXPORT_FILE)
+    print(f"\n✅ Export complete: {EXPORT_FILE}")
+except Exception as e:
+    print(f"\n❌ Failed to save Excel file: {e}")
