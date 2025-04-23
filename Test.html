@@ -1,83 +1,100 @@
-PS C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script> & "c:/Users/AD39644/Desktop/EIS/OneDrive_2024-07-25/Auditing Script/.venv/Scripts/python.exe" "c:/Users/AD39644/Desktop/EIS/OneDrive_2024-07-25/Auditing Script/Visualizor.py"
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
+from scipy.stats import pearsonr
+import numpy as np
 
-===== Pearson Coefficient Debugging =====
+# === Load Excel Sheet ===
+file_path = "fake_scheduled_activations.xlsx"  # Replace with your actual file
+df = pd.read_excel(file_path, sheet_name="Export")
 
-Month: 2024-01
-Successes: 252, Total: 348
-x std: 0.4469476343729558, y std: 0.0
- -> Skipped (x or y is constant)
+# === Filter for Scheduled Activation Only ===
+df_filtered = df[df["Task Name"] == "Scheduled Activation"].copy()
 
-Month: 2024-02
-Successes: 306, Total: 432
-x std: 0.4545296714431547, y std: 0.0
- -> Skipped (x or y is constant)
+# === Normalize Success Field ===
+df_filtered["Success"] = df_filtered["Closure Code 1"].apply(
+    lambda x: "Successful" if x == "Successful" else "Unsuccessful"
+)
+df_filtered["SuccessBinary"] = df_filtered["Success"].map({"Successful": 1, "Unsuccessful": 0})
 
-Month: 2024-03
-Successes: 332, Total: 462
-x std: 0.44967499908823855, y std: 0.0
- -> Skipped (x or y is constant)
+# === Group Task Owners with <30 entries into 'misc.' ===
+owner_counts = df_filtered["Task Owner"].value_counts()
+df_filtered["Task Owner"] = df_filtered["Task Owner"].apply(
+    lambda x: x if owner_counts[x] >= 30 else "misc."
+)
 
-Month: 2024-04
-Successes: 381, Total: 507
-x std: 0.4321552576688808, y std: 0.0
- -> Skipped (x or y is constant)
+# === Chart 1: Pie Chart Data ===
+task_owner_counts = df_filtered["Task Owner"].value_counts()
 
-Month: 2024-05
-Successes: 276, Total: 339
-x std: 0.3889780703687772, y std: 0.0
- -> Skipped (x or y is constant)
+def autopct_format(pct, allvals):
+    absolute = int(pct / 100. * np.sum(allvals))
+    return f"{pct:.1f}%\n({absolute})"
 
-Month: 2024-06
-Successes: 157, Total: 199
-x std: 0.4080575286565184, y std: 0.0
- -> Skipped (x or y is constant)
+# === Chart 2: Success Rate per Task Owner ===
+success_counts = df_filtered.groupby(["Task Owner", "Success"]).size().unstack(fill_value=0)
+success_rates = (success_counts["Successful"] / success_counts.sum(axis=1)) * 100
 
-Month: 2024-07
-Successes: 130, Total: 175
-x std: 0.43705881545081016, y std: 0.0
- -> Skipped (x or y is constant)
+# === Chart 3: Monthly Task Closures ===
+df_filtered["Completed Date"] = pd.to_datetime(df_filtered["Completed Date"], errors='coerce')
+df_filtered["Month"] = df_filtered["Completed Date"].dt.to_period("M")
+monthly_closures = df_filtered.groupby(["Month", "Task Owner"]).size().unstack(fill_value=0)
 
-Month: 2024-08
-Successes: 145, Total: 211
-x std: 0.4636321175884587, y std: 0.0
- -> Skipped (x or y is constant)
+# === Chart 4: Monthly Success Rate ===
+monthly_success_data = df_filtered.groupby(["Month", "Success"]).size().unstack(fill_value=0)
+monthly_success_rate = (
+    monthly_success_data["Successful"] / monthly_success_data.sum(axis=1)
+).fillna(0) * 100
 
-Month: 2024-09
-Successes: 164, Total: 211
-x std: 0.41609107237247334, y std: 0.0
- -> Skipped (x or y is constant)
+# === Correlation: Task Owner vs Success ===
+print("\n===== Correlation: Task Owner vs Success =====")
+correlation_results = {}
+task_owner_dummies = pd.get_dummies(df_filtered["Task Owner"])
 
-Month: 2024-10
-Successes: 213, Total: 262
-x std: 0.38992991082169837, y std: 0.0
- -> Skipped (x or y is constant)
+for owner in task_owner_dummies.columns:
+    x = task_owner_dummies[owner]
+    y = df_filtered["SuccessBinary"]
 
-Month: 2024-11
-Successes: 81, Total: 115
-x std: 0.45633536568354527, y std: 0.0
- -> Skipped (x or y is constant)
+    if x.nunique() > 1:
+        r, _ = pearsonr(x, y)
+        correlation_results[owner] = r
+        print(f"{owner}: r = {r:.2f}")
+    else:
+        correlation_results[owner] = None
+        print(f"{owner}: Not enough variation to compute correlation.")
 
-Month: 2024-12
-Successes: 79, Total: 117
-x std: 0.4682949583522299, y std: 0.0
- -> Skipped (x or y is constant)
+# === Plotting ===
+plt.figure(figsize=(18, 12))
 
-Month: 2025-01
-Successes: 84, Total: 118
-x std: 0.4528945496910978, y std: 0.0
- -> Skipped (x or y is constant)
+# Pie Chart
+plt.subplot(2, 3, 1)
+plt.pie(task_owner_counts, labels=task_owner_counts.index,
+        autopct=lambda pct: autopct_format(pct, task_owner_counts), textprops={'fontsize': 9})
+plt.title("Task Owner Distribution (Scheduled Activations)")
 
-Month: 2025-02
-Successes: 100, Total: 136
-x std: 0.4411764705882353, y std: 0.0
- -> Skipped (x or y is constant)
+# Bar Chart - Success Rates
+plt.subplot(2, 3, 2)
+success_rates.sort_values().plot(kind='barh', color='skyblue')
+plt.xlabel("Success Rate (%)")
+plt.title("Success Rate per Task Owner")
+plt.gca().xaxis.set_major_formatter(PercentFormatter())
 
-Month: 2025-03
-Successes: 74, Total: 110
-x std: 0.46921774183868875, y std: 0.0
- -> Skipped (x or y is constant)
+# Monthly Closures
+plt.subplot(2, 1, 2)
+monthly_closures.plot(marker='o', ax=plt.gca())
+plt.title("Monthly Task Closures per Task Owner")
+plt.xlabel("Month")
+plt.ylabel("Tasks Closed")
+plt.legend(title="Task Owner", bbox_to_anchor=(1.05, 1), loc='upper left')
 
-Month: 2025-04
-Successes: 66, Total: 77
-x std: 0.3499271061118826, y std: 0.0
- -> Skipped (x or y is constant)
+# Monthly Success Rate Line
+plt.subplot(2, 3, 3)
+monthly_success_rate.plot(marker='o', color='green')
+for i, val in enumerate(monthly_success_rate):
+    plt.annotate(f"{val:.1f}%", (monthly_success_rate.index[i].to_timestamp(), val + 1))
+plt.title("Monthly Success Rate")
+plt.xlabel("Month")
+plt.ylabel("Success Rate (%)")
+plt.gca().yaxis.set_major_formatter(PercentFormatter())
+
+plt.tight_layout()
+plt.show()
