@@ -1,10 +1,16 @@
-# Monthly Success Rate Line
+# === Chart 4: Monthly Success Rate Line ===
 plt.subplot(2, 3, 3)
 monthly_success_rate.plot(marker='o', color='green')
+
+# Annotate each point with percentage
 for i, val in enumerate(monthly_success_rate):
-    plt.annotate(f"{val:.1f}%", (monthly_success_rate.index[i].to_timestamp(), val + 1))
+    plt.annotate(f"{val:.1f}%", 
+                 (monthly_success_rate.index[i].to_timestamp(), val + 1),
+                 fontsize=8)
+
 plt.title("Monthly Success Rate")
 plt.xlabel("Month")
 plt.ylabel("Success Rate (%)")
-plt.ylim(0, 100)  # <-- This line sets Y-axis from 0 to 100
+plt.ylim(0, 100)  # Set Y-axis scale from 0 to 100
+plt.grid(True, which='both', axis='y', linestyle='--', linewidth=0.5)
 plt.gca().yaxis.set_major_formatter(PercentFormatter())
