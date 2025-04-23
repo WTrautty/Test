@@ -1,34 +1,53 @@
-from collections import defaultdict
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 
-# === Prepare data structure for visual layout ===
-schedule_map = defaultdict(lambda: defaultdict(str))
+# === Load Spreadsheet ===
+file_path = "fake_scheduled_activations.xlsx"  # Change this if using your own file
+df = pd.read_excel(file_path, sheet_name="Export")
 
-# Fill the map with appointment slots
-time_step = timedelta(minutes=30)  # adjust as needed
-for i, appt in enumerate(appointments):
-    tech = best[i]
-    start = appt["start"]
-    end = appt["end"]
-    subject = appt["subject"]
+# === Filter Relevant Rows ===
+df_filtered = df[df["Task Name"] == "Scheduled Activation"].copy()
 
-    current_time = start
-    while current_time < end:
-        key = current_time.strftime("%H:%M")
-        schedule_map[key][tech] = subject
-        current_time += time_step
+# === Success Classification ===
+df_filtered["Success"] = df_filtered["Closure Code 1"].apply(
+    lambda x: "Successful" if x == "Successful" else "Unsuccessful"
+)
 
-# Create new sheet
-if "Schedule View" in wb.sheetnames:
-    del wb["Schedule View"]
-ws_sched = wb.create_sheet("Schedule View")
+# === Chart 1: Pie Chart of Task Owner Distribution ===
+task_owner_counts = df_filtered["Task Owner"].value_counts()
 
-# Write headers
-tech_names = [t["name"] for t in technicians]
-ws_sched.append(["Time"] + tech_names)
+# === Chart 2: Success Rate per Task Owner ===
+success_counts = df_filtered.groupby(["Task Owner", "Success"]).size().unstack(fill_value=0)
+success_rates = (success_counts["Successful"] / success_counts.sum(axis=1)) * 100
 
-# Sort time slots and fill rows
-for time_slot in sorted(schedule_map.keys()):
-    row = [time_slot]
-    for tech in tech_names:
-        row.append(schedule_map[time_slot].get(tech, ""))
-    ws_sched.append(row)
+# === Chart 3: Tasks Completed Per Month ===
+df_filtered["Completed Date"] = pd.to_datetime(df_filtered["Completed Date"], errors='coerce')
+df_filtered["Month"] = df_filtered["Completed Date"].dt.to_period("M")
+monthly_tasks = df_filtered.groupby(["Month", "Task Owner"]).size().unstack(fill_value=0)
+
+# === Plotting ===
+plt.figure(figsize=(16, 10))
+
+# Pie Chart
+plt.subplot(2, 2, 1)
+plt.pie(task_owner_counts, labels=task_owner_counts.index, autopct='%1.1f%%')
+plt.title("Task Owner Distribution (Scheduled Activations)")
+
+# Bar Chart of Success Rates
+plt.subplot(2, 2, 2)
+success_rates.sort_values().plot(kind="barh", color="mediumseagreen")
+plt.xlabel("Success Rate (%)")
+plt.title("Success Rate per Task Owner")
+plt.gca().xaxis.set_major_formatter(PercentFormatter())
+
+# Line Graph of Monthly Task Completions
+plt.subplot(2, 1, 2)
+monthly_tasks.plot(marker='o', ax=plt.gca())
+plt.title("Monthly Task Closures per Task Owner")
+plt.xlabel("Month")
+plt.ylabel("Tasks Closed")
+plt.legend(title="Task Owner", bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+
+plt.show()
