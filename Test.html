@@ -1,19 +1,34 @@
-# === Add or Reset Technicians Sheet ===
-if "Technicians" in wb.sheetnames:
-    ws_tech = wb["Technicians"]
-    wb.remove(ws_tech)
-ws_tech = wb.create_sheet("Technicians")
+from collections import defaultdict
 
-# Header row
-ws_tech.append(["Technician", "Available Start", "Available End", "Max Appointments"])
+# === Prepare data structure for visual layout ===
+schedule_map = defaultdict(lambda: defaultdict(str))
 
-# Sample technician data
-sample_techs = [
-    ("Alice", "08:00", "16:00", 5),
-    ("Bob", "09:00", "17:00", 4),
-    ("Charlie", "07:30", "15:30", 6),
-    ("Dana", "10:00", "18:00", 3),
-]
+# Fill the map with appointment slots
+time_step = timedelta(minutes=30)  # adjust as needed
+for i, appt in enumerate(appointments):
+    tech = best[i]
+    start = appt["start"]
+    end = appt["end"]
+    subject = appt["subject"]
 
-for tech in sample_techs:
-    ws_tech.append(tech)
+    current_time = start
+    while current_time < end:
+        key = current_time.strftime("%H:%M")
+        schedule_map[key][tech] = subject
+        current_time += time_step
+
+# Create new sheet
+if "Schedule View" in wb.sheetnames:
+    del wb["Schedule View"]
+ws_sched = wb.create_sheet("Schedule View")
+
+# Write headers
+tech_names = [t["name"] for t in technicians]
+ws_sched.append(["Time"] + tech_names)
+
+# Sort time slots and fill rows
+for time_slot in sorted(schedule_map.keys()):
+    row = [time_slot]
+    for tech in tech_names:
+        row.append(schedule_map[time_slot].get(tech, ""))
+    ws_sched.append(row)
