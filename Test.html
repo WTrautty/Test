@@ -1,17 +1,2 @@
-# === Pearson Coefficient per Month (Safe) ===
-pearson_labels = []
-for month in monthly_success_data.index:
-    successes = monthly_success_data.loc[month].get("Successful", 0)
-    total = monthly_success_data.loc[month].sum()
-    if total <= 1:
-        pearson_labels.append("r=n/a")
-        continue
-
-    x = [1] * successes + [0] * (total - successes)
-    y = [1] * total
-
-    if len(set(x)) == 1:  # All successes or all failures
-        pearson_labels.append("r=undefined")
-    else:
-        r, _ = pearsonr(x, y)
-        pearson_labels.append(f"r={r:.2f}")
+c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py:62: ConstantInputWarning: An input array is constant; the correlation coefficient is not defined.
+  r, _ = pearsonr(x, y)
