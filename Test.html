@@ -1,12 +1,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import PercentFormatter
+import numpy as np
+from scipy.stats import pearsonr
 
 # === Load Spreadsheet ===
-file_path = "fake_scheduled_activations.xlsx"  # Change this if using your own file
+file_path = "fake_scheduled_activations.xlsx"  # Change if needed
 df = pd.read_excel(file_path, sheet_name="Export")
 
-# === Filter Relevant Rows ===
+# === Filter for Scheduled Activation ===
 df_filtered = df[df["Task Name"] == "Scheduled Activation"].copy()
 
 # === Success Classification ===
@@ -14,40 +16,80 @@ df_filtered["Success"] = df_filtered["Closure Code 1"].apply(
     lambda x: "Successful" if x == "Successful" else "Unsuccessful"
 )
 
-# === Chart 1: Pie Chart of Task Owner Distribution ===
+# === Group Task Owners with <30 tasks into 'misc.' ===
+owner_counts = df_filtered["Task Owner"].value_counts()
+df_filtered["Task Owner"] = df_filtered["Task Owner"].apply(
+    lambda x: x if owner_counts[x] >= 30 else "misc."
+)
+
+# === Chart 1: Pie Chart Data ===
 task_owner_counts = df_filtered["Task Owner"].value_counts()
+
+def autopct_format(pct, allvals):
+    absolute = int(pct / 100. * np.sum(allvals))
+    return f"{pct:.1f}%\n({absolute})"
 
 # === Chart 2: Success Rate per Task Owner ===
 success_counts = df_filtered.groupby(["Task Owner", "Success"]).size().unstack(fill_value=0)
 success_rates = (success_counts["Successful"] / success_counts.sum(axis=1)) * 100
 
-# === Chart 3: Tasks Completed Per Month ===
+# === Chart 3: Monthly Task Closures ===
 df_filtered["Completed Date"] = pd.to_datetime(df_filtered["Completed Date"], errors='coerce')
 df_filtered["Month"] = df_filtered["Completed Date"].dt.to_period("M")
-monthly_tasks = df_filtered.groupby(["Month", "Task Owner"]).size().unstack(fill_value=0)
+monthly_closures = df_filtered.groupby(["Month", "Task Owner"]).size().unstack(fill_value=0)
+
+# === Chart 4: Monthly Success Rate ===
+monthly_success_data = df_filtered.groupby(["Month", "Success"]).size().unstack(fill_value=0)
+monthly_success_rate = (
+    monthly_success_data["Successful"] / monthly_success_data.sum(axis=1)
+).fillna(0) * 100
+
+# === Pearson Coefficient per Month ===
+pearson_labels = []
+for month in monthly_success_data.index:
+    successes = monthly_success_data.loc[month, "Successful"]
+    total = monthly_success_data.loc[month].sum()
+    x = [1] * successes + [0] * (total - successes)
+    y = [1] * total
+    if len(x) > 1:
+        r, _ = pearsonr(x, y)
+        pearson_labels.append(f"r={r:.2f}")
+    else:
+        pearson_labels.append("r=n/a")
 
 # === Plotting ===
-plt.figure(figsize=(16, 10))
+plt.figure(figsize=(18, 12))
 
 # Pie Chart
-plt.subplot(2, 2, 1)
-plt.pie(task_owner_counts, labels=task_owner_counts.index, autopct='%1.1f%%')
+plt.subplot(2, 3, 1)
+plt.pie(task_owner_counts, labels=task_owner_counts.index,
+        autopct=lambda pct: autopct_format(pct, task_owner_counts), textprops={'fontsize': 9})
 plt.title("Task Owner Distribution (Scheduled Activations)")
 
-# Bar Chart of Success Rates
-plt.subplot(2, 2, 2)
-success_rates.sort_values().plot(kind="barh", color="mediumseagreen")
+# Success Rate Bar Chart
+plt.subplot(2, 3, 2)
+success_rates.sort_values().plot(kind='barh', color='skyblue')
 plt.xlabel("Success Rate (%)")
 plt.title("Success Rate per Task Owner")
 plt.gca().xaxis.set_major_formatter(PercentFormatter())
 
-# Line Graph of Monthly Task Completions
+# Monthly Task Closures
 plt.subplot(2, 1, 2)
-monthly_tasks.plot(marker='o', ax=plt.gca())
+monthly_closures.plot(marker='o', ax=plt.gca())
 plt.title("Monthly Task Closures per Task Owner")
 plt.xlabel("Month")
 plt.ylabel("Tasks Closed")
 plt.legend(title="Task Owner", bbox_to_anchor=(1.05, 1), loc='upper left')
-plt.tight_layout()
 
+# Monthly Success Rate Line with Pearson Labels
+plt.subplot(2, 3, 3)
+monthly_success_rate.plot(marker='o', color='green')
+for i, txt in enumerate(pearson_labels):
+    plt.annotate(txt, (monthly_success_rate.index[i].to_timestamp(), monthly_success_rate.iloc[i] + 1))
+plt.title("Monthly Success Rate with Pearson Coefficients")
+plt.xlabel("Month")
+plt.ylabel("Success Rate (%)")
+plt.gca().yaxis.set_major_formatter(PercentFormatter())
+
+plt.tight_layout()
 plt.show()
