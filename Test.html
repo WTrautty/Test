@@ -1,4 +1,12 @@
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\9200 wr mem missing.py", line 169, in <module>
-    cell.value = subject
-    ^^^^^^^^^^
-AttributeError: 'MergedCell' object attribute 'value' is read-only
+        # Only assign value before merging (and only if cell is not already merged)
+        if not isinstance(ws_sched.cell(row=start_row, column=col_idx), openpyxl.cell.cell.MergedCell):
+            cell = ws_sched.cell(row=start_row, column=col_idx)
+            cell.value = subject
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+        # Then merge the cells
+        if end_row - start_row > 1:
+            ws_sched.merge_cells(
+                start_row=start_row, start_column=col_idx,
+                end_row=end_row - 1, end_column=col_idx
+            )
