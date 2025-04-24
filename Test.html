@@ -1,12 +1,73 @@
-        # Only assign value before merging (and only if cell is not already merged)
-        if not isinstance(ws_sched.cell(row=start_row, column=col_idx), openpyxl.cell.cell.MergedCell):
-            cell = ws_sched.cell(row=start_row, column=col_idx)
-            cell.value = subject
-            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+import win32com.client
+from datetime import datetime, timedelta
+import openpyxl
+from openpyxl import Workbook
+import re
 
-        # Then merge the cells
-        if end_row - start_row > 1:
-            ws_sched.merge_cells(
-                start_row=start_row, start_column=col_idx,
-                end_row=end_row - 1, end_column=col_idx
-            )
+# === Settings ===
+EXPORT_FILE = "Outlook_Calendars.xlsx"
+DAYS_FORWARD = 30
+
+# === Helpers ===
+def strip_tz(dt):
+    """Remove timezone info from datetime if present."""
+    return dt.replace(tzinfo=None) if hasattr(dt, 'tzinfo') and dt.tzinfo else dt
+
+def sanitize_sheet_name(name):
+    """Make Excel sheet name safe (max 31 characters, no forbidden chars)."""
+    name = re.sub(r'[\\/*?:\[\]]+', '_', name)
+    return name[:31]
+
+# === Initialize Excel workbook ===
+wb = Workbook()
+wb.remove(wb.active)  # remove default sheet
+
+# === Connect to Outlook ===
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+now = datetime.now()
+future = now + timedelta(days=DAYS_FORWARD)
+
+# === Loop through all mailboxes ===
+for i in range(outlook.Folders.Count):
+    try:
+        mailbox = outlook.Folders.Item(i + 1)
+        calendar = mailbox.Folders("Calendar")
+
+        # Get calendar items
+        items = calendar.Items
+        items.Sort("[Start]")
+        items.IncludeRecurrences = True
+
+        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
+            now.strftime('%m/%d/%Y %I:%M %p'),
+            future.strftime('%m/%d/%Y %I:%M %p')
+        )
+        restricted_items = items.Restrict(restriction)
+
+        # Create Excel sheet
+        sheet_name = sanitize_sheet_name(mailbox.Name)
+        ws = wb.create_sheet(title=sheet_name)
+        ws.append(["Subject", "Start", "End", "Location"])
+
+        for item in restricted_items:
+            try:
+                ws.append([
+                    item.Subject,
+                    strip_tz(item.Start),
+                    strip_tz(item.End),
+                    item.Location
+                ])
+            except Exception as e:
+                ws.append(["Error reading item", "", "", str(e)])
+
+        print(f"✅ Exported: {mailbox.Name}")
+
+    except Exception as e:
+        print(f"❌ Skipping mailbox {i+1}: {e}")
+
+# === Save the Excel file ===
+try:
+    wb.save(EXPORT_FILE)
+    print(f"\n✅ Export complete: {EXPORT_FILE}")
+except Exception as e:
+    print(f"\n❌ Failed to save Excel file: {e}")
