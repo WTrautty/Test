@@ -47,18 +47,30 @@ for i in range(outlook.Folders.Count):
         # Create Excel sheet
         sheet_name = sanitize_sheet_name(mailbox.Name)
         ws = wb.create_sheet(title=sheet_name)
-        ws.append(["Subject", "Start", "End", "Location"])
+        ws.append(["Subject", "Start", "End", "Location", "44 Number", "NSC Code"])
 
         for item in restricted_items:
             try:
-                ws.append([
-                    item.Subject,
-                    strip_tz(item.Start),
-                    strip_tz(item.End),
-                    item.Location
-                ])
+                # Extract appointment details
+                subject = item.Subject
+                start = strip_tz(item.Start)
+                end = strip_tz(item.End)
+                location = item.Location
+                body = item.Body if hasattr(item, 'Body') else ""
+
+                # Search for 9-digit number starting with 44
+                match_44 = re.search(r"\b44\d{7}\b", body)
+                number_44 = match_44.group(0) if match_44 else ""
+
+                # Search for 8-character NSC code after "NSC:"
+                match_nsc = re.search(r"NSC:\s*([A-Za-z0-9]{8})", subject)
+                nsc_code = match_nsc.group(1) if match_nsc else ""
+
+                # Append all data to sheet
+                ws.append([subject, start, end, location, number_44, nsc_code])
+
             except Exception as e:
-                ws.append(["Error reading item", "", "", str(e)])
+                ws.append(["Error reading item", "", "", "", "", str(e)])
 
         print(f"✅ Exported: {mailbox.Name}")
 
