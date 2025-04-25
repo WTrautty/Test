@@ -1,85 +1,45 @@
-import win32com.client
-from datetime import datetime, timedelta
-import openpyxl
-from openpyxl import Workbook
-import re
+import os
 
-# === Settings ===
-EXPORT_FILE = "Outlook_Calendars.xlsx"
-DAYS_FORWARD = 30
+# === CONFIGURATION ===
+folder1 = r"C:\Path\To\Folder1"  # Replace with your first folder path
+folder2 = r"C:\Path\To\Folder2"  # Replace with your second folder path
+output_file = r"C:\Path\To\comparison_result.txt"  # Where the report will be saved
 
-# === Helpers ===
-def strip_tz(dt):
-    """Remove timezone info from datetime if present."""
-    return dt.replace(tzinfo=None) if hasattr(dt, 'tzinfo') and dt.tzinfo else dt
+# === FUNCTIONS ===
+def get_all_files(base_folder):
+    """Walks through a folder recursively and returns a set of all relative file paths."""
+    file_paths = set()
+    for root, dirs, files in os.walk(base_folder):
+        for file in files:
+            full_path = os.path.join(root, file)
+            relative_path = os.path.relpath(full_path, base_folder)
+            file_paths.add(relative_path)
+    return file_paths
 
-def sanitize_sheet_name(name):
-    """Make Excel sheet name safe (max 31 characters, no forbidden chars)."""
-    name = re.sub(r'[\\/*?:\[\]]+', '_', name)
-    return name[:31]
+# === MAIN LOGIC ===
+files_in_folder1 = get_all_files(folder1)
+files_in_folder2 = get_all_files(folder2)
 
-# === Initialize Excel workbook ===
-wb = Workbook()
-wb.remove(wb.active)  # remove default sheet
+missing_in_folder2 = files_in_folder1 - files_in_folder2
+missing_in_folder1 = files_in_folder2 - files_in_folder1
 
-# === Connect to Outlook ===
-outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-now = datetime.now()
-future = now + timedelta(days=DAYS_FORWARD)
+# === OUTPUT ===
+with open(output_file, 'w') as f:
+    if missing_in_folder2:
+        f.write(f"Files present in {folder1} but missing in {folder2}:\n")
+        for file in sorted(missing_in_folder2):
+            f.write(f"  {file}\n")
+        f.write("\n")
+    else:
+        f.write(f"No files missing in {folder2} compared to {folder1}.\n\n")
 
-# === Loop through all mailboxes ===
-for i in range(outlook.Folders.Count):
-    try:
-        mailbox = outlook.Folders.Item(i + 1)
-        calendar = mailbox.Folders("Calendar")
+    if missing_in_folder1:
+        f.write(f"Files present in {folder2} but missing in {folder1}:\n")
+        for file in sorted(missing_in_folder1):
+            f.write(f"  {file}\n")
+        f.write("\n")
+    else:
+        f.write(f"No files missing in {folder1} compared to {folder2}.\n")
 
-        # Get calendar items
-        items = calendar.Items
-        items.Sort("[Start]")
-        items.IncludeRecurrences = True
+print(f"Comparison complete! Results saved to {output_file}")
 
-        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
-            now.strftime('%m/%d/%Y %I:%M %p'),
-            future.strftime('%m/%d/%Y %I:%M %p')
-        )
-        restricted_items = items.Restrict(restriction)
-
-        # Create Excel sheet
-        sheet_name = sanitize_sheet_name(mailbox.Name)
-        ws = wb.create_sheet(title=sheet_name)
-        ws.append(["Subject", "Start", "End", "Location", "44 Number", "NSC Code"])
-
-        for item in restricted_items:
-            try:
-                # Extract appointment details
-                subject = item.Subject
-                start = strip_tz(item.Start)
-                end = strip_tz(item.End)
-                location = item.Location
-                body = item.Body if hasattr(item, 'Body') else ""
-
-                # Search for 9-digit number starting with 44
-                match_44 = re.search(r"\b44\d{7}\b", body)
-                number_44 = match_44.group(0) if match_44 else ""
-
-                # Search for 8-character NSC code after "NSC:"
-                match_nsc = re.search(r"NSC:\s*([A-Za-z0-9]{8})", subject)
-                nsc_code = match_nsc.group(1) if match_nsc else ""
-
-                # Append all data to sheet
-                ws.append([subject, start, end, location, number_44, nsc_code])
-
-            except Exception as e:
-                ws.append(["Error reading item", "", "", "", "", str(e)])
-
-        print(f"✅ Exported: {mailbox.Name}")
-
-    except Exception as e:
-        print(f"❌ Skipping mailbox {i+1}: {e}")
-
-# === Save the Excel file ===
-try:
-    wb.save(EXPORT_FILE)
-    print(f"\n✅ Export complete: {EXPORT_FILE}")
-except Exception as e:
-    print(f"\n❌ Failed to save Excel file: {e}")
