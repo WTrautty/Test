@@ -1,8 +1,11 @@
 import openpyxl
 import numpy as np
 import warnings
+from openpyxl import Workbook
 import os
 from datetime import datetime
+import pandas as pd
+import hashlib
 import re
 import traceback
 
@@ -10,8 +13,49 @@ import traceback
 
 EXCEL_FILE = r"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
 LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+SCHEDULER_EXCEL = r"C:\Users\AD39644\OneDrive - Lumen\General - DOI Remote VPNS Activations\Lumen_DOI Remote VPNS Activations Tracker.xlsx" 
 
-# ---------------- Region Mapping Helpers ----------------
+# CSV file to store processed orders
+PROCESSED_CSV = r"C:\Users\AD39644\IPv6_Test_Files\processed_orders.csv"
+
+# Debugging output to verify correct file path usage 
+print(f"Using file path: {EXCEL_FILE}")
+
+# Suppress openpyxl warnings about cell errors 
+warnings.simplefilter("ignore", category=UserWarning)
+
+# Define the sheets and columns to search for order numbers 
+SEARCH_CONFIG = {
+    "Main": {
+        "search_columns": ["Ops Console Ticket"],  # Column that holds the order number
+        "extract_columns": [
+            "Ops Console Ticket",
+            "IPv6 Status",
+            "Service ID",
+            "IPv6 WAN",
+            "IPv6 LAN",
+            "IPv6 Loopback",
+            "DOI_Bureau",
+            "WHD_Location",
+            "Node Name",
+            "IP Address",
+            "Address",
+            "City",
+            "State",
+            "Vendor",
+            "iSE Design Link",
+        ]
+    },
+}
+
+SEARCH_LASER = {
+    "Sheet1": {
+        "service_match": ["circuitID"],  # Key used to search for the Service ID
+        "extract_columns": ["device", "interface", "scid", "location", "ipv4", "vrf"]
+    },
+}
+
+# ---------------- Helper Functions ----------------
 
 def identify_region(wan_ipv6):
     try:
@@ -46,205 +90,373 @@ def j_barton(lan_ipv6):
         return None
 
 def ipv6_region_map(ipv6_region):
-    return {
-        "1": "East", "2": "North", "3": "Central", "4": "West", "5": "Alaska"
-    }.get(ipv6_region, "unknown")
+    mapping = {
+        "1": "East",
+        "2": "North",
+        "3": "Central",
+        "4": "West",
+        "5": "Alaska"
+    }
+    return mapping.get(ipv6_region, "unknown")
 
 def md_pw_map(ipv6_region):
-    return {
+    mapping = {
         "1": "5CB60CDAE77980D14277994BB",
         "2": "17A75FE44D8F532715E369E86",
         "3": "A78BA5E3FFFB4F9FE4DDEFC2D",
         "4": "38CE4A74D0004E037471A27B9",
         "5": "D4196D7DF1087CA41E8B5CF72"
-    }.get(ipv6_region, "unknown")
+    }
+    return mapping.get(ipv6_region, "unknown")
 
 def juniper_RI_map(ipv6_region):
-    return {
-        "1": "8192-1-EIS0176-2006932628-L3VPN",
-        "2": "8193-1-EIS0176-2006932629-L3VPN",
-        "3": "8194-1-EIS0176-2006932623-L3VPN",
-        "4": "8195-1-EIS0176-2006932630-L3VPN",
-        "5": "UNKNOWN"
-    }.get(ipv6_region, "unknown")
+    mapping = {
+       "1": "8192-1-EIS0176-2006932628-L3VPN",
+       "2": "8193-1-EIS0176-2006932629-L3VPN",
+       "3": "8194-1-EIS0176-2006932623-L3VPN",
+       "4": "8195-1-EIS0176-2006932630-L3VPN",
+       "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
 
 def Nokia_vprn_map(ipv6_region):
-    return {
-        "1": "22826008",
-        "2": "22826009",
-        "3": "22826010",
-        "4": "22826011",
-        "5": "UNKNOWN"
-    }.get(ipv6_region, "unknown")
+    mapping = {
+       "1": "22826008",
+       "2": "22826009",
+       "3": "22826010",
+       "4": "22826011",
+       "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
 
-# ---------------- Laser & Excel Logic ----------------
-
+# Finds the header row in a given sheet using NumPy for efficiency
 def find_header_row(sheet):
     data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
     for row_idx, row in enumerate(data, start=1):
-        if np.count_nonzero(row) > 2:
+        non_empty_cells = np.count_nonzero(row)
+        if non_empty_cells > 2:
             return list(row), row_idx
     return None, None
 
-def search_laser_matches(service_id, ipv6_region, wb_laser):
-    sheet = wb_laser["Sheet1"]
-    header_row, header_row_idx = find_header_row(sheet)
-    headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
-    matches = []
-    for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        for col in headers:
-            if "circuitid" in col.lower() and service_id.lower() in str(row[headers[col]]).lower():
-                data = {k: row[i] for k, i in headers.items()}
-                matches.append({"Data": data})
-    return matches
+# Returns all orders (rows) from the main sheet that have a value in the "Ops Console Ticket" column
+def get_all_orders():
+    results = []
+    for sheet_name, config in SEARCH_CONFIG.items():
+        if sheet_name in wb_main.sheetnames:
+            ws = wb_main[sheet_name]
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            search_cols = [header for header in headers 
+                           if any(header.startswith(col) for col in config["search_columns"]) 
+                           and header not in ["", "0"]]
+            extract_cols = [header for header in headers if any(header.startswith(col) for col in config["extract_columns"])]
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for search_col in search_cols:
+                    cell_val = row[headers[search_col]]
+                    if cell_val is not None and str(cell_val).strip() not in ["", "0"]:
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+                        break
+    return results
 
+# Searches the LASER file for a given Service ID
+def search_circuit(Service_ID):
+    results = []
+    for sheet_name, config in SEARCH_LASER.items():
+        if sheet_name in wb_laser.sheetnames:
+            ws = wb_laser[sheet_name]
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            search_key = config.get("service_match", config.get("search_columns", []))
+            search_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in search_key)]
+            extract_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in config["extract_columns"])]
+            if not search_cols:
+                continue
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for col_name in search_cols:
+                    col_idx = headers[col_name]
+                    cell_value = str(row[col_idx]) if row[col_idx] is not None else ""
+                    if Service_ID.lower() in cell_value.lower():
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+    return results
+
+# Returns the default interface details from the LASER results
 def get_default_interface(laser_matches, ipv6_region):
+    """
+    Loop through laser_matches and return the first entry
+    where the 'interface' ends with "80{ipv6_region}".
+    Returns a tuple: (default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf)
+    """
+    default_interface = ""
+    default_device = ""
+    default_scid = ""
+    default_location = ""
+    default_wan_ip = ""
+    default_vrf = ""
+
     target_suffix = f"80{ipv6_region}"
     for lm in laser_matches:
         interface_val = str(lm["Data"].get("interface", "")).strip()
         if interface_val.lower().endswith(target_suffix.lower()):
-            return (
-                interface_val,
-                str(lm["Data"].get("device", "")).strip(),
-                str(lm["Data"].get("scid", "")).strip(),
-                str(lm["Data"].get("location", "")).strip(),
-                str(lm["Data"].get("ipv4", "")).strip(),
-                str(lm["Data"].get("vrf", "")).strip()
-            )
-    return ("", "", "", "", "", "")
-
-# ---------------- Main ----------------
-
-try:
-    order_input = input("Enter Ops Console Ticket #: ").strip()
-    wb_main = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
-    ws = wb_main["Main"]
-    header_row, header_row_idx = find_header_row(ws)
-    headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
-
-    order_data = None
-    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-        if str(row[headers["Ops Console Ticket"]]).strip() == order_input:
-            order_data = {k: row[i] for k, i in headers.items()}
+            default_interface = interface_val
+            default_device = str(lm["Data"].get("device", "")).strip()
+            default_scid = str(lm["Data"].get("scid", "")).strip()
+            default_location = str(lm["Data"].get("location", "")).strip()
+            default_wan_ip = str(lm["Data"].get("ipv4", "")).strip()
+            default_vrf = str(lm["Data"].get("vrf", "")).strip()
             break
-    wb_main.close()
+    return default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf
 
-    if not order_data:
-        print("Order not found.")
-        exit()
+def compute_order_hash(order_data: dict) -> str:
+    """
+    Computes an MD5 hash from the order_data dictionary.
+    It uses a sorted concatenation of key-value pairs.
+    """
+    items = sorted(order_data.items())
+    concatenated = ""
+    for key, value in items:
+        concatenated += f"{key}:{value if value is not None else ''}|"
+    return hashlib.md5(concatenated.encode('utf-8')).hexdigest()
 
+# ---------------- Main Processing ----------------
+
+# Open main workbook and get all orders
+try:
+    wb_main = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"Error [E001]: The main file '{EXCEL_FILE}' was not found. Please verify the file path and try again.")
+    exit()
+
+all_orders = get_all_orders()
+wb_main.close()
+
+if not all_orders:
+    print("No orders found in the main spreadsheet.")
+    exit()
+
+# Open the LASER workbook once for use in all orders
+try:
     wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True)
-    service_id = str(order_data.get("Service ID", "")).strip()
-    ipv6_region = identify_region(order_data.get("IPv6 WAN", ""))
-    laser_matches = search_laser_matches(service_id, ipv6_region, wb_laser)
-    default_interface,    default_interface, default_scid, default_location, default_wan_ip, default_vrf = get_default_interface(laser_matches, ipv6_region)
+except FileNotFoundError:
+    print(f"Error [E002]: The LASER file '{LASER_FILE}' was not found. Please verify the file path and try again.")
+    exit()
 
-    fixed_lan = lan_subnet_fix(order_data.get("IPv6 LAN", ""))
-    ce_wan = ce_wan_address(order_data.get("IPv6 WAN", ""))
-    area = ipv6_region_map(ipv6_region)
-    md_pw = md_pw_map(ipv6_region)
-    jRI = juniper_RI_map(ipv6_region)
-    vprn = Nokia_vprn_map(ipv6_region)
-    j_bar = j_barton(order_data.get("IPv6 LAN", ""))
-    device_vendor = order_data.get("Vendor", "").strip()
+# Load the scheduler workbook (if it exists) and create a lookup dictionary keyed by OPS Ticket#
+if os.path.exists(SCHEDULER_EXCEL):
+    try:
+        scheduler_df = pd.read_excel(SCHEDULER_EXCEL, sheet_name="IPV6", dtype=str)
+        scheduler_lookup = {}
+        for idx, row in scheduler_df.iterrows():
+            ticket = str(row.get("OPS Ticket#", "")).strip()
+            scheduler_lookup[ticket] = {
+                "Activation Technician": row.get("Activation Technician", "").strip() if pd.notnull(row.get("Activation Technician", "")) else "",
+                "STATUS": row.get("STATUS", "").strip() if pd.notnull(row.get("STATUS", "")) else ""
+            }
+    except Exception as e:
+        print(f"Error loading scheduler file: {e}")
+        scheduler_lookup = {}
+else:
+    scheduler_lookup = {}
 
-    # Choose template based on default_device and vendor
-    if default_device.upper().startswith("ESP"):
-        pe_type = "Alcatel"
-        template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt" if device_vendor.upper().startswith("FORT") else r"C:\Users\AD39644\Service Information ESP.txt"
-    else:
-        pe_type = "Juniper"
-        if default_interface.upper().startswith("LSQ"):
-            template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt" if device_vendor.upper().startswith("FORT") else r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+# Load the persistent CSV (if it exists) that stores processed orders
+if os.path.exists(PROCESSED_CSV):
+    processed_df = pd.read_csv(PROCESSED_CSV, dtype=str)
+else:
+    processed_df = pd.DataFrame(columns=["Ops Console Ticket", "order_hash"])
+
+# Create a lookup dictionary for quick comparison
+processed_orders = dict(zip(processed_df["Ops Console Ticket"], processed_df["order_hash"]))
+
+# Get current date string for file naming
+current_date = datetime.now().strftime("%Y-%m-%d")
+output_directory = fr"C:\Users\AD39644\IPv6_Test_Files\{current_date}"
+
+# Create the directory for the current date if it doesn't exist
+if not os.path.exists(output_directory):
+    os.makedirs(output_directory)
+
+# Process each order
+for order in all_orders:
+    try:
+        data = order["Data"]
+        # Get order number from "Ops Console Ticket"
+        order_number = str(data.get("Ops Console Ticket", "")).strip()
+        if order_number in ["", "0"]:
+            continue  # Skip rows with an empty order number or "0"
+
+        # Compute a hash for this order's data
+        order_hash = compute_order_hash(data)
+
+        # Skip processing if this order has been seen before and has not changed
+        if order_number in processed_orders and processed_orders[order_number] == order_hash:
+            print(f"Order {order_number} has not changed. Skipping text file creation.")
+            continue
+
+        service_id = str(data.get("Service ID", "")).strip()
+        ipv6_region = identify_region(data.get("IPv6 WAN", ""))
+        fixed_lan = lan_subnet_fix(data.get("IPv6 LAN", ""))
+        ce_wan = ce_wan_address(data.get("IPv6 WAN", ""))
+        area = ipv6_region_map(ipv6_region)
+        md_pw = md_pw_map(ipv6_region)
+        jRI = juniper_RI_map(ipv6_region)
+        vprn = Nokia_vprn_map(ipv6_region)
+        j_bar = j_barton(data.get("IPv6 LAN", ""))
+        device_vendor = data.get("Vendor", "").strip()
+
+        # Search LASER file for this order's Service ID
+        laser_matches = search_circuit(service_id)
+
+        # Get default interface details from laser matches
+        default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf = get_default_interface(laser_matches, ipv6_region)
+
+        # Choose a template based on the device type; for example, if default_device starts with "ESP" use one template.
+        if default_device.upper().startswith("ESP"):
+            pe_type = "Alcatel"
+            if device_vendor.upper().startswith("FORT"):
+                template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt"
+            else:
+                template_path = r"C:\Users\AD39644\Service Information ESP.txt"
         else:
-            template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt" if device_vendor.upper().startswith("FORT") else r"C:\Users\AD39644\Service Information Juno T1.txt"
+            pe_type = "Juniper"
+            if default_interface.upper().startswith("LSQ"):
+                if device_vendor.upper().startswith("FORT"):
+                    template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt"
+                else:
+                    template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+            else:
+                if device_vendor.upper().startswith("FORT"):
+                    template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt"
+                else:
+                    template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
 
-    # Read and fill in template
-    with open(template_path, 'r', encoding='utf-8') as file:
-        template = file.read()
+        with open(template_path, 'r', encoding='utf-8') as file:
+            template = file.read()
 
-    template = template.replace('{Ops Console Ticket}', order_input)
-    template = template.replace('{iSE Design Link}', order_data.get("iSE Design Link", "").strip() or "Not in Inventory")
-    template = template.replace('{Region}', ipv6_region or "")
-    template = template.replace('{Lan (Data 1)}', fixed_lan or "")
-    template = template.replace('{WAN/126 CE}', ce_wan or "")
-    template = template.replace('{WAN/126 CEnoSub}', ce_wan.split('/')[0] if ce_wan else "")
-    template = template.replace('{md_pw}', md_pw.strip())
-    template = template.replace('{j_bar}', j_bar or "")
-    template = template.replace('{jRI}', jRI.strip())
-    template = template.replace('{jRI_conf}', jRI.split('-200')[0].strip())
-    template = template.replace('{vprn}', vprn.strip())
-    template = template.replace('{area}', area.strip())
-    template = template.replace('{IPv6_wan_noSub}', order_data.get("IPv6 WAN", "").split('/')[0].strip())
-    template = template.replace('{IPv6_lan_noSub}', order_data.get("IPv6 LAN", "").split('/')[0].strip())
-    template = template.replace('{IPv6_lan_noSuband1}', order_data.get("IPv6 LAN", "").split('/')[0].strip() + "1")
-    template = template.replace('{IPv6_lan_Sub64and1}', order_data.get("IPv6 LAN", "").split('/')[0].strip() + "1/64")
-    template = template.replace('{IPv6_lan_and1}', order_data.get("IPv6 LAN", "").split('/')[0].strip() + "1")
-    template = template.replace('{WAN_CE}', order_data.get("IPv6 WAN", "").split('/')[0].strip())
-    template = template.replace('{Node_Only}', order_data.get("Node Name", "").split('.')[0].strip().upper())
-    template = template.replace('{regional_vlan}', "80" + (ipv6_region or "").strip())
-    template = template.replace('{IPv6 Status}', order_data.get("IPv6 Status", "").strip())
-    if order_data.get("IPv6 Loopback", ""):
-        parts = order_data["IPv6 Loopback"].split('/')
-        if len(parts) == 2:
-            template = template.replace('{IPv6 Loopback_andone}', parts[0] + "/" + parts[1])
-    template = template.replace('{Service ID}', service_id)
-    template = template.replace('{IPv6 WAN}', order_data.get("IPv6 WAN", "").strip())
-    template = template.replace('{IPv6 LAN}', order_data.get("IPv6 LAN", "").strip())
-    template = template.replace('{IPv6 Loopback}', order_data.get("IPv6 Loopback", "").strip())
-    template = template.replace('{DOI_Bureau}', order_data.get("DOI_Bureau", "").strip())
-    template = template.replace('{WHD_Location}', order_data.get("WHD_Location", "").strip())
-    template = template.replace('{Node Name}', order_data.get("Node Name", "").strip())
-    template = template.replace('{IP Address}', order_data.get("IP Address", "").strip())
-    template = template.replace('{Address}', order_data.get("Address", "").strip())
-    template = template.replace('{City}', order_data.get("City", "").strip())
-    template = template.replace('{State}', order_data.get("State", "").strip())
-    template = template.replace('{Vendor}', order_data.get("Vendor", "").strip())
-    template = template.replace('{pe_type}', pe_type.strip())
-    template = template.replace(
-        '{WHD_Location_City}',
-        (lambda m: (m.group(1).replace('_', ' ') if m else "").strip())(
-            re.search(r'-(?P<group>[^-]*)-(?!.*-)', order_data.get("WHD_Location", " "))
+        # Replace placeholders from the main file
+        template = template.replace('{Ops Console Ticket}', order_number.strip())
+        ise_design_link = data.get("iSE Design Link", "")
+        template = template.replace('{iSE Design Link}', ise_design_link.strip() if ise_design_link else "Not in Inventory")
+        template = template.replace('{Region}', (ipv6_region if ipv6_region else "").strip())
+        template = template.replace('{Lan (Data 1)}', (fixed_lan if fixed_lan else "").strip())
+        template = template.replace('{WAN/126 CE}', (ce_wan if ce_wan else "").strip())
+        template = template.replace('{WAN/126 CEnoSub}', (ce_wan.split('/')[0] if ce_wan else "").strip())
+        template = template.replace('{md_pw}', md_pw.strip())
+        template = template.replace('{j_bar}', (j_bar if j_bar else "").strip())
+        template = template.replace('{jRI}', jRI.strip())
+        template = template.replace('{jRI_conf}', (jRI.strip()).split('-200')[0])
+        template = template.replace('{vprn}', vprn.strip())
+        template = template.replace('{area}', area.strip())
+        template = template.replace('{IPv6_wan_noSub}', (data.get("IPv6 WAN", "").split('/')[0]).strip())
+        template = template.replace('{IPv6_lan_noSub}', data.get("IPv6 LAN", "").split('/')[0].strip())
+        template = template.replace('{IPv6_lan_noSuband1}', data.get("IPv6 LAN", "").split('/')[0].strip() + "1")
+        template = template.replace('{IPv6_lan_Sub64and1}', data.get("IPv6 LAN", "").split('/')[0].strip() + "1/64")
+        template = template.replace('{IPv6_lan_and1}', data.get("IPv6 LAN", "").split('/')[0].strip() + "1")
+        template = template.replace('{WAN_CE}', data.get("IPv6 WAN", "").split('/')[0].strip())
+        template = template.replace('{Node_Only}', (data.get("Node Name", "").split('.')[0].strip()).upper())
+        template = template.replace('{regional_vlan}', "80" + (ipv6_region if ipv6_region else "").strip())
+        template = template.replace('{IPv6 Status}', data.get("IPv6 Status", "").strip())
+        if data.get("IPv6 Loopback", ""):
+            loopback_parts = data.get("IPv6 Loopback", "").split('/')
+            if len(loopback_parts) > 1:
+                template = template.replace('{IPv6 Loopback_andone}', loopback_parts[0].strip() + "/" + loopback_parts[1].strip())
+        template = template.replace('{Service ID}', data.get("Service ID", "").strip())
+        template = template.replace('{IPv6 WAN}', data.get("IPv6 WAN", "").strip())
+        template = template.replace('{IPv6 LAN}', data.get("IPv6 LAN", "").strip())
+        template = template.replace('{IPv6 Loopback}', data.get("IPv6 Loopback", "").strip())
+        template = template.replace('{DOI_Bureau}', data.get("DOI_Bureau", "").strip())
+        template = template.replace('{WHD_Location}', data.get("WHD_Location", "").strip())
+        template = template.replace('{Node Name}', data.get("Node Name", "").strip())
+        template = template.replace('{IP Address}', data.get("IP Address", "").strip())
+        template = template.replace('{Address}', data.get("Address", "").strip())
+        template = template.replace('{City}', data.get("City", "").strip())
+        template = template.replace('{State}', data.get("State", "").strip())
+        template = template.replace('{Vendor}', data.get("Vendor", "").strip())
+        template = template.replace('{pe_type}', pe_type.strip())
+        template = template.replace(
+            '{WHD_Location_City}',
+            (lambda m: (m.group(1).replace('_', ' ') if m else "").strip())(
+                re.search(r'-(?P<group>[^-]*)-(?!.*-)', data.get("WHD_Location", " "))
+            )
         )
-    )
 
-    # Replace LASER values
-    template = template.replace('{default_interface}', default_interface.strip())
-    template = template.replace('{default_device}', default_device.strip())
-    template = template.replace('{default_scid}', default_scid.strip())
-    template = template.replace('{default_location}', default_location.strip())
-    template = template.replace('{default_wan_ip}', default_wan_ip.strip())
-    if default_wan_ip:
-        parts = default_wan_ip.split('/')[0].split('.')
-        parts[-1] = str(int(parts[-1]) + 1)
-        template = template.replace('{default_wan_ipand1}', '.'.join(parts).strip())
-    else:
-        template = template.replace('{default_wan_ipand1}', "")
-    template = template.replace('{default_vrf}', default_vrf.strip())
-    template = template.replace('{def_int_noSub}', default_interface.split('.')[0].strip() if default_interface else "")
-    template = template.replace('{lsq_int}', default_interface.split('.')[0].replace(':', '.').strip() if default_interface else "")
-
-    # Append all matched laser data
-    if laser_matches:
-        template += "\n\nNetwork Matches:\n\n"
+        # Replace new placeholders from LASER results
+        template = template.replace('{default_interface}', default_interface.strip())
+        template = template.replace('{default_device}', default_device.strip())
+        template = template.replace('{default_scid}', default_scid.strip())
+        template = template.replace('{default_location}', default_location.strip())
+        template = template.replace('{default_wan_ip}', default_wan_ip.strip())
+        if default_wan_ip:
+            wan_parts = default_wan_ip.split('/')[0].split('.')
+            wan_parts[-1] = str(int(wan_parts[-1]) + 1)
+            template = template.replace('{default_wan_ipand1}', '.'.join(wan_parts).strip())
+        else:
+            template = template.replace('{default_wan_ipand1}', "")
+        template = template.replace('{default_vrf}', default_vrf.strip())
+        if default_interface:
+            template = template.replace('{def_int_noSub}', default_interface.split('.')[0].strip())
+        else:
+            template = template.replace('{def_int_noSub}', "")
+        template = template.replace('{lsq_int}', default_interface.split('.')[0].replace(':', '.').strip())
+        
+        # Append network match details from LASER search
+        network_info = "\n\nNetwork Matches:\n\n"
         for lm in laser_matches:
-            for k, v in lm["Data"].items():
-                template += f"{k}: {v}\n"
-            template += "\n-----------------\n"
+            lm_data = lm["Data"]
+            for key, value in lm_data.items():
+                network_info += f"{key}: {value}\n"
+            network_info += "\n-----------------\n\n"
+        template += network_info
 
-    # Save output
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    output_dir = os.path.join(r"C:\Users\AD39644\IPv6_Test_Files", current_date)
-    os.makedirs(output_dir, exist_ok=True)
-    filename = f"{order_input.replace('/', '_')} - {current_date} - Pre-Checks.txt"
-    output_path = os.path.join(output_dir, filename)
+        # --- New Scheduler Replacement ---
+        # Look up the order number in the scheduler lookup dictionary (matching "OPS Ticket#")
+        if order_number in scheduler_lookup:
+            activation_technician_val = scheduler_lookup[order_number].get("Activation Technician", "")
+            scheduler_status_val = scheduler_lookup[order_number].get("STATUS", "")
+        else:
+            activation_technician_val = ""
+            scheduler_status_val = "Did not Find in Schedule"
+        # Replace placeholders in the template
+        template = template.replace('{Activation Technician}', activation_technician_val)
+        template = template.replace('{scheduler}', scheduler_status_val)
+        
+        # --- End Scheduler Replacement ---
 
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(template)
+        sanitized_order_number = order_number.replace("/", "_").replace("\\", "_").strip()
+        output_filename = f"{sanitized_order_number} - {current_date} - Pre-Checks.txt"
+        output_path = os.path.join(output_directory, output_filename)
 
-    print(f"Text file created successfully: {output_path}")
+        # Write the final text file
+        with open(output_path, 'w', encoding='utf-8') as file:
+            file.write(template)
+        print(f"New text file '{output_path}' created successfully!")
 
-except Exception as e:
-    print(f"Error: {str(e)}")
-    traceback.print_exc()
+        # Update the processed orders lookup with the new hash
+        processed_orders[order_number] = order_hash
 
+    except Exception as e:
+        error_details = traceback.format_exc()
+        error_text = (
+            f"Error processing order {order_number}.\n"
+            f"Error Code: [OP-001]\n"
+            f"Error Type: {type(e).__name__}\n"
+            f"Error Message: {str(e)}\n\n"
+            f"Traceback:\n{error_details}"
+        )
+        error_filename = f"Error - {order_number.replace('/', '_').replace('\\', '_').strip()} - {current_date} - Pre-Checks.txt"
+        error_path = os.path.join(output_directory, error_filename)
+        
+        with open(error_path, 'w', encoding='utf-8') as file:
+            file.write(error_text)
+        print(f"Issue with order {order_number}: {error_text}")
+
+# Save the updated processed orders back to the CSV
+updated_df = pd.DataFrame(list(processed_orders.items()), columns=["Ops Console Ticket", "order_hash"])
+updated_df.to_csv(PROCESSED_CSV, index=False)
+print("Processed orders CSV updated.")
+
+                    
