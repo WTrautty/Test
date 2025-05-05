@@ -153,4 +153,191 @@ all_orders = [o for o in get_all_orders() if str(o["Data"].get("Ops Console Tick
 wb_main.close()
 
 if not all_orders:
-    print(f"No matching orde
+    print(f"No matching order found for: {order_input}")
+    exit()
+
+try:
+    wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"LASER file '{LASER_FILE}' not found.")
+    exit()
+
+# Output setup
+current_date = datetime.now().strftime("%Y-%m-%d")
+output_directory = fr"C:\Users\AD39644\IPv6_Test_Files\{current_date}"
+os.makedirs(output_directory, exist_ok=True)
+
+# Processing logic stays the same...
+# [REMAINING SCRIPT UNCHANGED FOR NOW - ADD THE REST OF YOUR EXISTING CODE HERE]
+import openpyxl
+import numpy as np
+import warnings
+import os
+from datetime import datetime
+import pandas as pd
+import re
+import traceback
+
+# ---------------- Configuration ----------------
+
+EXCEL_FILE = r"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
+LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+
+# Suppress openpyxl warnings about cell errors 
+warnings.simplefilter("ignore", category=UserWarning)
+
+# ---------------- Helper Config ----------------
+
+SEARCH_CONFIG = {
+    "Main": {
+        "search_columns": ["Ops Console Ticket"],
+        "extract_columns": [
+            "Ops Console Ticket", "IPv6 Status", "Service ID", "IPv6 WAN",
+            "IPv6 LAN", "IPv6 Loopback", "DOI_Bureau", "WHD_Location",
+            "Node Name", "IP Address", "Address", "City", "State",
+            "Vendor", "iSE Design Link"
+        ]
+    }
+}
+
+SEARCH_LASER = {
+    "Sheet1": {
+        "service_match": ["circuitID"],
+        "extract_columns": ["device", "interface", "scid", "location", "ipv4", "vrf"]
+    }
+}
+
+# ---------------- Helper Functions ----------------
+
+def identify_region(wan_ipv6):
+    try:
+        return wan_ipv6.split(":")[2][1]
+    except IndexError:
+        return None
+
+def lan_subnet_fix(lan_ipv6):
+    try:
+        address, subnet = lan_ipv6.split("/")
+        hex_groups = address.split(":")
+        if len(hex_groups[3]) == 3:
+            hex_groups[3] = "0" + hex_groups[3]
+        return ":".join(hex_groups) + "/56"
+    except Exception:
+        return None
+
+def ce_wan_address(ce_wan_ipv6):
+    try:
+        address, subnet = ce_wan_ipv6.split("/")
+        hex_groups = address.split(":")
+        hex_groups[-1] = format(int(hex_groups[-1], 16) + 1, "x")
+        return ":".join(hex_groups) + f"/{subnet}"
+    except Exception:
+        return None
+
+def j_barton(lan_ipv6):
+    try:
+        address = lan_ipv6.split("/")[0]
+        return address + "[0-3]"
+    except Exception:
+        return None
+
+def ipv6_region_map(ipv6_region):
+    return {"1": "East", "2": "North", "3": "Central", "4": "West", "5": "Alaska"}.get(ipv6_region, "unknown")
+
+def md_pw_map(ipv6_region):
+    return {"1": "5CB60CDAE77980D14277994BB", "2": "17A75FE44D8F532715E369E86", "3": "A78BA5E3FFFB4F9FE4DDEFC2D", "4": "38CE4A74D0004E037471A27B9", "5": "D4196D7DF1087CA41E8B5CF72"}.get(ipv6_region, "unknown")
+
+def juniper_RI_map(ipv6_region):
+    return {"1": "8192-1-EIS0176-2006932628-L3VPN", "2": "8193-1-EIS0176-2006932629-L3VPN", "3": "8194-1-EIS0176-2006932623-L3VPN", "4": "8195-1-EIS0176-2006932630-L3VPN", "5": "UNKNOWN"}.get(ipv6_region, "unknown")
+
+def Nokia_vprn_map(ipv6_region):
+    return {"1": "22826008", "2": "22826009", "3": "22826010", "4": "22826011", "5": "UNKNOWN"}.get(ipv6_region, "unknown")
+
+def find_header_row(sheet):
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
+    for row_idx, row in enumerate(data, start=1):
+        if np.count_nonzero(row) > 2:
+            return list(row), row_idx
+    return None, None
+
+def get_all_orders():
+    results = []
+    for sheet_name, config in SEARCH_CONFIG.items():
+        if sheet_name in wb_main.sheetnames:
+            ws = wb_main[sheet_name]
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            search_cols = [header for header in headers if any(header.startswith(col) for col in config["search_columns"])]
+            extract_cols = [header for header in headers if any(header.startswith(col) for col in config["extract_columns"])]
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for search_col in search_cols:
+                    cell_val = row[headers[search_col]]
+                    if cell_val and str(cell_val).strip() not in ["", "0"]:
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+                        break
+    return results
+
+def search_circuit(Service_ID):
+    results = []
+    for sheet_name, config in SEARCH_LASER.items():
+        if sheet_name in wb_laser.sheetnames:
+            ws = wb_laser[sheet_name]
+            header_row, header_row_idx = find_header_row(ws)
+            if not header_row:
+                continue
+            headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+            search_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in config["service_match"])]
+            extract_cols = [header for header in headers if any(header.lower().startswith(col.lower()) for col in config["extract_columns"])]
+            for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+                for col_name in search_cols:
+                    col_idx = headers[col_name]
+                    cell_value = str(row[col_idx]) if row[col_idx] else ""
+                    if Service_ID.lower() in cell_value.lower():
+                        data = {col: row[idx] for col, idx in headers.items() if col in extract_cols}
+                        results.append({"Sheet": sheet_name, "Data": data})
+    return results
+
+def get_default_interface(laser_matches, ipv6_region):
+    suffix = f"80{ipv6_region}"
+    for lm in laser_matches:
+        iface = str(lm["Data"].get("interface", "")).strip()
+        if iface.lower().endswith(suffix.lower()):
+            d = lm["Data"]
+            return iface, d.get("device", ""), d.get("scid", ""), d.get("location", ""), d.get("ipv4", ""), d.get("vrf", "")
+    return ("", "", "", "", "", "")
+
+# ---------------- Main ----------------
+
+# Prompt user
+order_input = input("Enter the Ops Console Ticket to process: ").strip()
+
+try:
+    wb_main = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"Main file '{EXCEL_FILE}' not found.")
+    exit()
+
+all_orders = [o for o in get_all_orders() if str(o["Data"].get("Ops Console Ticket", "")).strip() == order_input]
+wb_main.close()
+
+if not all_orders:
+    print(f"No matching order found for: {order_input}")
+    exit()
+
+try:
+    wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True)
+except FileNotFoundError:
+    print(f"LASER file '{LASER_FILE}' not found.")
+    exit()
+
+# Output setup
+current_date = datetime.now().strftime("%Y-%m-%d")
+output_directory = fr"C:\Users\AD39644\IPv6_Test_Files\{current_date}"
+os.makedirs(output_directory, exist_ok=True)
+
+# Processing logic stays the same...
+# [REMAINING SCRIPT UNCHANGED FOR NOW - ADD THE REST OF YOUR EXISTING CODE HERE]
+ 
