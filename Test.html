@@ -1,50 +1,249 @@
-# Prompt user for a specific order number
-user_input_order = input("Enter the Ops Console Ticket number to process: ").strip()
+import openpyxl
+import numpy as np
+import warnings
+import os
+from datetime import datetime
+import pandas as pd
+import re
+import traceback
 
-# Find the matching order
-matching_order = None
-for order in all_orders:
-    order_number = str(order["Data"].get("Ops Console Ticket", "")).strip()
-    if order_number == user_input_order:
-        matching_order = order
-        break
+# ---------------- Configuration ----------------
 
-if not matching_order:
-    print(f"No matching order found for '{user_input_order}'.")
-    exit()
+EXCEL_FILE = r"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
+LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+SCHEDULER_EXCEL = r"C:\Users\AD39644\OneDrive - Lumen\General - DOI Remote VPNS Activations\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
 
-# Open the LASER workbook
-try:
-    wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True)
-except FileNotFoundError:
-    print(f"Error [E002]: The LASER file '{LASER_FILE}' was not found. Please verify the file path and try again.")
-    exit()
+# Suppress openpyxl warnings
+warnings.simplefilter("ignore", category=UserWarning)
 
-# Load the scheduler lookup if available
-scheduler_lookup = {}
-if os.path.exists(SCHEDULER_EXCEL):
+# ---------------- Region Maps ----------------
+
+def identify_region(wan_ipv6):
     try:
-        scheduler_df = pd.read_excel(SCHEDULER_EXCEL, sheet_name="IPV6", dtype=str)
-        for idx, row in scheduler_df.iterrows():
-            ticket = str(row.get("OPS Ticket#", "")).strip()
-            scheduler_lookup[ticket] = {
-                "Activation Technician": row.get("Activation Technician", "").strip() if pd.notnull(row.get("Activation Technician", "")) else "",
-                "STATUS": row.get("STATUS", "").strip() if pd.notnull(row.get("STATUS", "")) else ""
-            }
-    except Exception as e:
-        print(f"Error loading scheduler file: {e}")
+        return wan_ipv6.split(":")[2][1]
+    except IndexError:
+        return None
 
-# Load processed orders CSV
-processed_orders = {}
-if os.path.exists(PROCESSED_CSV):
-    processed_df = pd.read_csv(PROCESSED_CSV, dtype=str)
-    processed_orders = dict(zip(processed_df["Ops Console Ticket"], processed_df["order_hash"]))
+def lan_subnet_fix(lan_ipv6):
+    try:
+        address, subnet = lan_ipv6.split("/")
+        hex_groups = address.split(":")
+        if len(hex_groups[3]) == 3:
+            hex_groups[3] = "0" + hex_groups[3]
+        return ":".join(hex_groups) + "/56"
+    except Exception:
+        return None
 
-# Define output directory
+def ce_wan_address(ce_wan_ipv6):
+    try:
+        address, subnet = ce_wan_ipv6.split("/")
+        hex_groups = address.split(":")
+        hex_groups[-1] = format(int(hex_groups[-1], 16) + 1, "x")
+        return ":".join(hex_groups) + f"/{subnet}"
+    except Exception:
+        return None
+
+def j_barton(lan_ipv6):
+    try:
+        address = lan_ipv6.split("/")[0]
+        return address + "[0-3]"
+    except Exception:
+        return None
+
+def ipv6_region_map(ipv6_region):
+    mapping = {
+        "1": "East", "2": "North", "3": "Central", "4": "West", "5": "Alaska"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def md_pw_map(ipv6_region):
+    mapping = {
+        "1": "5CB60CDAE77980D14277994BB",
+        "2": "17A75FE44D8F532715E369E86",
+        "3": "A78BA5E3FFFB4F9FE4DDEFC2D",
+        "4": "38CE4A74D0004E037471A27B9",
+        "5": "D4196D7DF1087CA41E8B5CF72"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def juniper_RI_map(ipv6_region):
+    mapping = {
+        "1": "8192-1-EIS0176-2006932628-L3VPN",
+        "2": "8193-1-EIS0176-2006932629-L3VPN",
+        "3": "8194-1-EIS0176-2006932623-L3VPN",
+        "4": "8195-1-EIS0176-2006932630-L3VPN",
+        "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+def Nokia_vprn_map(ipv6_region):
+    mapping = {
+        "1": "22826008", "2": "22826009", "3": "22826010", "4": "22826011", "5": "UNKNOWN"
+    }
+    return mapping.get(ipv6_region, "unknown")
+
+# ---------------- Lookup Helpers ----------------
+
+def find_header_row(sheet):
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
+    for row_idx, row in enumerate(data, start=1):
+        if np.count_nonzero(row) > 2:
+            return list(row), row_idx
+    return None, None
+
+def get_matching_order(sheet, ticket_column="Ops Console Ticket", target_ticket=""):
+    header_row, header_row_idx = find_header_row(sheet)
+    if not header_row:
+        return None, None
+    headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+    for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        if str(row[headers[ticket_column]]).strip() == target_ticket:
+            return row, headers
+    return None, None
+
+def search_circuit(wb_laser, service_id):
+    matches = []
+    ws = wb_laser["Sheet1"]
+    header_row, header_row_idx = find_header_row(ws)
+    headers = {str(cell).replace('\n', ' '): idx for idx, cell in enumerate(header_row) if cell}
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        if str(row[headers["circuitID"]]).strip() == service_id:
+            matches.append({col: row[idx] for col, idx in headers.items()})
+    return matches
+
+def get_default_interface(laser_matches, ipv6_region):
+    suffix = f"80{ipv6_region}"
+    for lm in laser_matches:
+        interface = str(lm.get("interface", ""))
+        if interface.lower().endswith(suffix.lower()):
+            return (
+                interface,
+                str(lm.get("device", "")),
+                str(lm.get("scid", "")),
+                str(lm.get("location", "")),
+                str(lm.get("ipv4", "")),
+                str(lm.get("vrf", ""))
+            )
+    return ("", "", "", "", "", "")
+
+# ---------------- Main ----------------
+
+order_number = input("Enter the Ops Console Ticket number: ").strip()
 current_date = datetime.now().strftime("%Y-%m-%d")
 output_directory = fr"C:\Users\AD39644\IPv6_Test_Files\{current_date}"
 os.makedirs(output_directory, exist_ok=True)
 
-# Now continue processing just the matching_order
-order = matching_order
-# (you can leave the rest of your original processing logic untouched here)
+try:
+    wb_main = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+    ws_main = wb_main["Main"]
+    row, headers = get_matching_order(ws_main, "Ops Console Ticket", order_number)
+    if not row:
+        print(f"No order found for ticket {order_number}")
+        exit()
+    data = {col: row[idx] for col, idx in headers.items()}
+    wb_main.close()
+
+    wb_laser = openpyxl.load_workbook(LASER_FILE, read_only=True)
+    laser_matches = search_circuit(wb_laser, str(data.get("Service ID", "")).strip())
+    ipv6_region = identify_region(data.get("IPv6 WAN", ""))
+    fixed_lan = lan_subnet_fix(data.get("IPv6 LAN", ""))
+    ce_wan = ce_wan_address(data.get("IPv6 WAN", ""))
+    area = ipv6_region_map(ipv6_region)
+    md_pw = md_pw_map(ipv6_region)
+    jRI = juniper_RI_map(ipv6_region)
+    vprn = Nokia_vprn_map(ipv6_region)
+    j_bar = j_barton(data.get("IPv6 LAN", ""))
+    default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf = get_default_interface(laser_matches, ipv6_region)
+
+    if os.path.exists(SCHEDULER_EXCEL):
+        scheduler_df = pd.read_excel(SCHEDULER_EXCEL, sheet_name="IPV6", dtype=str)
+        sched_row = scheduler_df[scheduler_df["OPS Ticket#"] == order_number]
+        activation_technician = sched_row["Activation Technician"].values[0] if not sched_row.empty else ""
+        scheduler_status = sched_row["STATUS"].values[0] if not sched_row.empty else "Did not Find in Schedule"
+    else:
+        activation_technician = ""
+        scheduler_status = "Did not Find in Schedule"
+
+    # Choose template
+    vendor = data.get("Vendor", "").strip().upper()
+    pe_type = "Alcatel" if default_device.upper().startswith("ESP") else "Juniper"
+    if pe_type == "Alcatel":
+        template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt" if vendor.startswith("FORT") else r"C:\Users\AD39644\Service Information ESP.txt"
+    else:
+        if default_interface.upper().startswith("LSQ"):
+            template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt" if vendor.startswith("FORT") else r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+        else:
+            template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt" if vendor.startswith("FORT") else r"C:\Users\AD39644\Service Information Juno T1.txt"
+
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template = f.read()
+
+    # Replace placeholders
+    replacements = {
+        '{Ops Console Ticket}': order_number,
+        '{iSE Design Link}': data.get("iSE Design Link", "Not in Inventory"),
+        '{Region}': ipv6_region or "",
+        '{Lan (Data 1)}': fixed_lan or "",
+        '{WAN/126 CE}': ce_wan or "",
+        '{WAN/126 CEnoSub}': (ce_wan.split('/')[0] if ce_wan else ""),
+        '{md_pw}': md_pw,
+        '{j_bar}': j_bar or "",
+        '{jRI}': jRI,
+        '{jRI_conf}': jRI.split('-200')[0],
+        '{vprn}': vprn,
+        '{area}': area,
+        '{IPv6_wan_noSub}': data.get("IPv6 WAN", "").split('/')[0],
+        '{IPv6_lan_noSub}': data.get("IPv6 LAN", "").split('/')[0],
+        '{IPv6_lan_noSuband1}': data.get("IPv6 LAN", "").split('/')[0] + "1",
+        '{IPv6_lan_Sub64and1}': data.get("IPv6 LAN", "").split('/')[0] + "1/64",
+        '{WAN_CE}': data.get("IPv6 WAN", "").split('/')[0],
+        '{Node_Only}': data.get("Node Name", "").split('.')[0].upper(),
+        '{regional_vlan}': "80" + (ipv6_region or ""),
+        '{IPv6 Status}': data.get("IPv6 Status", ""),
+        '{IPv6 Loopback_andone}': data.get("IPv6 Loopback", ""),
+        '{Service ID}': data.get("Service ID", ""),
+        '{IPv6 WAN}': data.get("IPv6 WAN", ""),
+        '{IPv6 LAN}': data.get("IPv6 LAN", ""),
+        '{IPv6 Loopback}': data.get("IPv6 Loopback", ""),
+        '{DOI_Bureau}': data.get("DOI_Bureau", ""),
+        '{WHD_Location}': data.get("WHD_Location", ""),
+        '{Node Name}': data.get("Node Name", ""),
+        '{IP Address}': data.get("IP Address", ""),
+        '{Address}': data.get("Address", ""),
+        '{City}': data.get("City", ""),
+        '{State}': data.get("State", ""),
+        '{Vendor}': data.get("Vendor", ""),
+        '{pe_type}': pe_type,
+        '{default_interface}': default_interface,
+        '{default_device}': default_device,
+        '{default_scid}': default_scid,
+        '{default_location}': default_location,
+        '{default_wan_ip}': default_wan_ip,
+        '{default_vrf}': default_vrf,
+        '{def_int_noSub}': default_interface.split('.')[0] if default_interface else "",
+        '{lsq_int}': default_interface.split('.')[0].replace(':', '.') if default_interface else "",
+        '{Activation Technician}': activation_technician,
+        '{scheduler}': scheduler_status,
+        '{WHD_Location_City}': (
+            lambda m: (m.group(1).replace('_', ' ') if m else "").strip()
+        )(re.search(r'-(?P<group>[^-]*)-(?!.*-)', data.get("WHD_Location", " ")))
+    }
+
+    for key, value in replacements.items():
+        template = template.replace(key, value)
+
+    # Append laser info
+    template += "\n\nNetwork Matches:\n\n"
+    for match in laser_matches:
+        for k, v in match.items():
+            template += f"{k}: {v}\n"
+        template += "\n-------------------\n"
+
+    output_file = os.path.join(output_directory, f"{order_number} - {current_date} - Pre-Checks.txt")
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(template)
+    print(f"Export complete: {output_file}")
+
+except Exception as e:
+    print(f"Failed to process order: {e}")
+    print(traceback.format_exc())
