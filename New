@@ -11,8 +11,22 @@ import traceback
 
 # ---------------- Configuration ----------------
 
-EXCEL_FILE = r"C:\Users\AD39644\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
-LASER_FILE = r"C:\Users\AD39644\Downloads\LASER Export 2-27.xlsx"
+# Function to extract user ID from the current working directory
+def extract_user_id_from_path():
+    cwd = os.getcwd()
+    try:
+        user_id = cwd.split("Users\\")[1][:7]
+        return user_id
+    except IndexError:
+        return None
+
+# Extract the user ID from the current working directory
+user_id = extract_user_id_from_path()
+print(f"{user_id}")
+EXCEL_FILE = fr"C:\Users\{user_id}\OneDrive - Lumen\Department_of_the_Interior_-_General_Asset_Inventory_Oct2023 (1) (1) (1) Query.xlsx"
+LASER_FILE = fr"C:\Users\{user_id}\Downloads\LASER Export 2-27.xlsx"
+
+
 
 # Suppress openpyxl warnings about cell errors 
 warnings.simplefilter("ignore", category=UserWarning)
@@ -198,7 +212,7 @@ def get_default_interface(laser_matches, ipv6_region):
     return default_interface, default_device, default_scid, default_location, default_wan_ip, default_vrf
 
 # ---------------- Main Execution ----------------
-
+export_path = input("Enter the Export Path for the File: ").strip()
 order_number = input("Enter the Ops Console Ticket to process: ").strip()
 
 try:
@@ -243,29 +257,26 @@ default_interface, default_device, default_scid, default_location, default_wan_i
 if default_device.upper().startswith("ESP"):
     pe_type = "Alcatel"
     if device_vendor.upper().startswith("FORT"):
-        template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt"
+        template_path = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\Service Information ESP FORT.txt"
     else:
-        template_path = r"C:\Users\AD39644\Service Information ESP.txt"
+        template_path = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\Service Information ESP.txt"
 else:
     pe_type = "Juniper"
     if default_interface.upper().startswith("LSQ"):
         if device_vendor.upper().startswith("FORT"):
-            template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt"
+            template_path = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\Service Information ESP FORT.txt"
         else:
-            template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+            template_path = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\Service Information Juno LSQ.txt"
     else:
         if device_vendor.upper().startswith("FORT"):
-            template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt"
+            template_path = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\Service Information Juno T1 FORT.txt"
         else:
-            template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
+            template_path = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\Service Information Juno T1.txt"
 
 with open(template_path, 'r', encoding='utf-8') as file:
     template = file.read()
 
 current_date = datetime.now().strftime("%Y-%m-%d")
-output_directory = fr"C:\Users\AD39644\IPv6_Test_Files\{current_date}"
-if not os.path.exists(output_directory):
-    os.makedirs(output_directory)
 
 # Replace placeholders from the main file
 template = template.replace('{Ops Console Ticket}', order_number.strip())
@@ -344,9 +355,8 @@ template += network_info
 # Output file creation
 sanitized_order_number = order_number.replace("/", "_").replace("\\", "_").strip()
 output_filename = f"{sanitized_order_number} - {current_date} - Pre-Checks.txt"
-output_path = os.path.join(output_directory, output_filename)
+output_path = export_path
 
 with open(output_path, 'w', encoding='utf-8') as file:
     file.write(template)
 print(f"New text file '{output_path}' created successfully!")
-
