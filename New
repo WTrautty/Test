@@ -332,29 +332,21 @@ if default_interface:
 else:
     template = template.replace('{def_int_noSub}', "")
 template = template.replace('{lsq_int}', default_interface.split('.')[0].replace(':', '.').strip())
-
 # Append network match details
-network_info = "
-
-Network Matches:
-
-"
+network_info = "\n\nNetwork Matches:\n\n"
 for lm in laser_matches:
     lm_data = lm["Data"]
     for key, value in lm_data.items():
-        network_info += f"{key}: {value}
-"
-    network_info += "
------------------
-
-"
+        network_info += f"{key}: {value}\n"
+    network_info += "\n-----------------\n\n"
 template += network_info
 
 # Output file creation
-sanitized_order_number = order_number.replace("/", "_").replace("\", "_").strip()
+sanitized_order_number = order_number.replace("/", "_").replace("\\", "_").strip()
 output_filename = f"{sanitized_order_number} - {current_date} - Pre-Checks.txt"
 output_path = os.path.join(output_directory, output_filename)
 
 with open(output_path, 'w', encoding='utf-8') as file:
     file.write(template)
 print(f"New text file '{output_path}' created successfully!")
+
