@@ -1,6 +1,217 @@
+import openpyxl
+import numpy as np
+import os
+import warnings
+
+# Suppress openpyxl warnings
+warnings.simplefilter("ignore", category=UserWarning)
+
+# Function to extract user ID from the current working directory
+def extract_user_id_from_path():
+    cwd = os.getcwd()
+    try:
+        user_id = cwd.split("Users\\")[1][:7]
+        return user_id
+    except IndexError:
+        return None
+
+# Extract the user ID from the current working directory
+user_id = extract_user_id_from_path()
+print(f"{user_id}")
+
+# === Configuration ===
+EXCEL_FILE = fr"C:\Users\{user_id}\OneDrive - Lumen\General - DOI Remote VPNS Activations\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
+LASER_FILE = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\LASER Export 2-27.xlsx"
+SHEET_NAME = "Router Refresh"
+LASER_SHEET = "Sheet1"
+
+SEARCH_COLUMNS = ["OPS Ticket #"]
+EXTRACT_COLUMNS = [
+    "CFIT PM", "PM", "Bureau", "SITE NAME", "Activity Type",
+    "EIS Order# (VPNS) orig site", "Lumen Order#", "Service ID",
+    "SRE Order# orig site", "Core ENG", "Subject Line (FIT fills this out)",
+    "Lumen Installing Equipment?", "Router Model", "HOST NAME (Fortigate)", "S/N",
+    "Equipment PO orig site", "Install PO orig site (CFIT IPIC.705 X1 if needed for GFEs)",
+    "Activation PO CFIT gets this", "[IF SWAP] USE SRE#", "STATUS", "CFIT NOTES",
+    "ROUTER SHIPMENT STATUS", "Router Refresh Activation DATE", "Scheduled START Time",
+    "OPS Ticket #", "Scheduled Activation Technician", "Activation Status: Complete/Failed",
+    "Acceptance: Time & Who Accepted", "If FAILED, detail on failure:", "Reschedule Action Owner",
+    "Ready to Reschedule?", "SOCN Date", "Customer Address", "Customer City", "Customer State",
+    "Customer Zip code", "LCON", "LCON Ph#", "LCON EMAIL", "CC Email", "Access Rate/Speed",
+    "LEC ID", "SHIPPING ADDRESS", "Notes"
+]
+
+LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
+LASER_MATCH_COLUMN = "circuitID"
+
+# === Get user input
+# Automatically name the output file
 output_dir = input("Enter output directory (e.g., C:\\output): ").strip()
 # Ensure directory doesn't end with backslash
 output_dir = output_dir.rstrip("\\/")
 
 # We'll extract the OPS Ticket # after result_data is retrieved
 output_file_path = None  # will be set later once data is available
+template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
+order_number = input("Enter the order number: ").strip()
+
+# === Utility: Find header row
+def find_header_row(sheet):
+    data = np.array([row for row in sheet.iter_rows(min_row=1, max_row=20, values_only=True)], dtype=object)
+    for row_idx, row in enumerate(data, start=1):
+        if np.count_nonzero(row) > 2:
+            return [str(cell).strip() if cell else "" for cell in row], row_idx
+    return None, None
+
+# === Search Tracker
+def search_order(sheet, order_num):
+    header_row, header_row_idx = find_header_row(sheet)
+    if not header_row:
+        return None
+
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+    search_cols = [col for col in headers if any(col.strip().startswith(s) for s in SEARCH_COLUMNS)]
+
+    extract_cols = {}
+    for extract_key in EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.strip().startswith(extract_key.strip()):
+                extract_cols[extract_key] = headers[header_key]
+                break
+
+    for row in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        for col in search_cols:
+            col_idx = headers[col]
+            cell_value = str(row[col_idx]) if row[col_idx] else ""
+            if order_num in cell_value:
+                return {col.strip(): row[idx] for col, idx in extract_cols.items()}
+    return None
+
+# === Search LASER Export for ALL matches
+def search_laser_by_service_id(service_id):
+    try:
+        laser_wb = openpyxl.load_workbook(LASER_FILE, read_only=True)
+    except FileNotFoundError:
+        print(f" Error: LASER file not found - {LASER_FILE}")
+        return []
+
+    if LASER_SHEET not in laser_wb.sheetnames:
+        print(f" Error: Sheet '{LASER_SHEET}' not found.")
+        return []
+
+    ws = laser_wb[LASER_SHEET]
+    header_row, header_row_idx = find_header_row(ws)
+    if not header_row:
+        return []
+
+    headers = {cell.replace('\n', ' ').replace('\r', '').strip(): idx for idx, cell in enumerate(header_row) if cell}
+
+    match_col = None
+    for key in headers:
+        if key.lower().startswith(LASER_MATCH_COLUMN.lower()):
+            match_col = headers[key]
+            break
+
+    extract_cols = {}
+    for extract_key in LASER_EXTRACT_COLUMNS:
+        for header_key in headers:
+            if header_key.lower().startswith(extract_key.lower()):
+                extract_cols[extract_key] = headers[header_key]
+                break
+
+    matches = []
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        cell_value = str(row[match_col]) if row[match_col] else ""
+        if service_id in cell_value:
+            match = {col: row[idx] for col, idx in extract_cols.items()}
+            matches.append(match)
+
+    return matches
+
+# === Format Laser Matches
+def format_laser_matches(matches):
+    if not matches:
+        return "No matches found in LASER Export."
+    output = []
+    for i, row in enumerate(matches, start=1):
+        block = [f"- Match {i}:"]
+        for key in LASER_EXTRACT_COLUMNS:
+            value = row.get(key, "")
+            block.append(f"  {key.capitalize()}: {value}")
+        output.append("\n".join(block))
+    return "\n\n".join(output)
+
+# === Identify default match
+def find_default_match(matches):
+    for match in matches:
+        interface = str(match.get("interface", ""))
+        if interface.endswith(("801", "802", "803", "804", "805")):
+            return match
+    return None
+
+# === Load and search Tracker
+try:
+    print(f"\n Loading Tracker: {EXCEL_FILE}")
+    wb = openpyxl.load_workbook(EXCEL_FILE, read_only=True)
+except FileNotFoundError:
+    print(f" Error: File not found - {EXCEL_FILE}")
+    exit()
+
+if SHEET_NAME not in wb.sheetnames:
+    print(f" Error: Sheet '{SHEET_NAME}' not found.")
+    wb.close()
+    exit()
+
+result_data = search_order(wb[SHEET_NAME], order_number)
+wb.close()
+
+# === Load template
+try:
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
+    print(" Template loaded.\n")
+except FileNotFoundError:
+    print(f" Error: Template file '{template_path}' not found.")
+    exit()
+
+# === Process and export
+if result_data:
+    service_id = str(result_data.get("Service ID", "")).strip()
+    laser_matches = search_laser_by_service_id(service_id)
+    default_match = find_default_match(laser_matches)
+
+    filled_template = template
+
+    # Replace Tracker fields
+    for key in EXTRACT_COLUMNS:
+        placeholder = f"{{{key.strip()}}}"
+        filled_template = filled_template.replace(placeholder, str(result_data.get(key.strip(), "")))
+
+    # Replace Laser_Find block
+    filled_template = filled_template.replace("{Laser_Find}", format_laser_matches(laser_matches))
+
+    # Replace default_* fields
+    if default_match:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_{key}}}"
+            filled_template = filled_template.replace(placeholder, str(default_match.get(key, "")))
+    else:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_{key}}}"
+            filled_template = filled_template.replace(placeholder, "N/A")
+
+    # Replace OrderNumber
+    filled_template = filled_template.replace("{OrderNumber}", order_number)
+
+    # Get a safe filename from OPS Ticket #
+    ops_number = str(result_data.get("OPS Ticket #", order_number)).strip().replace(" ", "_").replace("/", "-")
+    output_file_path = os.path.join(output_dir, f"{ops_number} - Router Refresh.txt")
+
+    try:
+        with open(output_file_path, "w", encoding="utf-8") as out_file:
+            out_file.write(filled_template)
+        print(f"\n Output written to: {output_file_path}")
+    except Exception as e:
+        print(f" Failed to write to output file: {e}")
+else:
+    print(f" Order number '{order_number}' not found in Tracker.")
