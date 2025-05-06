@@ -20,8 +20,8 @@ user_id = extract_user_id_from_path()
 print(f"{user_id}")
 
 # === Configuration ===
-EXCEL_FILE = fr"C:\Users\{user_id}\OneDrive - Lumen\General - DOI Remote VPNS Activations\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
-LASER_FILE = fr"C:\Users\{user_id}\OneDrive - Lumen\NEW_ENV\LASER Export 2-27.xlsx"
+EXCEL_FILE = fr"C:\\Users\\{user_id}\\OneDrive - Lumen\\General - DOI Remote VPNS Activations\\Lumen_DOI Remote VPNS Activations Tracker.xlsx"
+LASER_FILE = fr"C:\\Users\\{user_id}\\OneDrive - Lumen\\NEW_ENV\\LASER Export 2-27.xlsx"
 SHEET_NAME = "Router Refresh"
 LASER_SHEET = "Sheet1"
 
@@ -44,14 +44,7 @@ EXTRACT_COLUMNS = [
 LASER_EXTRACT_COLUMNS = ["device", "interface", "scid", "location", "ipv4", "vrf"]
 LASER_MATCH_COLUMN = "circuitID"
 
-# === Get user input
-# Automatically name the output file
-output_dir = input("Enter output directory (e.g., C:\\output): ").strip()
-# Ensure directory doesn't end with backslash
-output_dir = output_dir.rstrip("\\/")
-
-# We'll extract the OPS Ticket # after result_data is retrieved
-output_file_path = None  # will be set later once data is available
+output_dir = input("Enter output directory (e.g., C:\\output): ").strip().rstrip("\\/")
 template_path = input("Enter full path for the .txt template file (e.g., C:\\templates\\template.txt): ").strip()
 order_number = input("Enter the order number: ").strip()
 
@@ -149,6 +142,47 @@ def find_default_match(matches):
             return match
     return None
 
+# === Subtract 100 from third octet of IPv4
+def subtract_100_from_third_octet(ip_str):
+    try:
+        parts = ip_str.split(".")
+        if len(parts) != 4:
+            return None
+        parts[2] = str(int(parts[2]) - 100)
+        return ".".join(parts)
+    except:
+        return None
+
+# === Find default management match
+def find_default_mgmt_match(matches, base_ipv4):
+    target_ip = subtract_100_from_third_octet(base_ipv4)
+    if not target_ip:
+        return None
+    for match in matches:
+        if str(match.get("ipv4", "")).strip() == target_ip:
+            return match
+    return None
+
+# === Extract SAP from interface
+def extract_sap_from_interface(interface):
+    try:
+        after_dash = interface.split("-", 1)[1]
+        return after_dash.split(".", 1)[0]
+    except (IndexError, AttributeError):
+        return "N/A"
+
+# === Neighbor IP helper
+def get_neighbor_ip(ip):
+    try:
+        ip = ip.split("/")[0]
+        parts = ip.split(".")
+        if len(parts) != 4:
+            return "N/A"
+        parts[3] = str(int(parts[3]) + 1)
+        return ".".join(parts)
+    except:
+        return "N/A"
+
 # === Load and search Tracker
 try:
     print(f"\n Loading Tracker: {EXCEL_FILE}")
@@ -165,7 +199,6 @@ if SHEET_NAME not in wb.sheetnames:
 result_data = search_order(wb[SHEET_NAME], order_number)
 wb.close()
 
-# === Load template
 try:
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
@@ -174,23 +207,24 @@ except FileNotFoundError:
     print(f" Error: Template file '{template_path}' not found.")
     exit()
 
-# === Process and export
 if result_data:
     service_id = str(result_data.get("Service ID", "")).strip()
     laser_matches = search_laser_by_service_id(service_id)
     default_match = find_default_match(laser_matches)
 
+    default_mgmt_match = None
+    if default_match:
+        default_ipv4 = str(default_match.get("ipv4", ""))
+        default_mgmt_match = find_default_mgmt_match(laser_matches, default_ipv4)
+
     filled_template = template
 
-    # Replace Tracker fields
     for key in EXTRACT_COLUMNS:
         placeholder = f"{{{key.strip()}}}"
         filled_template = filled_template.replace(placeholder, str(result_data.get(key.strip(), "")))
 
-    # Replace Laser_Find block
     filled_template = filled_template.replace("{Laser_Find}", format_laser_matches(laser_matches))
 
-    # Replace default_* fields
     if default_match:
         for key in LASER_EXTRACT_COLUMNS:
             placeholder = f"{{default_{key}}}"
@@ -200,10 +234,25 @@ if result_data:
             placeholder = f"{{default_{key}}}"
             filled_template = filled_template.replace(placeholder, "N/A")
 
-    # Replace OrderNumber
+    if default_mgmt_match:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_mgmt_{key}}}"
+            filled_template = filled_template.replace(placeholder, str(default_mgmt_match.get(key, "")))
+    else:
+        for key in LASER_EXTRACT_COLUMNS:
+            placeholder = f"{{default_mgmt_{key}}}"
+            filled_template = filled_template.replace(placeholder, "N/A")
+
+    sap_value = extract_sap_from_interface(default_match.get("interface", "")) if default_match else "N/A"
+    filled_template = filled_template.replace("{sap}", sap_value)
+
+    default_neighbor_ipv4 = get_neighbor_ip(default_match.get("ipv4", "")) if default_match else "N/A"
+    default_mgmt_neighbor_ipv4 = get_neighbor_ip(default_mgmt_match.get("ipv4", "")) if default_mgmt_match else "N/A"
+    filled_template = filled_template.replace("{default_neighbor_ipv4}", default_neighbor_ipv4)
+    filled_template = filled_template.replace("{default_mgmt_neighbor_ipv4}", default_mgmt_neighbor_ipv4)
+
     filled_template = filled_template.replace("{OrderNumber}", order_number)
 
-    # Get a safe filename from OPS Ticket #
     ops_number = str(result_data.get("OPS Ticket #", order_number)).strip().replace(" ", "_").replace("/", "-")
     output_file_path = os.path.join(output_dir, f"{ops_number} - Router Refresh.txt")
 
