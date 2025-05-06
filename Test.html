@@ -2,6 +2,7 @@ import openpyxl
 import numpy as np
 import os
 import warnings
+import re
 
 # Suppress openpyxl warnings
 warnings.simplefilter("ignore", category=UserWarning)
@@ -171,6 +172,14 @@ def extract_sap_from_interface(interface):
     except (IndexError, AttributeError):
         return "N/A"
 
+# === Extract CID from subject line
+def extract_cid(subject_line):
+    try:
+        match = re.search(r"[A-Z]{4}\d{4}", subject_line)
+        return match.group(0) if match else "N/A"
+    except:
+        return "N/A"
+
 # === Neighbor IP helper
 def get_neighbor_ip(ip):
     try:
@@ -250,6 +259,10 @@ if result_data:
     default_mgmt_neighbor_ipv4 = get_neighbor_ip(default_mgmt_match.get("ipv4", "")) if default_mgmt_match else "N/A"
     filled_template = filled_template.replace("{default_neighbor_ipv4}", default_neighbor_ipv4)
     filled_template = filled_template.replace("{default_mgmt_neighbor_ipv4}", default_mgmt_neighbor_ipv4)
+
+    subject_line = str(result_data.get("Subject Line (FIT fills this out)", ""))
+    cid = extract_cid(subject_line)
+    filled_template = filled_template.replace("{cid}", cid)
 
     filled_template = filled_template.replace("{OrderNumber}", order_number)
 
