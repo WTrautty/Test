@@ -1,12 +1,3 @@
-output_dir = input("Enter output directory (e.g., C:\\output): ").strip()
-# Ensure directory doesn't end with backslash
-output_dir = output_dir.rstrip("\\/")
-
-# We'll extract the OPS Ticket # after result_data is retrieved
-output_file_path = None  # will be set later once data is available
-
-
-
     # Get a safe filename from OPS Ticket #
     ops_number = str(result_data.get("OPS Ticket #", order_number)).strip().replace(" ", "_").replace("/", "-")
     output_file_path = os.path.join(output_dir, f"{ops_number} - Router Refresh.txt")
