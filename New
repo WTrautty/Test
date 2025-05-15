@@ -1,98 +1,38 @@
-for i, owner in enumerate(valid_owners):
-    div_id = f"tab{i}"
-    owner_data = df[df['Task Owner'] == owner]
+# === POSITIVE/NEGATIVE BAR CHART: Delta % from Top Performer ===
+delta_df = pd.DataFrame({
+    'Closure Code': list(all_codes),
+    'Owner %': [owner_pie_data[code] for code in all_codes],
+    'Top %': [top_pie_data[code] for code in all_codes]
+})
+delta_df['Delta'] = delta_df['Owner %'] - delta_df['Top %']
+delta_df.sort_values('Delta', inplace=True)
 
-    # === PIE CHART: Task Owner Only ===
-    owner_pie_data = owner_data['Closure Code 1'].value_counts(normalize=True) * 100
-    top_performer = "James McGee"
-    top_data = df[df['Task Owner'] == top_performer]
-    top_pie_data = top_data['Closure Code 1'].value_counts(normalize=True) * 100
+annotations = [
+    f"You use '{row['Closure Code']}' {abs(row['Delta']):.1f}% {'more' if row['Delta'] > 0 else 'less'} than the {top_label}"
+    for _, row in delta_df.iterrows()
+]
 
-    all_codes = set(owner_pie_data.index).union(set(top_pie_data.index))
-    owner_pie_data = owner_pie_data.reindex(all_codes, fill_value=0)
-    top_pie_data = top_pie_data.reindex(all_codes, fill_value=0)
+# Estimate dynamic chart width based on max label length
+max_label_len = max(len(text) for text in annotations)
+estimated_width = min(1600, max(700, max_label_len * 9))  # cap max width
 
-    pie_display = owner_pie_data.reset_index()
-    pie_display.columns = ['Closure Code', 'Owner %']
-    pie_fig = px.pie(pie_display, names='Closure Code', values='Owner %',
-                     title=f"{owner}'s Closure Code Distribution")
-    pie_fig.update_traces(textinfo='percent+label')
-    pie_fig.update_layout(height=400, autosize=True, margin=dict(t=60, l=20, r=20, b=20))
+delta_fig = go.Figure()
+delta_fig.add_trace(go.Bar(
+    y=delta_df['Closure Code'],
+    x=delta_df['Delta'],
+    orientation='h',
+    marker_color=delta_df['Delta'].apply(lambda x: 'green' if x >= 0 else 'crimson'),
+    text=annotations,
+    textposition='outside',
+    hovertemplate='%{text}<br>Difference: %{x:.1f}%<extra></extra>'
+))
 
-    # === POSITIVE/NEGATIVE BAR CHART: Delta % from Top Performer ===
-    delta_df = pd.DataFrame({
-        'Closure Code': list(all_codes),
-        'Owner %': [owner_pie_data[code] for code in all_codes],
-        'Top %': [top_pie_data[code] for code in all_codes]
-    })
-    delta_df['Delta'] = delta_df['Owner %'] - delta_df['Top %']
-    delta_df.sort_values('Delta', inplace=True)
-
-    annotations = [
-        f"You use '{row['Closure Code']}' {abs(row['Delta']):.1f}% {'more' if row['Delta'] > 0 else 'less'} than {top_performer}"
-        for _, row in delta_df.iterrows()
-    ]
-
-    delta_fig = go.Figure()
-    delta_fig.add_trace(go.Bar(
-        y=delta_df['Closure Code'],
-        x=delta_df['Delta'],
-        orientation='h',
-        marker_color=delta_df['Delta'].apply(lambda x: 'green' if x >= 0 else 'crimson'),
-        text=annotations,
-        textposition='outside',
-        hovertemplate='%{text}<br>Difference: %{x:.1f}%<extra></extra>'
-    ))
-
-    delta_fig.update_layout(
-        title=f"{owner} vs {top_performer} – Closure Code Usage Difference",
-        xaxis_title="Percentage Difference (%)",
-        yaxis_title="Closure Code",
-        height=450,
-        margin=dict(t=60, l=40, r=40, b=40),
-        showlegend=False
-    )
-
-    # === LINE CHART ===
-    owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
-    line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(
-        x=owner_monthly['Month'],
-        y=owner_monthly['Completed'],
-        mode='lines+markers',
-        name=f'{owner} Monthly Completed',
-        line=dict(color='blue')
-    ))
-    line_fig.add_trace(go.Scatter(
-        x=global_avg['Month'],
-        y=global_avg['Average'],
-        mode='lines+markers',
-        name='Global Monthly Average',
-        line=dict(color='red', dash='dash')
-    ))
-    line_fig.update_layout(
-        title=f"{owner} – Monthly Completed Tasks vs Global Avg",
-        xaxis_title='Month',
-        yaxis_title='Tasks Completed',
-        height=500,
-        autosize=True,
-        margin=dict(t=60, l=40, r=40, b=40),
-        hovermode='x unified'
-    )
-
-    # === Convert to HTML ===
-    pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
-    delta_html = delta_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
-    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
-
-    # === Assemble Tab ===
-    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-    tab_contents.append(f'''
-    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
-        {pie_html}
-        <hr>
-        {delta_html}
-        <hr>
-        {line_html}
-    </div>
-    ''')
+delta_fig.update_layout(
+    title=f"{owner} vs {top_label} – Closure Code Usage Difference",
+    xaxis_title="Percentage Difference (%)",
+    yaxis_title="Closure Code",
+    height=450,
+    width=estimated_width,
+    margin=dict(t=60, l=40, r=40, b=40),
+    showlegend=False
+)
