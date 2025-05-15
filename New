@@ -3,33 +3,87 @@ import plotly.express as px
 import os
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <- Update this
-EXPORT_FOLDER = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\Dashboards"  # <- Update this
+EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # Update this
+EXPORT_HTML = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\all_dashboards.html"  # Update this
 TAB_MIN_ENTRIES = 20
 
-# === Load Excel Data ===
+# === Load and Filter Data ===
 df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
 df = df[['Task Owner', 'Closure Code 1']].dropna()
-
-# Filter Task Owners with 20+ entries
 owner_counts = df['Task Owner'].value_counts()
 valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
 
-# Make sure export folder exists
-os.makedirs(EXPORT_FOLDER, exist_ok=True)
+# === Generate HTML Charts ===
+charts = []
+tab_buttons = []
+tab_contents = []
 
-# === Generate and Save Pie Charts ===
-for owner in valid_owners:
+for i, owner in enumerate(valid_owners):
     owner_data = df[df['Task Owner'] == owner]
-    fig = px.pie(
-        owner_data,
-        names='Closure Code 1',
-        title=f"{owner}'s Closure Code Distribution"
-    )
+    fig = px.pie(owner_data, names='Closure Code 1', title=f"{owner}'s Closure Code Distribution")
     fig.update_traces(textinfo='percent+label')
-    
-    safe_owner_name = owner.replace(" ", "_").replace("/", "_")  # Clean filename
-    file_path = os.path.join(EXPORT_FOLDER, f"{safe_owner_name}_dashboard.html")
-    fig.write_html(file_path)
 
-    print(f"Saved: {file_path}")
+    div_id = f"tab{i}"
+    chart_html = fig.to_html(full_html=False, include_plotlyjs=(i == 0))  # include Plotly.js only once
+
+    # Tab button
+    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
+
+    # Tab content
+    tab_contents.append(f'''
+    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
+        {chart_html}
+    </div>
+    ''')
+
+# === Wrap in Full HTML Layout ===
+full_html = f"""
+<html>
+<head>
+    <title>Closure Code Dashboard</title>
+    <script>
+    function openTab(evt, tabName) {{
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {{
+            tabcontent[i].style.display = "none";
+        }}
+        tablinks = document.getElementsByClassName("tablink");
+        for (i = 0; i < tablinks.length; i++) {{
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }}
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.className += " active";
+    }}
+    </script>
+    <style>
+        .tablink {{
+            background-color: #ddd;
+            border: none;
+            cursor: pointer;
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 2px;
+        }}
+        .tablink.active {{
+            background-color: #bbb;
+        }}
+        .tabcontent {{
+            display: none;
+            padding: 20px;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Closure Code Dashboard</h1>
+    <div>{''.join(tab_buttons)}</div>
+    {''.join(tab_contents)}
+</body>
+</html>
+"""
+
+# === Save to OneDrive/SharePoint Folder ===
+with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
+    f.write(full_html)
+
+print(f"✅ Dashboard saved: {EXPORT_HTML}")
