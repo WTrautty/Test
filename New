@@ -1,202 +1,77 @@
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import os
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        min-height: 100vh;
+        width: 100%;
+        background-color: #f9f9f9;
+    }
 
-# === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # ← Replace with your actual file path
-EXPORT_HTML = r"C:\Path\To\Your\OneDrive\Dashboard.html"  # ← Replace with your export path
-TAB_MIN_ENTRIES = 20
+    h1 {
+        text-align: center;
+        margin: 20px;
+    }
 
-# === Load Data ===
-df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
-df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
-df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
-df = df.dropna(subset=['Completed Date'])
-df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
+    .tablink {
+        background-color: #ddd;
+        border: none;
+        cursor: pointer;
+        padding: 10px 20px;
+        font-size: 16px;
+        margin: 2px;
+        transition: background-color 0.3s;
+    }
 
-owner_counts = df['Task Owner'].value_counts()
-valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
+    .tablink.active {
+        background-color: #bbb;
+    }
 
-monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
-global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
+    .tabcontent {
+        display: none;
+        width: 100%;
+        max-width: 1400px;
+        padding: 20px;
+        box-sizing: border-box;
+        background-color: white;
+        box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        margin-bottom: 30px;
+        border-radius: 8px;
+    }
 
-tab_buttons = []
-tab_contents = []
+    .plot-container {
+        width: 100% !important;
+        height: auto !important;
+    }
 
-for i, owner in enumerate(valid_owners):
-    div_id = f"tab{i}"
-    owner_data = df[df['Task Owner'] == owner]
+    .tab-buttons-wrapper {
+        width: 100%;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+</style>
 
-    top_performer_name = "James McGee"
-    top_label = "Top Performer"
-    top_data = df[df['Task Owner'] == top_performer_name]
 
-    # PIE CHART
-    owner_pie = owner_data['Closure Code 1'].value_counts(normalize=True) * 100
-    top_pie = top_data['Closure Code 1'].value_counts(normalize=True) * 100
-    all_codes = set(owner_pie.index).union(set(top_pie.index))
-    owner_pie = owner_pie.reindex(all_codes, fill_value=0)
-    top_pie = top_pie.reindex(all_codes, fill_value=0)
 
-    pie_df = owner_pie.reset_index()
-    pie_df.columns = ['Closure Code', 'Owner %']
-    pie_fig = px.pie(pie_df, names='Closure Code', values='Owner %',
-                     title=f"{owner}'s Closure Code Distribution")
-    pie_fig.update_layout(height=400, margin=dict(t=60, l=20, r=20, b=20))
 
-    # DIVERGING BAR + TEXT
-    delta_df = pd.DataFrame({
-        'Closure Code': list(all_codes),
-        'Owner %': [owner_pie[code] for code in all_codes],
-        'Top %': [top_pie[code] for code in all_codes]
-    })
-    delta_df['Delta'] = delta_df['Owner %'] - delta_df['Top %']
-    delta_df.sort_values('Delta', inplace=True)
 
-    delta_fig = go.Figure()
-    delta_fig.add_trace(go.Bar(
-        y=delta_df['Closure Code'],
-        x=delta_df['Delta'],
-        orientation='h',
-        marker_color=delta_df['Delta'].apply(lambda x: 'green' if x >= 0 else 'crimson'),
-        hovertemplate='Difference: %{x:.1f}%<extra></extra>'
-    ))
-    delta_fig.update_layout(
-        title=f"{owner} vs {top_label} – Closure Code Usage Difference",
-        xaxis_title="Percentage Difference (%)",
-        yaxis_title="Closure Code",
-        height=450,
-        width=800,
-        margin=dict(t=60, l=40, r=40, b=40),
-        showlegend=False
-    )
-    delta_html = delta_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
 
-    annotation_html = "<div><h3>Closure Code Insights</h3><ul style='padding-left: 20px;'>"
-    for _, row in delta_df.iterrows():
-        color = 'green' if row['Delta'] > 0 else 'crimson'
-        direction = 'more' if row['Delta'] > 0 else 'less'
-        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
-                           f"You use '<b>{row['Closure Code']}</b>' {abs(row['Delta']):.1f}% {direction} than the {top_label}." \
-                           f"</li>"
-    annotation_html += "</ul></div>"
 
-    delta_section_html = f"""
-    <div style="display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;">
-        <div style="flex: 1 1 50%;">{delta_html}</div>
-        <div style="flex: 1 1 45%; min-width: 300px;">{annotation_html}</div>
-    </div>
-    """
 
-    # LINE CHART: Completed Tasks
-    owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
-    line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(
-        x=owner_monthly['Month'],
-        y=owner_monthly['Completed'],
-        mode='lines+markers',
-        name=f'{owner} Monthly Completed',
-        line=dict(color='blue')
-    ))
-    line_fig.add_trace(go.Scatter(
-        x=global_avg['Month'],
-        y=global_avg['Average'],
-        mode='lines+markers',
-        name='Global Monthly Average',
-        line=dict(color='red', dash='dash')
-    ))
-    line_fig.update_layout(
-        title=f"{owner} – Monthly Completed Tasks vs Global Avg",
-        xaxis_title='Month',
-        yaxis_title='Tasks Completed',
-        height=500,
-        margin=dict(t=60, l=40, r=40, b=40)
-    )
-    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # LINE CHART: % Fail Codes
-    fail_data = owner_data.copy()
-    fail_data['Is Fail'] = fail_data['Closure Code 1'].str.lower().str.contains('fail')
-    fail_totals = fail_data.groupby('Month').size()
-    fail_counts = fail_data.groupby('Month')['Is Fail'].sum()
-    fail_percent = (fail_counts / fail_totals * 100).reset_index(name='Fail %')
 
-    fail_fig = go.Figure()
-    fail_fig.add_trace(go.Scatter(
-        x=fail_percent['Month'],
-        y=fail_percent['Fail %'],
-        mode='lines+markers',
-        name='% Fail Orders',
-        line=dict(color='orange')
-    ))
-    fail_fig.update_layout(
-        title=f"{owner} – Percent of Orders Marked as 'Fail' per Month",
-        xaxis_title='Month',
-        yaxis_title='Percent Failures (%)',
-        height=400,
-        margin=dict(t=60, l=40, r=40, b=40)
-    )
-    fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # Assemble tab
-    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-    tab_contents.append(f"""
-    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
-        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})}
-        <hr>{delta_section_html}
-        <hr>{line_html}
-        <hr>{fail_html}
-    </div>
-    """)
 
-# === Final HTML ===
-html_output = f"""
-<html>
-<head>
-    <title>Closure Code Dashboard</title>
-    <script>
-    function openTab(evt, tabName) {{
-        var i, tabcontent, tablinks;
-        tabcontent = document.getElementsByClassName("tabcontent");
-        for (i = 0; i < tabcontent.length; i++) {{
-            tabcontent[i].style.display = "none";
-        }}
-        tablinks = document.getElementsByClassName("tablink");
-        for (i = 0; i < tablinks.length; i++) {{
-            tablinks[i].className = tablinks[i].className.replace(" active", "");
-        }}
-        document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.className += " active";
-    }}
-    </script>
-    <style>
-        .tablink {{
-            background-color: #ddd;
-            border: none;
-            cursor: pointer;
-            padding: 10px 20px;
-            font-size: 16px;
-            margin: 2px;
-        }}
-        .tablink.active {{
-            background-color: #bbb;
-        }}
-        .tabcontent {{
-            display: none;
-            padding: 20px;
-        }}
-    </style>
-</head>
-<body>
-    <h1>Closure Code Dashboard</h1>
-    <div>{''.join(tab_buttons)}</div>
-    {''.join(tab_contents)}
-</body>
-</html>
-"""
 
-with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
-    f.write(html_output)
 
-print(f"✅ Dashboard created at: {EXPORT_HTML}")
+
+
+
+
+
+
+<div class="tab-buttons-wrapper">{''.join(tab_buttons)}</div>
