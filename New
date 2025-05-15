@@ -1,95 +1,98 @@
-# === PIE CHART: Task Owner Only ===
-owner_pie_data = owner_data['Closure Code 1'].value_counts().reset_index()
-owner_pie_data.columns = ['Closure Code', 'Count']
+for i, owner in enumerate(valid_owners):
+    div_id = f"tab{i}"
+    owner_data = df[df['Task Owner'] == owner]
 
-pie_fig = px.pie(owner_pie_data, names='Closure Code', values='Count',
-                 title=f"{owner}'s Closure Code Distribution")
-pie_fig.update_traces(textinfo='percent+label')
-pie_fig.update_layout(
-    autosize=True,
-    margin=dict(t=60, l=20, r=20, b=20),
-    height=400
-)
+    # === PIE CHART: Task Owner Only ===
+    owner_pie_data = owner_data['Closure Code 1'].value_counts().reset_index()
+    owner_pie_data.columns = ['Closure Code', 'Count']
 
-# === BAR CHART: Owner vs Top Performer (James McGee) ===
-top_performer = "James McGee"
-top_data = df[df['Task Owner'] == top_performer]
-top_counts = top_data['Closure Code 1'].value_counts().reset_index()
-top_counts.columns = ['Closure Code', 'Top Count']
+    pie_fig = px.pie(owner_pie_data, names='Closure Code', values='Count',
+                     title=f"{owner}'s Closure Code Distribution")
+    pie_fig.update_traces(textinfo='percent+label')
+    pie_fig.update_layout(
+        autosize=True,
+        margin=dict(t=60, l=20, r=20, b=20),
+        height=400
+    )
 
-# This owner's counts
-owner_counts = owner_pie_data.copy()
+    # === BAR CHART: Owner vs Top Performer (James McGee) ===
+    top_performer = "James McGee"
+    top_data = df[df['Task Owner'] == top_performer]
+    top_counts = top_data['Closure Code 1'].value_counts().reset_index()
+    top_counts.columns = ['Closure Code', 'Top Count']
 
-# Merge for comparison
-merged = pd.merge(owner_counts, top_counts, on='Closure Code', how='outer').fillna(0)
-merged = merged.sort_values(by='Closure Code')
+    # This owner's counts
+    owner_counts = owner_pie_data.copy()
 
-# Plot
-bar_fig = go.Figure()
-bar_fig.add_trace(go.Bar(
-    x=merged['Closure Code'],
-    y=merged['Count'],
-    name=f'{owner}',
-    marker_color='blue'
-))
-bar_fig.add_trace(go.Bar(
-    x=merged['Closure Code'],
-    y=merged['Top Count'],
-    name=f'{top_performer}',
-    marker_color='red'
-))
+    # Merge for comparison
+    merged = pd.merge(owner_counts, top_counts, on='Closure Code', how='outer').fillna(0)
+    merged = merged.sort_values(by='Closure Code')
 
-bar_fig.update_layout(
-    barmode='group',
-    title=f"{owner} vs {top_performer} – Closure Code Counts",
-    xaxis_title="Closure Code",
-    yaxis_title="Count",
-    height=400,
-    autosize=True,
-    margin=dict(t=60, l=40, r=40, b=40),
-    legend_title="Legend"
-)
+    bar_fig = go.Figure()
+    bar_fig.add_trace(go.Bar(
+        x=merged['Closure Code'],
+        y=merged['Count'],
+        name=f'{owner}',
+        marker_color='blue'
+    ))
+    bar_fig.add_trace(go.Bar(
+        x=merged['Closure Code'],
+        y=merged['Top Count'],
+        name=f'{top_performer}',
+        marker_color='red'
+    ))
 
-# === LINE CHART ===
-owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
-line_fig = go.Figure()
-line_fig.add_trace(go.Scatter(
-    x=owner_monthly['Month'],
-    y=owner_monthly['Completed'],
-    mode='lines+markers',
-    name=f'{owner} Monthly Completed',
-    line=dict(color='blue')
-))
-line_fig.add_trace(go.Scatter(
-    x=global_avg['Month'],
-    y=global_avg['Average'],
-    mode='lines+markers',
-    name='Global Monthly Average',
-    line=dict(color='red', dash='dash')
-))
-line_fig.update_layout(
-    title=f"{owner} – Monthly Completed Tasks vs Global Avg",
-    xaxis_title='Month',
-    yaxis_title='Tasks Completed',
-    height=500,
-    autosize=True,
-    margin=dict(t=60, l=40, r=40, b=40),
-    hovermode='x unified'
-)
+    bar_fig.update_layout(
+        barmode='group',
+        title=f"{owner} vs {top_performer} – Closure Code Counts",
+        xaxis_title="Closure Code",
+        yaxis_title="Count",
+        height=400,
+        autosize=True,
+        margin=dict(t=60, l=40, r=40, b=40),
+        legend_title="Legend"
+    )
 
-# === Convert to HTML ===
-pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
-bar_html = bar_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
-line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+    # === LINE CHART ===
+    owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
+    line_fig = go.Figure()
+    line_fig.add_trace(go.Scatter(
+        x=owner_monthly['Month'],
+        y=owner_monthly['Completed'],
+        mode='lines+markers',
+        name=f'{owner} Monthly Completed',
+        line=dict(color='blue')
+    ))
+    line_fig.add_trace(go.Scatter(
+        x=global_avg['Month'],
+        y=global_avg['Average'],
+        mode='lines+markers',
+        name='Global Monthly Average',
+        line=dict(color='red', dash='dash')
+    ))
+    line_fig.update_layout(
+        title=f"{owner} – Monthly Completed Tasks vs Global Avg",
+        xaxis_title='Month',
+        yaxis_title='Tasks Completed',
+        height=500,
+        autosize=True,
+        margin=dict(t=60, l=40, r=40, b=40),
+        hovermode='x unified'
+    )
 
-# === Assemble Tab ===
-tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-tab_contents.append(f'''
-<div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
-    {pie_html}
-    <hr>
-    {bar_html}
-    <hr>
-    {line_html}
-</div>
-''')
+    # === Convert to HTML ===
+    pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
+    bar_html = bar_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+
+    # === Assemble Tab ===
+    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
+    tab_contents.append(f'''
+    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
+        {pie_html}
+        <hr>
+        {bar_html}
+        <hr>
+        {line_html}
+    </div>
+    ''')
