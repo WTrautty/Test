@@ -1,154 +1,64 @@
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import os
+# PIE CHART: Owner
+pie_fig = px.pie(owner_data, names='Closure Code 1', title=f"{owner}'s Closure Code Distribution")
+pie_fig.update_traces(textinfo='percent+label')
+pie_fig.update_layout(
+    autosize=True,
+    margin=dict(t=60, l=20, r=20, b=20),
+    height=400
+)
 
-# === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <-- UPDATE THIS
-EXPORT_HTML = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\all_dashboards.html"  # <-- UPDATE THIS
-TAB_MIN_ENTRIES = 20
+# PIE CHART: Global average closure codes
+global_pie_data = df.groupby('Closure Code 1').size().reset_index(name='Count')
+global_pie_fig = px.pie(global_pie_data, names='Closure Code 1', values='Count', title="Global Closure Code Distribution")
+global_pie_fig.update_traces(textinfo='percent+label')
+global_pie_fig.update_layout(
+    autosize=True,
+    margin=dict(t=60, l=20, r=20, b=20),
+    height=400
+)
 
-print("📥 Reading Excel file...")
-df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
-df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
+# LINE CHART
+owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
+line_fig = go.Figure()
+line_fig.add_trace(go.Scatter(
+    x=owner_monthly['Month'],
+    y=owner_monthly['Completed'],
+    mode='lines+markers',
+    name=f'{owner} Monthly Completed',
+    line=dict(color='blue')
+))
+line_fig.add_trace(go.Scatter(
+    x=global_avg['Month'],
+    y=global_avg['Average'],
+    mode='lines+markers',
+    name='Global Monthly Average',
+    line=dict(color='red', dash='dash')
+))
+line_fig.update_layout(
+    title=f"{owner} – Monthly Completed Tasks vs Global Avg",
+    xaxis_title='Month',
+    yaxis_title='Tasks Completed',
+    height=500,
+    autosize=True,
+    margin=dict(t=60, l=40, r=40, b=40),
+    hovermode='x unified'
+)
 
-print(f"🔢 Total rows after cleaning: {len(df)}")
+# Convert charts to HTML
+pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
+global_pie_html = global_pie_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-# Format Completed Date
-df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
-df = df.dropna(subset=['Completed Date'])
-df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
-
-# Filter for Task Owners with ≥ 20 entries
-owner_counts = df['Task Owner'].value_counts()
-valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
-
-print(f"👥 Valid Task Owners with 20+ tasks: {len(valid_owners)}")
-
-# Global monthly average
-monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
-global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
-
-tab_buttons = []
-tab_contents = []
-
-for i, owner in enumerate(valid_owners):
-    div_id = f"tab{i}"
-    print(f"\n📊 Generating charts for: {owner} (tab ID: {div_id})")
-
-    owner_data = df[df['Task Owner'] == owner]
-    print(f"   - Tasks for {owner}: {len(owner_data)}")
-
-    # PIE CHART
-    pie_fig = px.pie(owner_data, names='Closure Code 1', title=f"{owner}'s Closure Code Distribution")
-    pie_fig.update_traces(textinfo='percent+label')
-    pie_fig.update_layout(
-        autosize=True,
-        margin=dict(t=60, l=20, r=20, b=20),
-        height=500
-    )
-
-    # LINE CHART
-    owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
-    print(f"   - Months with completions: {len(owner_monthly)}")
-
-    line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(
-        x=owner_monthly['Month'],
-        y=owner_monthly['Completed'],
-        mode='lines+markers',
-        name=f'{owner} Monthly Completed',
-        line=dict(color='blue')
-    ))
-    line_fig.add_trace(go.Scatter(
-        x=global_avg['Month'],
-        y=global_avg['Average'],
-        mode='lines+markers',
-        name='Global Monthly Average',
-        line=dict(color='red', dash='dash')
-    ))
-    line_fig.update_layout(
-        title=f"{owner} – Monthly Completed Tasks vs Global Avg",
-        xaxis_title='Month',
-        yaxis_title='Tasks Completed',
-        height=500,
-        autosize=True,
-        margin=dict(t=60, l=40, r=40, b=40),
-        hovermode='x unified'
-    )
-
-    # Generate HTML snippets
-    pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
-    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
-
-    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-    tab_contents.append(f'''
-    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
-        {pie_html}
-        <hr>
-        {line_html}
-    </div>
-    ''')
-
-print("🛠 Assembling final HTML...")
-
-# === HTML Template ===
-full_html = f"""
-<html>
-<head>
-    <title>Closure Code Dashboard</title>
-    <script>
-    function openTab(evt, tabName) {{
-        var i, tabcontent, tablinks;
-        tabcontent = document.getElementsByClassName("tabcontent");
-        for (i = 0; i < tabcontent.length; i++) {{
-            tabcontent[i].style.display = "none";
-        }}
-        tablinks = document.getElementsByClassName("tablink");
-        for (i = 0; i < tablinks.length; i++) {{
-            tablinks[i].className = tablinks[i].className.replace(" active", "");
-        }}
-        document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.className += " active";
-
-        // Force resize of Plotly charts when shown
-        setTimeout(function() {{
-            window.dispatchEvent(new Event('resize'));
-        }}, 10);
-    }}
-    </script>
-    <style>
-        .tablink {{
-            background-color: #ddd;
-            border: none;
-            cursor: pointer;
-            padding: 10px 20px;
-            font-size: 16px;
-            margin: 2px;
-        }}
-        .tablink.active {{
-            background-color: #bbb;
-        }}
-        .tabcontent {{
-            display: none;
-            padding: 20px;
-        }}
-        .plot-container {{
-            width: 100% !important;
-            height: auto !important;
-        }}
-    </style>
-</head>
-<body>
-    <h1>Closure Code Dashboard</h1>
-    <div>{''.join(tab_buttons)}</div>
-    {''.join(tab_contents)}
-</body>
-</html>
-"""
-
-# === Save Output ===
-with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
-    f.write(full_html)
-
-print(f"\n✅ Dashboard saved to: {EXPORT_HTML}")
+# Combine into tab content
+tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
+tab_contents.append(f'''
+<div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
+    <h2>{owner}'s Task Breakdown</h2>
+    {pie_html}
+    <hr>
+    <h2>Global Task Closure Code Breakdown</h2>
+    {global_pie_html}
+    <hr>
+    {line_html}
+</div>
+''')
