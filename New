@@ -1,23 +1,35 @@
-# PIE CHART: Owner
-pie_fig = px.pie(owner_data, names='Closure Code 1', title=f"{owner}'s Closure Code Distribution")
-pie_fig.update_traces(textinfo='percent+label')
+from plotly.subplots import make_subplots
+
+# === PIE CHARTS SIDE-BY-SIDE ===
+# Prepare owner pie
+owner_pie_data = owner_data['Closure Code 1'].value_counts().reset_index()
+owner_pie_data.columns = ['Closure Code', 'Count']
+
+# Prepare global pie
+global_pie_data = df['Closure Code 1'].value_counts().reset_index()
+global_pie_data.columns = ['Closure Code', 'Count']
+
+# Create subplots with shared legend
+pie_fig = make_subplots(rows=1, cols=2, specs=[[{'type':'domain'}, {'type':'domain'}]],
+                        subplot_titles=[f"{owner}'s Closure Codes", "Global Closure Codes"])
+
+pie_fig.add_trace(
+    go.Pie(labels=owner_pie_data['Closure Code'], values=owner_pie_data['Count'], name=owner, textinfo='percent+label'),
+    row=1, col=1
+)
+pie_fig.add_trace(
+    go.Pie(labels=global_pie_data['Closure Code'], values=global_pie_data['Count'], name='Global', textinfo='percent+label', showlegend=False),
+    row=1, col=2
+)
+
 pie_fig.update_layout(
-    autosize=True,
-    margin=dict(t=60, l=20, r=20, b=20),
-    height=400
+    height=450,
+    title_text=f"{owner} vs Global Closure Code Breakdown",
+    showlegend=True,
+    margin=dict(t=60, l=40, r=40, b=40)
 )
 
-# PIE CHART: Global average closure codes
-global_pie_data = df.groupby('Closure Code 1').size().reset_index(name='Count')
-global_pie_fig = px.pie(global_pie_data, names='Closure Code 1', values='Count', title="Global Closure Code Distribution")
-global_pie_fig.update_traces(textinfo='percent+label')
-global_pie_fig.update_layout(
-    autosize=True,
-    margin=dict(t=60, l=20, r=20, b=20),
-    height=400
-)
-
-# LINE CHART
+# === LINE CHART ===
 owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
 line_fig = go.Figure()
 line_fig.add_trace(go.Scatter(
@@ -44,20 +56,15 @@ line_fig.update_layout(
     hovermode='x unified'
 )
 
-# Convert charts to HTML
-pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
-global_pie_html = global_pie_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+# Convert to HTML
+combined_pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
 line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-# Combine into tab content
+# Combine into tab
 tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
 tab_contents.append(f'''
 <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
-    <h2>{owner}'s Task Breakdown</h2>
-    {pie_html}
-    <hr>
-    <h2>Global Task Closure Code Breakdown</h2>
-    {global_pie_html}
+    {combined_pie_html}
     <hr>
     {line_html}
 </div>
