@@ -1,10 +1,9 @@
-
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # Replace with actual path
+EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # Replace this
 EXPORT_HTML = r"C:\Path\To\Your\OneDrive\Dashboard.html"
 TAB_MIN_ENTRIES = 100
 top_performer_name = "John Mcgee"
@@ -84,19 +83,23 @@ for i, owner in enumerate(valid_owners):
     )
     delta_html = delta_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
 
-    # BULLETS
+    # COLOR-CODED BULLETS
     annotation_html = "<div><h3>Closure Code Insights</h3><ul style='padding-left: 20px;'>"
     for _, row in delta_df.iterrows():
         code = str(row['Closure Code']).lower()
         delta = row['Delta']
         direction = 'more' if delta > 0 else 'less'
+
         if 'successful' in code:
             color = 'green' if delta > 0 else 'crimson'
         elif 'fail' in code:
             color = 'green' if delta < 0 else 'crimson'
         else:
             color = 'blue'
-        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>"                            f"You use '<b>{row['Closure Code']}</b>' {abs(delta):.1f}% {direction} than the {top_label}.</li>"
+
+        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
+                           f"You use '<b>{row['Closure Code']}</b>' {abs(delta):.1f}% {direction} than the {top_label}." \
+                           f"</li>"
     annotation_html += "</ul></div>"
 
     delta_section_html = f"""
@@ -106,25 +109,43 @@ for i, owner in enumerate(valid_owners):
     </div>
     """
 
-    # LINE CHART: COMPLETED
+    # LINE CHART: Completed Tasks
     owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
     top_monthly = top_data.groupby('Month').size().reset_index(name='Completed')
 
     line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(x=owner_monthly['Month'], y=owner_monthly['Completed'],
-                                  mode='lines+markers', name=f"{owner} Monthly Completed", line=dict(color='blue')))
-    line_fig.add_trace(go.Scatter(x=top_monthly['Month'], y=top_monthly['Completed'],
-                                  mode='lines+markers', name=f"{top_label} Monthly Completed", line=dict(color='green')))
-    line_fig.add_trace(go.Scatter(x=global_avg['Month'], y=global_avg['Average'],
-                                  mode='lines+markers', name="Global Monthly Average", line=dict(color='red', dash='dash')))
+    line_fig.add_trace(go.Scatter(
+        x=owner_monthly['Month'],
+        y=owner_monthly['Completed'],
+        mode='lines+markers',
+        name=f'{owner} Monthly Completed',
+        line=dict(color='blue')
+    ))
+    line_fig.add_trace(go.Scatter(
+        x=top_monthly['Month'],
+        y=top_monthly['Completed'],
+        mode='lines+markers',
+        name=f'{top_label} Monthly Completed',
+        line=dict(color='green')
+    ))
+    line_fig.add_trace(go.Scatter(
+        x=global_avg['Month'],
+        y=global_avg['Average'],
+        mode='lines+markers',
+        name='Global Monthly Average',
+        line=dict(color='red', dash='dash')
+    ))
     line_fig.update_layout(
         title=f"{owner} – Monthly Completed Tasks vs {top_label} & Global Avg",
-        xaxis_title='Month', yaxis_title='Tasks Completed',
-        height=500, margin=dict(t=60, l=40, r=40, b=40), hovermode='x unified'
+        xaxis_title='Month',
+        yaxis_title='Tasks Completed',
+        height=500,
+        margin=dict(t=60, l=40, r=40, b=40),
+        hovermode='x unified'
     )
     line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # LINE CHART: % FAIL
+    # LINE CHART: % Fail
     fail_data = owner_data.copy()
     fail_data['Is Fail'] = fail_data['Closure Code 1'].str.lower().str.contains('fail')
     monthly_total = fail_data.groupby('Month').size()
@@ -146,22 +167,41 @@ for i, owner in enumerate(valid_owners):
     fail_merged = pd.merge(fail_merged, top_fail_pct, on='Month', how='outer').sort_values('Month')
 
     fail_fig = go.Figure()
-    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Fail %'],
-                                  mode='lines+markers', name=f"{owner} % Fail", line=dict(color='orange')))
-    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Top Performer Fail %'],
-                                  mode='lines+markers', name=f"{top_label} % Fail", line=dict(color='green')))
-    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Global Avg Fail %'],
-                                  mode='lines+markers', name="Global Avg % Fail", line=dict(color='red', dash='dash')))
+    fail_fig.add_trace(go.Scatter(
+        x=fail_merged['Month'],
+        y=fail_merged['Fail %'],
+        mode='lines+markers',
+        name=f"{owner} % Fail",
+        line=dict(color='orange')
+    ))
+    fail_fig.add_trace(go.Scatter(
+        x=fail_merged['Month'],
+        y=fail_merged['Top Performer Fail %'],
+        mode='lines+markers',
+        name=f"{top_label} % Fail",
+        line=dict(color='green')
+    ))
+    fail_fig.add_trace(go.Scatter(
+        x=fail_merged['Month'],
+        y=fail_merged['Global Avg Fail %'],
+        mode='lines+markers',
+        name="Global Avg % Fail",
+        line=dict(color='red', dash='dash')
+    ))
     fail_fig.update_layout(
-        title=f"{owner} – % Fail Orders vs {top_label} & Global Avg",
-        xaxis_title='Month', yaxis_title='Failure Rate (%)',
+        title=f"{owner} – Percent of Orders Marked as 'Fail' vs {top_label} & Global Avg",
+        xaxis_title='Month',
+        yaxis_title='Failure Rate (%)',
         yaxis=dict(range=[0, 100]),
-        height=400, margin=dict(t=60, l=40, r=40, b=40), hovermode='x unified'
+        height=400,
+        margin=dict(t=60, l=40, r=40, b=40),
+        hovermode='x unified'
     )
     fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
+    # Add badge if top performer
     badge = " 🏆" if owner == top_performer_name else ""
-    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, '{div_id}')">{owner}{badge}</button>')
+    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
     tab_contents.append(f"""
     <div id="{div_id}" class="tabcontent" style="display:{"block" if i == 0 else "none"}">
         {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={{'responsive': True}})}
@@ -171,6 +211,7 @@ for i, owner in enumerate(valid_owners):
     </div>
     """)
 
+# Final HTML Output
 html_output = f"""
 <html>
 <head>
@@ -198,7 +239,8 @@ html_output = f"""
         body {{
             font-family: sans-serif;
             background-color: #f9f9f9;
-            margin: 0; padding: 0;
+            margin: 0;
+            padding: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
