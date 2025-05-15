@@ -1,7 +1,15 @@
 for _, row in delta_df.iterrows():
-        color = 'green' if row['Delta'] > 0 else 'crimson'
-        direction = 'more' if row['Delta'] > 0 else 'less'
-        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
-                           f"You use '<b>{row['Closure Code']}</b>' {abs(row['Delta']):.1f}% {direction} than the {top_label}." \
-                           f"</li>"
-    annotation_html += "</ul></div>"
+    code = str(row['Closure Code']).lower()
+    delta = row['Delta']
+    direction = 'more' if delta > 0 else 'less'
+
+    if 'successful' in code:
+        color = 'green' if delta > 0 else 'crimson'
+    elif 'fail' in code:
+        color = 'green' if delta < 0 else 'crimson'
+    else:
+        color = 'blue'
+
+    annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
+                       f"You use '<b>{row['Closure Code']}</b>' {abs(delta):.1f}% {direction} than the {top_label}." \
+                       f"</li>"
