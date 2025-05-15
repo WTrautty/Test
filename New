@@ -1,46 +1,9 @@
-import pandas as pd
-import plotly.express as px
-from dash import Dash, dcc, html
-from dash.dependencies import Input, Output
-import os
-
-# === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\ExcelFile.xlsx"
-ONEDRIVE_DASHBOARD_PATH = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\dashboard.py"
-TAB_MIN_ENTRIES = 20
-
-# === Load and Filter Data ===
-df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
-df = df[['Task Owner', 'Closure Code 1']].dropna()
-
-# Filter to Task Owners with >= 20 entries
-valid_owners = df['Task Owner'].value_counts()
-filtered_owners = valid_owners[valid_owners >= TAB_MIN_ENTRIES].index.tolist()
-
-# === Create a Dash App ===
-app = Dash(__name__)
-app.title = "Task Owner Closure Code Dashboard"
-
-# Generate tabs dynamically
-app.layout = html.Div([
-    html.H1("Closure Code Breakdown by Task Owner"),
-    dcc.Tabs(id="tabs", value=filtered_owners[0], children=[
-        dcc.Tab(label=owner, value=owner) for owner in filtered_owners
-    ]),
-    html.Div(id='tab-content')
-])
-
-# Callback to update the chart for the selected tab
-@app.callback(
-    Output('tab-content', 'children'),
-    [Input('tabs', 'value')]
-)
-def update_tab(selected_owner):
-    filtered_df = df[df['Task Owner'] == selected_owner]
-    fig = px.pie(filtered_df, names='Closure Code 1', title=f"{selected_owner}'s Closure Code Distribution")
-    fig.update_traces(textinfo='percent+label')
-    return dcc.Graph(figure=fig)
-
-# === Run and Save the Dashboard ===
-if __name__ == '__main__':
+Workbook contains no default style, apply openpyxl's default
+  warn("Workbook contains no default style, apply openpyxl's default")
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 46, in <module>
     app.run_server(debug=False, port=8050)
+    ^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\dash\_obsolete.py", line 22, in __getattr__
+    raise err.exc(err.message)
+dash.exceptions.ObsoleteAttributeException: app.run_server has been replaced by app.run
