@@ -1,50 +1,35 @@
 import pandas as pd
 import plotly.express as px
-from dash import Dash, dcc, html
-from dash.dependencies import Input, Output
-import webbrowser
-import threading
+import os
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <- Change this to your Excel file path
+EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <- Update this
+EXPORT_FOLDER = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\Dashboards"  # <- Update this
 TAB_MIN_ENTRIES = 20
 
-# === Load and Filter Data ===
+# === Load Excel Data ===
 df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
 df = df[['Task Owner', 'Closure Code 1']].dropna()
 
-# Find Task Owners with at least 20 appearances
-valid_owners = df['Task Owner'].value_counts()
-filtered_owners = valid_owners[valid_owners >= TAB_MIN_ENTRIES].index.tolist()
+# Filter Task Owners with 20+ entries
+owner_counts = df['Task Owner'].value_counts()
+valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
 
-# === Dash App ===
-app = Dash(__name__)
-app.title = "Task Owner Closure Code Dashboard"
+# Make sure export folder exists
+os.makedirs(EXPORT_FOLDER, exist_ok=True)
 
-# Tabs for each Task Owner
-app.layout = html.Div([
-    html.H1("Closure Code Breakdown by Task Owner"),
-    dcc.Tabs(id="tabs", value=filtered_owners[0], children=[
-        dcc.Tab(label=owner, value=owner) for owner in filtered_owners
-    ]),
-    html.Div(id='tab-content')
-])
-
-# Callback for tab switching
-@app.callback(
-    Output('tab-content', 'children'),
-    [Input('tabs', 'value')]
-)
-def update_tab(selected_owner):
-    owner_data = df[df['Task Owner'] == selected_owner]
-    fig = px.pie(owner_data, names='Closure Code 1', title=f"{selected_owner}'s Closure Code Distribution")
+# === Generate and Save Pie Charts ===
+for owner in valid_owners:
+    owner_data = df[df['Task Owner'] == owner]
+    fig = px.pie(
+        owner_data,
+        names='Closure Code 1',
+        title=f"{owner}'s Closure Code Distribution"
+    )
     fig.update_traces(textinfo='percent+label')
-    return dcc.Graph(figure=fig)
+    
+    safe_owner_name = owner.replace(" ", "_").replace("/", "_")  # Clean filename
+    file_path = os.path.join(EXPORT_FOLDER, f"{safe_owner_name}_dashboard.html")
+    fig.write_html(file_path)
 
-# === Launch the App and Auto-Open in Default Browser ===
-def open_browser():
-    webbrowser.open("http://127.0.0.1:8050")
-
-if __name__ == '__main__':
-    threading.Timer(1, open_browser).start()
-    app.run(debug=False, port=8050)
+    print(f"Saved: {file_path}")
