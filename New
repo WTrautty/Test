@@ -1,30 +1,46 @@
-from office365.sharepoint.client_context import ClientContext
-from office365.runtime.auth.authentication_context import AuthenticationContext
+import pandas as pd
+import plotly.express as px
+from dash import Dash, dcc, html
+from dash.dependencies import Input, Output
+import os
 
 # === Configuration ===
-site_url = "https://yourcompany.sharepoint.com/sites/yoursite"
-username = "you@yourcompany.com"
-password = "yourpassword"  # Prefer app password if MFA is enabled
+EXCEL_PATH = r"C:\Path\To\Your\ExcelFile.xlsx"
+ONEDRIVE_DASHBOARD_PATH = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\dashboard.py"
+TAB_MIN_ENTRIES = 20
 
-# === Test Authentication and List Files in Documents Library ===
-try:
-    ctx_auth = AuthenticationContext(site_url)
-    if ctx_auth.acquire_token_for_user(username, password):
-        ctx = ClientContext(site_url, ctx_auth)
-        web = ctx.web
-        ctx.load(web)
-        ctx.execute_query()
-        print(f"Connected to site: {web.properties['Title']}")
+# === Load and Filter Data ===
+df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
+df = df[['Task Owner', 'Closure Code 1']].dropna()
 
-        # Test access to a Document Library
-        library_name = "Documents"
-        target_library = ctx.web.lists.get_by_title(library_name)
-        items = target_library.items.top(5).get().execute_query()
+# Filter to Task Owners with >= 20 entries
+valid_owners = df['Task Owner'].value_counts()
+filtered_owners = valid_owners[valid_owners >= TAB_MIN_ENTRIES].index.tolist()
 
-        print(f"Found {len(items)} items in '{library_name}':")
-        for item in items:
-            print(f"- {item.properties.get('FileLeafRef', '[No Name]')}")
-    else:
-        print("Failed to acquire token. Check credentials or MFA.")
-except Exception as e:
-    print("Error:", e)
+# === Create a Dash App ===
+app = Dash(__name__)
+app.title = "Task Owner Closure Code Dashboard"
+
+# Generate tabs dynamically
+app.layout = html.Div([
+    html.H1("Closure Code Breakdown by Task Owner"),
+    dcc.Tabs(id="tabs", value=filtered_owners[0], children=[
+        dcc.Tab(label=owner, value=owner) for owner in filtered_owners
+    ]),
+    html.Div(id='tab-content')
+])
+
+# Callback to update the chart for the selected tab
+@app.callback(
+    Output('tab-content', 'children'),
+    [Input('tabs', 'value')]
+)
+def update_tab(selected_owner):
+    filtered_df = df[df['Task Owner'] == selected_owner]
+    fig = px.pie(filtered_df, names='Closure Code 1', title=f"{selected_owner}'s Closure Code Distribution")
+    fig.update_traces(textinfo='percent+label')
+    return dcc.Graph(figure=fig)
+
+# === Run and Save the Dashboard ===
+if __name__ == '__main__':
+    app.run_server(debug=False, port=8050)
