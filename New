@@ -11,30 +11,37 @@ pie_fig.update_layout(
     height=400
 )
 
-# === BAR CHART: Owner vs Global Closure Code Counts ===
-global_code_counts = df['Closure Code 1'].value_counts().reset_index()
-global_code_counts.columns = ['Closure Code', 'Global Count']
+# === BAR CHART: Owner vs Global Average per Task Owner ===
+# Count closure codes per Task Owner
+all_owner_counts = df.groupby(['Task Owner', 'Closure Code 1']).size().reset_index(name='Count')
+global_avg_per_code = all_owner_counts.groupby('Closure Code 1')['Count'].mean().reset_index()
+global_avg_per_code.columns = ['Closure Code', 'Avg per Task Owner']
 
-merged_counts = pd.merge(owner_pie_data, global_code_counts, on='Closure Code', how='outer').fillna(0)
-merged_counts = merged_counts.sort_values(by='Closure Code')
+# This owner's counts
+owner_counts = owner_pie_data.copy()
 
+# Merge for comparison
+merged = pd.merge(owner_counts, global_avg_per_code, on='Closure Code', how='outer').fillna(0)
+merged = merged.sort_values(by='Closure Code')
+
+# Plot
 bar_fig = go.Figure()
 bar_fig.add_trace(go.Bar(
-    x=merged_counts['Closure Code'],
-    y=merged_counts['Count'],
+    x=merged['Closure Code'],
+    y=merged['Count'],
     name=f'{owner}',
     marker_color='blue'
 ))
 bar_fig.add_trace(go.Bar(
-    x=merged_counts['Closure Code'],
-    y=merged_counts['Global Count'],
-    name='Global',
+    x=merged['Closure Code'],
+    y=merged['Avg per Task Owner'],
+    name='Avg per Task Owner',
     marker_color='red'
 ))
 
 bar_fig.update_layout(
     barmode='group',
-    title=f"{owner} vs Global – Closure Code Counts",
+    title=f"{owner} vs Average – Closure Code Counts",
     xaxis_title="Closure Code",
     yaxis_title="Count",
     height=400,
