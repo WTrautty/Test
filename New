@@ -1,3 +1,10 @@
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+# === Configuration ===
+EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <-- Replace with your actual file
+EXPORT_HTML = r"C:\Path\To\Your\OneDrive\Dashboard.html"  # <-- Replace with output location
 TAB_MIN_ENTRIES = 100
 
 # === Load Data ===
@@ -37,7 +44,7 @@ for i, owner in enumerate(valid_owners):
                      title=f"{owner}'s Closure Code Distribution")
     pie_fig.update_layout(height=400, margin=dict(t=60, l=20, r=20, b=20))
 
-    # DIVERGING BAR + TEXT
+    # DIVERGING BAR + INSIGHT TEXT
     delta_df = pd.DataFrame({
         'Closure Code': list(all_codes),
         'Owner %': [owner_pie[code] for code in all_codes],
@@ -131,18 +138,17 @@ for i, owner in enumerate(valid_owners):
     )
     fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # Assemble tab
     tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
     tab_contents.append(f"""
-    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
-        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})}
+    <div id="{div_id}" class="tabcontent" style="display:{"block" if i == 0 else "none"}">
+        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={{'responsive': True}})}
         <hr>{delta_section_html}
         <hr>{line_html}
         <hr>{fail_html}
     </div>
     """)
 
-# === Final HTML ===
+# === Final HTML Output (Escaped CSS + JS braces) ===
 html_output = f"""
 <html>
 <head>
@@ -163,7 +169,7 @@ html_output = f"""
     }}
     </script>
     <style>
-        body {
+        body {{
             margin: 0;
             padding: 0;
             font-family: sans-serif;
@@ -174,14 +180,12 @@ html_output = f"""
             min-height: 100vh;
             width: 100%;
             background-color: #f9f9f9;
-        }
-
-        h1 {
+        }}
+        h1 {{
             text-align: center;
             margin: 20px;
-        }
-
-        .tablink {
+        }}
+        .tablink {{
             background-color: #ddd;
             border: none;
             cursor: pointer;
@@ -189,13 +193,11 @@ html_output = f"""
             font-size: 16px;
             margin: 2px;
             transition: background-color 0.3s;
-        }
-
-        .tablink.active {
+        }}
+        .tablink.active {{
             background-color: #bbb;
-        }
-
-        .tabcontent {
+        }}
+        .tabcontent {{
             display: none;
             width: 100%;
             max-width: 1400px;
@@ -205,20 +207,17 @@ html_output = f"""
             box-shadow: 0 0 10px rgba(0,0,0,0.05);
             margin-bottom: 30px;
             border-radius: 8px;
-        }
-
-        .plot-container {
+        }}
+        .plot-container {{
             width: 100% !important;
             height: auto !important;
-        }
-
-        .tab-buttons-wrapper {
+        }}
+        .tab-buttons-wrapper {{
             width: 100%;
             text-align: center;
             margin-bottom: 10px;
-        }
+        }}
     </style>
-
 </head>
 <body>
     <h1>Closure Code Dashboard</h1>
