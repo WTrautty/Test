@@ -7,32 +7,45 @@ delta_df = pd.DataFrame({
 delta_df['Delta'] = delta_df['Owner %'] - delta_df['Top %']
 delta_df.sort_values('Delta', inplace=True)
 
+top_label = "Top Performer"
 annotations = [
-    f"You use '{row['Closure Code']}' {abs(row['Delta']):.1f}% {'more' if row['Delta'] > 0 else 'less'} than the {top_label}"
+    f"You use '<b>{row['Closure Code']}</b>' {abs(row['Delta']):.1f}% "
+    f"{'more' if row['Delta'] > 0 else 'less'} than the {top_label}."
     for _, row in delta_df.iterrows()
 ]
 
-# Estimate dynamic chart width based on max label length
-max_label_len = max(len(text) for text in annotations)
-estimated_width = min(1600, max(700, max_label_len * 9))  # cap max width
-
+# Plotly figure (no inline text)
 delta_fig = go.Figure()
 delta_fig.add_trace(go.Bar(
     y=delta_df['Closure Code'],
     x=delta_df['Delta'],
     orientation='h',
     marker_color=delta_df['Delta'].apply(lambda x: 'green' if x >= 0 else 'crimson'),
-    text=annotations,
-    textposition='outside',
-    hovertemplate='%{text}<br>Difference: %{x:.1f}%<extra></extra>'
+    hovertemplate='Difference: %{x:.1f}%<extra></extra>'
 ))
-
 delta_fig.update_layout(
     title=f"{owner} vs {top_label} – Closure Code Usage Difference",
     xaxis_title="Percentage Difference (%)",
     yaxis_title="Closure Code",
     height=450,
-    width=estimated_width,
+    width=800,
     margin=dict(t=60, l=40, r=40, b=40),
     showlegend=False
 )
+
+# Convert bar chart to HTML (no text)
+delta_html = delta_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+
+# Convert annotations to HTML list
+annotation_html = "<div><h3>Closure Code Insights</h3><ul style='padding-left: 20px;'>"
+for text in annotations:
+    annotation_html += f"<li style='margin-bottom: 5px;'>{text}</li>"
+annotation_html += "</ul></div>"
+
+# Combine chart and text side-by-side in a flex container
+delta_section_html = f"""
+<div style="display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;">
+    <div style="flex: 1 1 50%;">{delta_html}</div>
+    <div style="flex: 1 1 45%; min-width: 300px;">{annotation_html}</div>
+</div>
+"""
