@@ -1,1 +1,10 @@
-marker_color=delta_df['Delta'].apply(lambda x: 'green' if x >= 0 else 'crimson'),
+marker_color=[
+    (
+        'green' if ('successful' in str(code).lower() and delta >= 0)
+        else 'crimson' if ('successful' in str(code).lower() and delta < 0)
+        else 'green' if ('fail' in str(code).lower() and delta < 0)
+        else 'crimson' if ('fail' in str(code).lower() and delta >= 0)
+        else 'blue'
+    )
+    for code, delta in zip(delta_df['Closure Code'], delta_df['Delta'])
+],
