@@ -1,10 +1,7 @@
-marker_color=[
-    (
-        'green' if ('successful' in str(code).lower() and delta >= 0)
-        else 'crimson' if ('successful' in str(code).lower() and delta < 0)
-        else 'green' if ('fail' in str(code).lower() and delta < 0)
-        else 'crimson' if ('fail' in str(code).lower() and delta >= 0)
-        else 'blue'
-    )
-    for code, delta in zip(delta_df['Closure Code'], delta_df['Delta'])
-],
+for _, row in delta_df.iterrows():
+        color = 'green' if row['Delta'] > 0 else 'crimson'
+        direction = 'more' if row['Delta'] > 0 else 'less'
+        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
+                           f"You use '<b>{row['Closure Code']}</b>' {abs(row['Delta']):.1f}% {direction} than the {top_label}." \
+                           f"</li>"
+    annotation_html += "</ul></div>"
