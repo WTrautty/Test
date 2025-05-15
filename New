@@ -1,27 +1,95 @@
-<script>
-function openTab(evt, tabName) {
-    var i, tabcontent, tablinks;
-    tabcontent = document.getElementsByClassName("tabcontent");
-    for (i = 0; i < tabcontent.length; i++) {
-        tabcontent[i].style.display = "none";
-    }
-    tablinks = document.getElementsByClassName("tablink");
-    for (i = 0; i < tablinks.length; i++) {
-        tablinks[i].className = tablinks[i].className.replace(" active", "");
-    }
-    document.getElementById(tabName).style.display = "block";
-    evt.currentTarget.className += " active";
+html_output = f"""
+<html>
+<head>
+    <title>Closure Code Dashboard</title>
+    <script>
+    function openTab(evt, tabName) {{
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {{
+            tabcontent[i].style.display = "none";
+        }}
+        tablinks = document.getElementsByClassName("tablink");
+        for (i = 0; i < tablinks.length; i++) {{
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }}
+        document.getElementById(tabName).style.display = "block";
+        evt.currentTarget.className += " active";
 
-    // 🛠 Trigger resize event to force Plotly to recalculate layout
-    setTimeout(() => {
-        window.dispatchEvent(new Event('resize'));
-    }, 200);
-}
+        // 🛠 Trigger resize to reflow Plotly layout
+        setTimeout(() => {{
+            window.dispatchEvent(new Event('resize'));
+        }}, 200);
+    }}
 
-// Trigger resize after full page load
-window.addEventListener('load', function () {
-    setTimeout(() => {
-        window.dispatchEvent(new Event('resize'));
-    }, 300);
-});
-</script>
+    // Trigger resize after full page load
+    window.addEventListener('load', function () {{
+        setTimeout(() => {{
+            window.dispatchEvent(new Event('resize'));
+        }}, 300);
+    }});
+    </script>
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            width: 100%;
+            background-color: #f9f9f9;
+        }}
+
+        h1 {{
+            text-align: center;
+            margin: 20px;
+        }}
+
+        .tablink {{
+            background-color: #ddd;
+            border: none;
+            cursor: pointer;
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 2px;
+            transition: background-color 0.3s;
+        }}
+
+        .tablink.active {{
+            background-color: #bbb;
+        }}
+
+        .tabcontent {{
+            display: none;
+            width: 100%;
+            max-width: 1400px;
+            padding: 20px;
+            box-sizing: border-box;
+            background-color: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+            margin: 0 auto 30px auto;
+            border-radius: 8px;
+        }}
+
+        .plot-container {{
+            width: 100% !important;
+            height: auto !important;
+        }}
+
+        .tab-buttons-wrapper {{
+            width: 100%;
+            text-align: center;
+            margin-bottom: 10px;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Closure Code Dashboard</h1>
+    <div class="tab-buttons-wrapper">{''.join(tab_buttons)}</div>
+    {''.join(tab_contents)}
+</body>
+</html>
+"""
