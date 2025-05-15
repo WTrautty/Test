@@ -4,43 +4,42 @@ import plotly.graph_objects as go
 import os
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <- Update this
-EXPORT_HTML = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\all_dashboards.html"  # <- Update this
+EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <-- UPDATE THIS
+EXPORT_HTML = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\all_dashboards.html"  # <-- UPDATE THIS
 TAB_MIN_ENTRIES = 20
 
 # === Load Data ===
 df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
 df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
 
-# Parse dates
+# Parse and format dates
 df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
 df = df.dropna(subset=['Completed Date'])
 df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
 
-# Filter Task Owners with 20+ entries
+# Filter for Task Owners with ≥ 20 tasks
 owner_counts = df['Task Owner'].value_counts()
 valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
 
-# Global average per month (for all Task Owners)
+# Global monthly average completions across all Task Owners
 monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
 global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
 
-# === Build Charts and Tabs ===
+# === Generate Tab Content ===
 tab_buttons = []
 tab_contents = []
 
 for i, owner in enumerate(valid_owners):
     div_id = f"tab{i}"
-    
-    # Pie chart
+
+    # Pie Chart: Closure Code distribution
     owner_data = df[df['Task Owner'] == owner]
     pie_fig = px.pie(owner_data, names='Closure Code 1', title=f"{owner}'s Closure Code Distribution")
     pie_fig.update_traces(textinfo='percent+label')
 
-    # Line chart (monthly task counts vs global average)
+    # Line Chart: Monthly completions vs global average
     owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
     line_fig = go.Figure()
-
     line_fig.add_trace(go.Scatter(
         x=owner_monthly['Month'],
         y=owner_monthly['Completed'],
@@ -48,7 +47,6 @@ for i, owner in enumerate(valid_owners):
         name=f'{owner} Monthly Completed',
         line=dict(color='blue')
     ))
-
     line_fig.add_trace(go.Scatter(
         x=global_avg['Month'],
         y=global_avg['Average'],
@@ -56,7 +54,6 @@ for i, owner in enumerate(valid_owners):
         name='Global Monthly Average',
         line=dict(color='red', dash='dash')
     ))
-
     line_fig.update_layout(
         title=f"{owner} – Monthly Completed Tasks vs Global Avg",
         xaxis_title='Month',
@@ -65,12 +62,12 @@ for i, owner in enumerate(valid_owners):
         hovermode='x unified'
     )
 
-    # HTML for both charts
-    pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0))
-    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
+    # Convert both charts to HTML snippets (first one includes plotly.js)
+    pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
+    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
+    # Add button and tab content
     tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-
     tab_contents.append(f'''
     <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
         {pie_html}
@@ -79,7 +76,7 @@ for i, owner in enumerate(valid_owners):
     </div>
     ''')
 
-# === Final HTML Output ===
+# === Build Full HTML Document ===
 full_html = f"""
 <html>
 <head>
@@ -115,6 +112,10 @@ full_html = f"""
             display: none;
             padding: 20px;
         }}
+        .plot-container {{
+            width: 100% !important;
+            height: auto !important;
+        }}
     </style>
 </head>
 <body>
@@ -125,8 +126,8 @@ full_html = f"""
 </html>
 """
 
-# === Save to HTML ===
+# === Write to File ===
 with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
     f.write(full_html)
 
-print(f"✅ Dashboard saved: {EXPORT_HTML}")
+print(f"✅ Dashboard saved to: {EXPORT_HTML}")
