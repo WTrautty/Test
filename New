@@ -1,5 +1,27 @@
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 146, in <module>
-    {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={{'responsive': True}})}
-                                                                        ^^^^^^^^^^^^^^^^^^^^^^
-TypeError: unhashable type: 'dict'
+<script>
+function openTab(evt, tabName) {
+    var i, tabcontent, tablinks;
+    tabcontent = document.getElementsByClassName("tabcontent");
+    for (i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].style.display = "none";
+    }
+    tablinks = document.getElementsByClassName("tablink");
+    for (i = 0; i < tablinks.length; i++) {
+        tablinks[i].className = tablinks[i].className.replace(" active", "");
+    }
+    document.getElementById(tabName).style.display = "block";
+    evt.currentTarget.className += " active";
+
+    // 🛠 Trigger resize event to force Plotly to recalculate layout
+    setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+    }, 200);
+}
+
+// Trigger resize after full page load
+window.addEventListener('load', function () {
+    setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+    }, 300);
+});
+</script>
