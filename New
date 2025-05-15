@@ -8,37 +8,50 @@ EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <-- UPDATE THIS
 EXPORT_HTML = r"C:\Users\YourName\OneDrive - YourOrg\SharePoint Folder\all_dashboards.html"  # <-- UPDATE THIS
 TAB_MIN_ENTRIES = 20
 
-# === Load Data ===
+print("📥 Reading Excel file...")
 df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
 df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
 
-# Parse and format dates
+print(f"🔢 Total rows after cleaning: {len(df)}")
+
+# Format Completed Date
 df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
 df = df.dropna(subset=['Completed Date'])
 df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
 
-# Filter for Task Owners with ≥ 20 tasks
+# Filter for Task Owners with ≥ 20 entries
 owner_counts = df['Task Owner'].value_counts()
 valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
 
-# Global monthly average completions across all Task Owners
+print(f"👥 Valid Task Owners with 20+ tasks: {len(valid_owners)}")
+
+# Global monthly average
 monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
 global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
 
-# === Generate Tab Content ===
 tab_buttons = []
 tab_contents = []
 
 for i, owner in enumerate(valid_owners):
     div_id = f"tab{i}"
+    print(f"\n📊 Generating charts for: {owner} (tab ID: {div_id})")
 
-    # Pie Chart: Closure Code distribution
     owner_data = df[df['Task Owner'] == owner]
+    print(f"   - Tasks for {owner}: {len(owner_data)}")
+
+    # PIE CHART
     pie_fig = px.pie(owner_data, names='Closure Code 1', title=f"{owner}'s Closure Code Distribution")
     pie_fig.update_traces(textinfo='percent+label')
+    pie_fig.update_layout(
+        autosize=True,
+        margin=dict(t=60, l=20, r=20, b=20),
+        height=500
+    )
 
-    # Line Chart: Monthly completions vs global average
+    # LINE CHART
     owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
+    print(f"   - Months with completions: {len(owner_monthly)}")
+
     line_fig = go.Figure()
     line_fig.add_trace(go.Scatter(
         x=owner_monthly['Month'],
@@ -58,15 +71,16 @@ for i, owner in enumerate(valid_owners):
         title=f"{owner} – Monthly Completed Tasks vs Global Avg",
         xaxis_title='Month',
         yaxis_title='Tasks Completed',
-        legend_title='Legend',
+        height=500,
+        autosize=True,
+        margin=dict(t=60, l=40, r=40, b=40),
         hovermode='x unified'
     )
 
-    # Convert both charts to HTML snippets (first one includes plotly.js)
+    # Generate HTML snippets
     pie_html = pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})
     line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # Add button and tab content
     tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
     tab_contents.append(f'''
     <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
@@ -76,7 +90,9 @@ for i, owner in enumerate(valid_owners):
     </div>
     ''')
 
-# === Build Full HTML Document ===
+print("🛠 Assembling final HTML...")
+
+# === HTML Template ===
 full_html = f"""
 <html>
 <head>
@@ -94,6 +110,11 @@ full_html = f"""
         }}
         document.getElementById(tabName).style.display = "block";
         evt.currentTarget.className += " active";
+
+        // Force resize of Plotly charts when shown
+        setTimeout(function() {{
+            window.dispatchEvent(new Event('resize'));
+        }}, 10);
     }}
     </script>
     <style>
@@ -126,8 +147,8 @@ full_html = f"""
 </html>
 """
 
-# === Write to File ===
+# === Save Output ===
 with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
     f.write(full_html)
 
-print(f"✅ Dashboard saved to: {EXPORT_HTML}")
+print(f"\n✅ Dashboard saved to: {EXPORT_HTML}")
