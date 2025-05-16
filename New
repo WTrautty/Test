@@ -1,12 +1,14 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import os
+from plotly.subplots import make_subplots
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # Replace this
-EXPORT_HTML = r"C:\Path\To\Your\OneDrive\Dashboard.html"
-TAB_MIN_ENTRIES = 100
-top_performer_name = "John Mcgee"
+EXCEL_PATH = r"C:\Users\AD39644\Downloads\data (5).xlsx"
+EXPORT_HTML = r"C:\Users\AD39644\OneDrive - Lumen\Federal Service Delivery - Scripting Archive\Dashboards.html"
+TAB_MIN_ENTRIES = 40
+top_performer_name = "Davis, Walter (Walter)"
 top_label = "Top Performer"
 
 # === Load and preprocess data ===
@@ -126,7 +128,7 @@ for i, owner in enumerate(valid_owners):
         y=top_monthly['Completed'],
         mode='lines+markers',
         name=f'{top_label} Monthly Completed',
-        line=dict(color='green')
+        line=dict(color='green', dash='dash')
     ))
     line_fig.add_trace(go.Scatter(
         x=global_avg['Month'],
@@ -172,14 +174,14 @@ for i, owner in enumerate(valid_owners):
         y=fail_merged['Fail %'],
         mode='lines+markers',
         name=f"{owner} % Fail",
-        line=dict(color='orange')
+        line=dict(color='blue')
     ))
     fail_fig.add_trace(go.Scatter(
         x=fail_merged['Month'],
         y=fail_merged['Top Performer Fail %'],
         mode='lines+markers',
         name=f"{top_label} % Fail",
-        line=dict(color='green')
+        line=dict(color='green', dash='dash')
     ))
     fail_fig.add_trace(go.Scatter(
         x=fail_merged['Month'],
@@ -204,7 +206,7 @@ for i, owner in enumerate(valid_owners):
     tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
     tab_contents.append(f"""
     <div id="{div_id}" class="tabcontent" style="display:{"block" if i == 0 else "none"}">
-        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={{'responsive': True}})}
+        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})}
         <hr>{delta_section_html}
         <hr>{line_html}
         <hr>{fail_html}
