@@ -76,26 +76,42 @@ html_output = f"""
     <div class="main-tab-buttons">
         <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
         <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual Reports</button>
+        <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
     </div>
 
+    <!-- === GLOBAL TAB === -->
     <div id="globalTab" class="main-tab" style="display:block">
         <div class="tabcontent" style="display:block">
             <h2>Global Closure Code Statistics</h2>
-            <p>Include global metrics or visualizations here.</p>
+            <hr>
+            {fail_line_html}
+            <hr>
+            {closure_pie_html}
+            <hr>
+            {closed_line_html}
+            <hr>
+            <h3>Monthly Row Counts by Sheet</h3>
+            {end_tab_chart_html}
         </div>
     </div>
 
+    <!-- === INDIVIDUAL REPORTS TAB === -->
     <div id="individualTab" class="main-tab" style="display:none">
         <div class="tab-buttons-wrapper">
             {''.join(tab_buttons)}
         </div>
         {''.join(tab_contents)}
     </div>
+
+    <!-- === SCHEDULING TAB === -->
+    <div id="schedulingTab" class="main-tab" style="display:none">
+        {scheduling_tab_html}
+    </div>
 </body>
 </html>
 """
 
-# === Write Final Dashboard to File ===
+# === Write HTML to file ===
 with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
     f.write(html_output)
 
