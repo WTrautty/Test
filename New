@@ -1,61 +1,85 @@
 import win32com.client
-from datetime import datetime
-import pandas as pd
+from datetime import datetime, timedelta
+import openpyxl
+from openpyxl import Workbook
+import re
 
-# === Configuration ===
-START_DATE = datetime(2024, 1, 1)
-EXPORT_PATH = "outlook_appointments_2024.xlsx"
+# === Settings ===
+EXPORT_FILE = "Outlook_Calendars.xlsx"
+DAYS_FORWARD = 30
 
-def get_all_appointments(folder, start_date, results):
+# === Helpers ===
+def strip_tz(dt):
+    """Remove timezone info from datetime if present."""
+    return dt.replace(tzinfo=None) if hasattr(dt, 'tzinfo') and dt.tzinfo else dt
+
+def sanitize_sheet_name(name):
+    """Make Excel sheet name safe (max 31 characters, no forbidden chars)."""
+    name = re.sub(r'[\\/*?:\[\]]+', '_', name)
+    return name[:31]
+
+# === Initialize Excel workbook ===
+wb = Workbook()
+wb.remove(wb.active)  # remove default sheet
+
+# === Connect to Outlook ===
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+now = datetime.now()
+future = now + timedelta(days=DAYS_FORWARD)
+
+# === Loop through all mailboxes ===
+for i in range(outlook.Folders.Count):
     try:
-        items = folder.Items
-        items.IncludeRecurrences = True
-        items.Sort("[Start]")
+        mailbox = outlook.Folders.Item(i + 1)
+        calendar = mailbox.Folders("Calendar")
 
-        restriction = f"[Start] >= '{start_date.strftime('%m/%d/%Y %H:%M %p')}'"
+        # Get calendar items
+        items = calendar.Items
+        items.Sort("[Start]")
+        items.IncludeRecurrences = True
+
+        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
+            now.strftime('%m/%d/%Y %I:%M %p'),
+            future.strftime('%m/%d/%Y %I:%M %p')
+        )
         restricted_items = items.Restrict(restriction)
 
-        for appt in restricted_items:
-            try:
-                results.append({
-                    "Mailbox": folder.Parent.Name,
-                    "Folder": folder.Name,
-                    "Subject": appt.Subject,
-                    "Start": appt.Start,
-                    "End": appt.End,
-                    "Location": appt.Location,
-                    "Organizer": appt.Organizer if hasattr(appt, 'Organizer') else '',
-                })
-            except Exception as e:
-                print(f"Error reading appointment: {e}")
+        # Create Excel sheet
+        sheet_name = sanitize_sheet_name(mailbox.Name)
+        ws = wb.create_sheet(title=sheet_name)
+        ws.append(["Subject", "Start", "End", "Location", "44 Number", "NSC Code"])
 
-        # Recurse into subfolders
-        for subfolder in folder.Folders:
-            get_all_appointments(subfolder, start_date, results)
+        for item in restricted_items:
+            try:
+                # Extract appointment details
+                subject = item.Subject
+                start = strip_tz(item.Start)
+                end = strip_tz(item.End)
+                location = item.Location
+                body = item.Body if hasattr(item, 'Body') else ""
+
+                # Search for 9-digit number starting with 44
+                match_44 = re.search(r"\b44\d{7}\b", body)
+                number_44 = match_44.group(0) if match_44 else ""
+
+                # Search for 8-character NSC code after "NSC:"
+                match_nsc = re.search(r"NSC:\s*([A-Za-z0-9]{8})", subject)
+                nsc_code = match_nsc.group(1) if match_nsc else ""
+
+                # Append all data to sheet
+                ws.append([subject, start, end, location, number_44, nsc_code])
+
+            except Exception as e:
+                ws.append(["Error reading item", "", "", "", "", str(e)])
+
+        print(f"✅ Exported: {mailbox.Name}")
 
     except Exception as e:
-        print(f"Error accessing folder '{folder.Name}': {e}")
+        print(f"❌ Skipping mailbox {i+1}: {e}")
 
-def pull_outlook_appointments(start_date):
-    outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-    all_appointments = []
-
-    for i in range(outlook.Folders.Count):
-        try:
-            mailbox = outlook.Folders.Item(i + 1)
-            calendar_folder = mailbox.Folders["Calendar"]
-            print(f"Scanning: {mailbox.Name} -> Calendar")
-            get_all_appointments(calendar_folder, start_date, all_appointments)
-        except Exception as e:
-            print(f"Skipping {mailbox.Name}: {e}")
-
-    return all_appointments
-
-if __name__ == "__main__":
-    appointments = pull_outlook_appointments(START_DATE)
-    if appointments:
-        df = pd.DataFrame(appointments)
-        df.to_excel(EXPORT_PATH, index=False)
-        print(f"\nExported {len(appointments)} appointments to {EXPORT_PATH}")
-    else:
-        print("No appointments found.")
+# === Save the Excel file ===
+try:
+    wb.save(EXPORT_FILE)
+    print(f"\n✅ Export complete: {EXPORT_FILE}")
+except Exception as e:
+    print(f"\n❌ Failed to save Excel file: {e}")
