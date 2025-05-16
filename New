@@ -215,7 +215,7 @@ html_output = """
     workday_html=workday_html
 )
 
-# Write to a test file first
-with open('/tmp/dashboard.html', 'w', encoding='utf-8') as f:
+# Write to the final output file
+with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
     f.write(html_output)
-print("Test dashboard created at /tmp/dashboard.html"
+print(f"✅ Dashboard created at: {EXPORT_HTML}")
