@@ -18,15 +18,6 @@ df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
 df = df.dropna(subset=['Completed Date'])
 df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
 
-owner_counts = df['Task Owner'].value_counts()
-valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
-
-monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
-global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
-
-tab_buttons = []
-tab_contents = []
-
 # === Global Charts ===
 df['Is Fail'] = df['Closure Code 1'].str.lower().str.contains('fail')
 
@@ -42,7 +33,7 @@ global_pie_df.columns = ['Closure Code', 'Percentage']
 closure_pie_fig = px.pie(global_pie_df, names='Closure Code', values='Percentage',
                          title="Global Closure Code Distribution")
 closure_pie_fig.update_layout(height=400)
-closure_pie_html = closure_pie_fig.to_html(full_html=False, include_plotlyjs=True)  # inject JS here
+closure_pie_html = closure_pie_fig.to_html(full_html=False, include_plotlyjs=False)
 
 closed_monthly = df.groupby('Month').size().reset_index(name='Closed Orders')
 closed_line_fig = px.line(closed_monthly, x='Month', y='Closed Orders', title="Global Closed Orders Per Month")
@@ -65,8 +56,11 @@ sched_df = pd.concat(monthly_rows_per_tab)
 
 avg_tab_fig = px.bar(sched_df.groupby('Tab')['Count'].mean().reset_index(),
                      x='Tab', y='Count', title="Average Rows per Tab per Month")
+avg_tab_html = avg_tab_fig.to_html(full_html=False, include_plotlyjs=False)
+
 total_monthly_fig = px.line(sched_df.groupby('Month')['Count'].sum().reset_index(name='Total Rows'),
                             x='Month', y='Total Rows', title="Total Rows Across All Tabs")
+total_monthly_html = total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)
 
 workday_data = []
 for month, group in sched_df.groupby('Month'):
@@ -79,65 +73,149 @@ for month, group in sched_df.groupby('Month'):
 
 workday_df = pd.DataFrame(workday_data)
 workday_fig = px.bar(workday_df, x='Month', y='Avg Per Workday', title="Average Rows per Workday")
-
-scheduling_tab_html = f"""
-<div class="tabcontent" style="display:block">
-    <h2>Scheduling Dashboard</h2>
-    <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=False)}
-    <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
-    <hr>{workday_fig.to_html(full_html=False, include_plotlyjs=False)}
-</div>
-"""
+workday_html = workday_fig.to_html(full_html=False, include_plotlyjs=False)
 
 # === Final HTML Output ===
-html_output = f"""
+html_output = """
+<!DOCTYPE html>
 <html>
 <head>
     <title>Closure Code Dashboard</title>
-    <script>
-    window.addEventListener('load', function() {{
-        window.dispatchEvent(new Event('resize'));
-    }});
-    function switchMainTab(evt, tabName) {{
-        let tabs = document.getElementsByClassName('main-tab');
-        for (let t of tabs) t.style.display = 'none';
-        for (let b of document.getElementsByClassName('maintablink')) b.classList.remove('active');
-        document.getElementById(tabName).style.display = 'block';
-        evt.currentTarget.classList.add('active');
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
-    }}
-    </script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
-        body {{ font-family: sans-serif; background: #f9f9f9; margin: 0; padding: 0; }}
-        .maintablink {{
-            background-color: #ddd; border: none; padding: 10px 20px; margin: 5px; font-size: 16px;
-        }}
-        .maintablink.active {{ background-color: #bbb; }}
-        .tabcontent {{ display: none; max-width: 1400px; margin: 20px auto; background: white; padding: 20px; border-radius: 8px; }}
-        .main-tab-buttons {{ text-align: center; }}
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #f5f5f5; 
+            margin: 0; 
+            padding: 20px; 
+        }
+        .main-tab-buttons { 
+            text-align: center;
+            margin-bottom: 20px;
+            position: sticky;
+            top: 0;
+            background: #f5f5f5;
+            padding: 10px;
+            z-index: 1000;
+        }
+        .maintablink {
+            background-color: #e0e0e0;
+            border: none;
+            padding: 12px 24px;
+            margin: 0 5px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .maintablink:hover {
+            background-color: #d0d0d0;
+        }
+        .maintablink.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .main-tab {
+            display: none;
+        }
+        .main-tab.active {
+            display: block;
+        }
+        .tabcontent {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #444;
+            margin-bottom: 20px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
     <h1>Closure Code Dashboard</h1>
+    
     <div class="main-tab-buttons">
         <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
         <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
     </div>
-    <div id="globalTab" class="main-tab" style="display:block">
+
+    <div id="globalTab" class="main-tab active">
         <div class="tabcontent">
-            <hr>{fail_line_html}
-            <hr>{closure_pie_html}
-            <hr>{closed_line_html}
+            <h2>Global Statistics</h2>
+            {fail_line_html}
+            <hr>
+            {closure_pie_html}
+            <hr>
+            {closed_line_html}
         </div>
     </div>
-    <div id="schedulingTab" class="main-tab" style="display:none">
-        {scheduling_tab_html}
+
+    <div id="schedulingTab" class="main-tab">
+        <div class="tabcontent">
+            <h2>Scheduling Dashboard</h2>
+            {avg_tab_html}
+            <hr>
+            {total_monthly_html}
+            <hr>
+            {workday_html}
+        </div>
     </div>
+
+    <script>
+        function switchMainTab(evt, tabName) {{
+            // Hide all tabs
+            let tabs = document.getElementsByClassName('main-tab');
+            for (let t of tabs) {{
+                t.classList.remove('active');
+            }}
+            
+            // Remove active class from all buttons
+            let buttons = document.getElementsByClassName('maintablink');
+            for (let b of buttons) {{
+                b.classList.remove('active');
+            }}
+            
+            // Show the selected tab
+            document.getElementById(tabName).classList.add('active');
+            evt.currentTarget.classList.add('active');
+            
+            // Trigger resize to ensure plots render correctly
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+        }}
+
+        // Ensure plots render correctly on initial load
+        window.addEventListener('load', function() {{
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+        }});
+    </script>
 </body>
 </html>
-"""
+""".format(
+    fail_line_html=fail_line_html,
+    closure_pie_html=closure_pie_html,
+    closed_line_html=closed_line_html,
+    avg_tab_html=avg_tab_html,
+    total_monthly_html=total_monthly_html,
+    workday_html=workday_html
+)
 
-with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
+# Write to a test file first
+with open('/tmp/dashboard.html', 'w', encoding='utf-8') as f:
     f.write(html_output)
-
-print(f"✅ Dashboard created at: {EXPORT_HTML}")
+print("Test dashboard created at /tmp/dashboard.html"
