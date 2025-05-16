@@ -1,3 +1,11 @@
+<hr>
+<h3>Monthly Row Counts from Additional Workbook</h3>
+{end_tab_chart_html}
+
+
+
+
+
 # === Load Multi-Sheet Excel File and Count End Dates per Month ===
 ADDITIONAL_EXCEL = r"C:\Path\To\Your\MultiSheetWorkbook.xlsx"  # <-- UPDATE THIS PATH
 end_month_data = []
