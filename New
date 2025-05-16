@@ -1,3 +1,227 @@
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from pandas.tseries.offsets import MonthEnd
+
+# === Configuration ===
+EXCEL_PATH = r"C:\Path\To\Your\MainDashboardData.xlsx"
+ADDITIONAL_EXCEL = r"C:\Path\To\Your\MultiSheetWorkbook.xlsx"
+EXPORT_HTML = r"C:\Path\To\Your\Output\Dashboard.html"
+TAB_MIN_ENTRIES = 100
+top_performer_name = "Davis, Walter (Walter)"
+top_label = "Top Performer"
+
+# === Load and preprocess main Excel data ===
+df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
+df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
+df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
+df = df.dropna(subset=['Completed Date'])
+df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
+
+owner_counts = df['Task Owner'].value_counts()
+valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
+
+monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
+global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
+
+tab_buttons = []
+tab_contents = []
+
+for i, owner in enumerate(valid_owners):
+    div_id = f"tab{i}"
+    owner_data = df[df['Task Owner'] == owner]
+    top_data = df[df['Task Owner'] == top_performer_name]
+
+    # PIE CHART
+    owner_pie = owner_data['Closure Code 1'].value_counts(normalize=True) * 100
+    top_pie = top_data['Closure Code 1'].value_counts(normalize=True) * 100
+    all_codes = set(owner_pie.index).union(set(top_pie.index))
+    owner_pie = owner_pie.reindex(all_codes, fill_value=0)
+    top_pie = top_pie.reindex(all_codes, fill_value=0)
+
+    pie_df = owner_pie.reset_index()
+    pie_df.columns = ['Closure Code', 'Owner %']
+    pie_fig = px.pie(pie_df, names='Closure Code', values='Owner %',
+                     title=f"{owner}'s Closure Code Distribution")
+    pie_fig.update_layout(height=400, margin=dict(t=60, l=20, r=20, b=20))
+
+    # DIVERGING BAR CHART
+    delta_df = pd.DataFrame({
+        'Closure Code': list(all_codes),
+        'Owner %': [owner_pie[code] for code in all_codes],
+        'Top %': [top_pie[code] for code in all_codes]
+    })
+    delta_df['Delta'] = delta_df['Owner %'] - delta_df['Top %']
+    delta_df.sort_values('Delta', inplace=True)
+
+    marker_colors = [
+        'green' if ('successful' in str(code).lower() and delta >= 0)
+        else 'crimson' if ('successful' in str(code).lower() and delta < 0)
+        else 'green' if ('fail' in str(code).lower() and delta < 0)
+        else 'crimson' if ('fail' in str(code).lower() and delta >= 0)
+        else 'blue'
+        for code, delta in zip(delta_df['Closure Code'], delta_df['Delta'])
+    ]
+
+    delta_fig = go.Figure()
+    delta_fig.add_trace(go.Bar(
+        y=delta_df['Closure Code'],
+        x=delta_df['Delta'],
+        orientation='h',
+        marker_color=marker_colors,
+        hovertemplate='Difference: %{x:.1f}%<extra></extra>'
+    ))
+    delta_fig.update_layout(
+        title=f"{owner} vs {top_label} – Closure Code Usage Difference",
+        xaxis=dict(range=[-20, 20]),
+        height=450, showlegend=False,
+        margin=dict(t=60, l=40, r=40, b=40)
+    )
+    delta_html = delta_fig.to_html(full_html=False, include_plotlyjs=(i == 0))
+
+    # COLOR BULLETS
+    annotation_html = "<div><h3>Closure Code Insights</h3><ul style='padding-left: 20px;'>"
+    for _, row in delta_df.iterrows():
+        code = str(row['Closure Code']).lower()
+        delta = row['Delta']
+        direction = 'more' if delta > 0 else 'less'
+        if 'successful' in code:
+            color = 'green' if delta > 0 else 'crimson'
+        elif 'fail' in code:
+            color = 'green' if delta < 0 else 'crimson'
+        else:
+            color = 'blue'
+        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
+                           f"You use '<b>{row['Closure Code']}</b>' {abs(delta):.1f}% {direction} than the {top_label}.</li>"
+    annotation_html += "</ul></div>"
+
+    delta_section_html = f"""
+    <div style="display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;">
+        <div style="flex: 1 1 50%;">{delta_html}</div>
+        <div style="flex: 1 1 45%; min-width: 300px;">{annotation_html}</div>
+    </div>
+    """
+
+    # LINE CHART: Completed Tasks
+    owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
+    top_monthly = top_data.groupby('Month').size().reset_index(name='Completed')
+
+    line_fig = go.Figure()
+    line_fig.add_trace(go.Scatter(x=owner_monthly['Month'], y=owner_monthly['Completed'],
+                                  mode='lines+markers', name=owner))
+    line_fig.add_trace(go.Scatter(x=top_monthly['Month'], y=top_monthly['Completed'],
+                                  mode='lines+markers', name=top_label, line=dict(dash='dash')))
+    line_fig.add_trace(go.Scatter(x=global_avg['Month'], y=global_avg['Average'],
+                                  mode='lines+markers', name="Global Avg", line=dict(dash='dot')))
+    line_fig.update_layout(title=f"{owner} – Monthly Completed Tasks",
+                           xaxis_title='Month', yaxis_title='Completed',
+                           height=500, margin=dict(t=60, l=40, r=40, b=40), hovermode='x unified')
+    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    # LINE CHART: % Fail
+    fail_data = owner_data.copy()
+    fail_data['Is Fail'] = fail_data['Closure Code 1'].str.lower().str.contains('fail')
+    owner_fail_pct = (fail_data.groupby('Month')['Is Fail'].sum() /
+                      fail_data.groupby('Month').size() * 100).reset_index(name='Fail %')
+
+    df['Is Fail'] = df['Closure Code 1'].str.lower().str.contains('fail')
+    global_fail = df.groupby(['Month', 'Task Owner'])['Is Fail'].mean().reset_index()
+    global_avg_fail = global_fail.groupby('Month')['Is Fail'].mean().reset_index()
+    global_avg_fail.columns = ['Month', 'Global Avg Fail %']
+    global_avg_fail['Global Avg Fail %'] *= 100
+
+    top_data['Is Fail'] = top_data['Closure Code 1'].str.lower().str.contains('fail')
+    top_fail_pct = (top_data.groupby('Month')['Is Fail'].sum() /
+                    top_data.groupby('Month').size() * 100).reset_index(name='Top Performer Fail %')
+
+    fail_merged = pd.merge(owner_fail_pct, global_avg_fail, on='Month', how='outer')
+    fail_merged = pd.merge(fail_merged, top_fail_pct, on='Month', how='outer').sort_values('Month')
+
+    fail_fig = go.Figure()
+    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Fail %'], name=owner))
+    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Top Performer Fail %'], name=top_label, line=dict(dash='dash')))
+    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Global Avg Fail %'], name='Global Avg', line=dict(dash='dot')))
+    fail_fig.update_layout(title=f"{owner} – Percent Fail vs {top_label} & Global Avg",
+                           xaxis_title='Month', yaxis=dict(range=[0, 100]),
+                           yaxis_title='Failure Rate (%)', height=400)
+    fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    badge = " 🏆" if owner == top_performer_name else ""
+    tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
+    tab_contents.append(f"""
+    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
+        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0))}
+        <hr>{delta_section_html}
+        <hr>{line_html}
+        <hr>{fail_html}
+    </div>
+    """)
+
+# === GLOBAL CHARTS ===
+# Fail rate
+fail_line_html = fail_line_fig.to_html(full_html=False, include_plotlyjs=False)
+closure_pie_html = closure_pie_fig.to_html(full_html=False, include_plotlyjs=False)
+closed_line_html = closed_line_fig.to_html(full_html=False, include_plotlyjs=False)
+end_tab_chart_html = line_fig_tabs.to_html(full_html=False, include_plotlyjs=False)
+
+# === SCHEDULING CHARTS ===
+# Load additional workbook
+xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine='openpyxl')
+sheet_monthly_counts = []
+
+for sheet_name, sheet_df in xls.items():
+    if "End" in sheet_df.columns:
+        sheet_df = sheet_df.dropna(subset=["End"])
+        sheet_df["End"] = pd.to_datetime(sheet_df["End"], errors='coerce')
+        sheet_df = sheet_df.dropna(subset=["End"])
+        sheet_df["Month"] = sheet_df["End"].dt.to_period("M").astype(str)
+        monthly = sheet_df.groupby("Month").size().reset_index(name="Count")
+        monthly["Sheet"] = sheet_name
+        sheet_monthly_counts.append(monthly)
+
+combined_sched_data = pd.concat(sheet_monthly_counts, ignore_index=True)
+
+avg_rows_per_tab = combined_sched_data.groupby("Sheet")["Count"].mean().reset_index()
+bar_avg_tab_fig = px.bar(avg_rows_per_tab, x="Sheet", y="Count", title="Average Rows per Tab per Month")
+bar_avg_tab_html = bar_avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)
+
+total_per_month = combined_sched_data.groupby("Month")["Count"].sum().reset_index(name="Total Rows")
+line_total_fig = go.Figure()
+line_total_fig.add_trace(go.Scatter(
+    x=total_per_month["Month"], y=total_per_month["Total Rows"],
+    mode="lines+markers", name="Total Rows"
+))
+line_total_fig.update_layout(title="Total Combined Rows per Month",
+                             xaxis_title="Month", yaxis_title="Rows", height=400)
+line_total_html = line_total_fig.to_html(full_html=False, include_plotlyjs=False)
+
+workday_avg_data = []
+for month, group in combined_sched_data.groupby("Month"):
+    total_rows = group["Count"].sum()
+    try:
+        y, m = map(int, month.split("-"))
+        start = pd.Timestamp(y, m, 1)
+        end = start + MonthEnd(0)
+        workdays = pd.date_range(start, end, freq='B')
+        avg_per_day = total_rows / len(workdays)
+        workday_avg_data.append({"Month": month, "Avg Per Workday": avg_per_day})
+    except:
+        continue
+
+workday_df = pd.DataFrame(workday_avg_data)
+bar_workday_fig = px.bar(workday_df, x="Month", y="Avg Per Workday", title="Average Rows per Work Day per Month")
+bar_workday_html = bar_workday_fig.to_html(full_html=False, include_plotlyjs=False)
+
+scheduling_tab_html = f"""
+<div class="tabcontent" style="display:block">
+    <h2>Scheduling Dashboard</h2>
+    <hr>{bar_avg_tab_html}
+    <hr>{line_total_html}
+    <hr>{bar_workday_html}
+</div>
+"""
+
+# === Final HTML Output ===
 html_output = f"""
 <html>
 <head>
@@ -30,72 +254,43 @@ html_output = f"""
     }}
     </script>
     <style>
-        body {{
-            font-family: sans-serif;
-            background-color: #f9f9f9;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }}
-        .tablink, .maintablink {{
-            background-color: #ddd;
-            border: none;
-            cursor: pointer;
-            padding: 10px 20px;
-            margin: 2px;
-            font-size: 16px;
-        }}
-        .tablink.active, .maintablink.active {{
-            background-color: #bbb;
-        }}
+        body {{ font-family: sans-serif; background: #f9f9f9; }}
+        .maintablink {{ background: #ddd; border: none; padding: 10px 20px; margin: 5px; font-size: 16px; }}
+        .maintablink.active {{ background: #bbb; }}
+        .main-tab {{ display: none; width: 100%; }}
+        .tablink.active {{ background-color: #bbb; }}
         .tabcontent {{
             display: none;
-            max-width: 1400px;
             width: 100%;
+            max-width: 1400px;
             background: white;
             margin: 20px auto;
             padding: 20px;
-            border-radius: 8px;
             box-shadow: 0 0 10px rgba(0,0,0,0.05);
+            border-radius: 8px;
         }}
-        .tab-buttons-wrapper, .main-tab-buttons {{
-            text-align: center;
-            margin-top: 10px;
-        }}
-        .main-tab {{
-            display: none;
-            width: 100%;
-        }}
+        .tab-buttons-wrapper, .main-tab-buttons {{ text-align: center; margin-top: 10px; }}
     </style>
 </head>
 <body>
     <h1>Closure Code Dashboard</h1>
-
     <div class="main-tab-buttons">
         <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
         <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual Reports</button>
         <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
     </div>
 
-    <!-- === GLOBAL TAB === -->
     <div id="globalTab" class="main-tab" style="display:block">
-        <div class="tabcontent" style="display:block">
+        <div class="tabcontent">
             <h2>Global Closure Code Statistics</h2>
-            <hr>
-            {fail_line_html}
-            <hr>
-            {closure_pie_html}
-            <hr>
-            {closed_line_html}
-            <hr>
-            <h3>Monthly Row Counts by Sheet</h3>
+            <hr>{fail_line_html}
+            <hr>{closure_pie_html}
+            <hr>{closed_line_html}
+            <hr><h3>Monthly Row Counts by Sheet</h3>
             {end_tab_chart_html}
         </div>
     </div>
 
-    <!-- === INDIVIDUAL REPORTS TAB === -->
     <div id="individualTab" class="main-tab" style="display:none">
         <div class="tab-buttons-wrapper">
             {''.join(tab_buttons)}
@@ -103,7 +298,6 @@ html_output = f"""
         {''.join(tab_contents)}
     </div>
 
-    <!-- === SCHEDULING TAB === -->
     <div id="schedulingTab" class="main-tab" style="display:none">
         {scheduling_tab_html}
     </div>
@@ -111,7 +305,7 @@ html_output = f"""
 </html>
 """
 
-# === Write HTML to file ===
+# === Write file ===
 with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
     f.write(html_output)
 
