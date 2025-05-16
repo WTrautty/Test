@@ -1,12 +1,10 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import os
-from plotly.subplots import make_subplots
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Users\AD39644\Downloads\data (5).xlsx"
-EXPORT_HTML = r"C:\Users\AD39644\OneDrive - Lumen\Federal Service Delivery - Scripting Archive\Dashboards.html"
+EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # <-- UPDATE this path
+EXPORT_HTML = r"C:\Path\To\Your\OneDrive\Dashboard.html"  # <-- UPDATE this path
 TAB_MIN_ENTRIES = 40
 top_performer_name = "Davis, Walter (Walter)"
 top_label = "Top Performer"
@@ -55,13 +53,11 @@ for i, owner in enumerate(valid_owners):
     delta_df.sort_values('Delta', inplace=True)
 
     marker_colors = [
-        (
-            'green' if ('successful' in str(code).lower() and delta >= 0)
-            else 'crimson' if ('successful' in str(code).lower() and delta < 0)
-            else 'green' if ('fail' in str(code).lower() and delta < 0)
-            else 'crimson' if ('fail' in str(code).lower() and delta >= 0)
-            else 'blue'
-        )
+        'green' if ('successful' in str(code).lower() and delta >= 0)
+        else 'crimson' if ('successful' in str(code).lower() and delta < 0)
+        else 'green' if ('fail' in str(code).lower() and delta < 0)
+        else 'crimson' if ('fail' in str(code).lower() and delta >= 0)
+        else 'blue'
         for code, delta in zip(delta_df['Closure Code'], delta_df['Delta'])
     ]
 
@@ -111,48 +107,28 @@ for i, owner in enumerate(valid_owners):
     </div>
     """
 
-    # LINE CHART: Completed Tasks
+    # LINE CHARTS (Completed and % Fail)
     owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
     top_monthly = top_data.groupby('Month').size().reset_index(name='Completed')
 
     line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(
-        x=owner_monthly['Month'],
-        y=owner_monthly['Completed'],
-        mode='lines+markers',
-        name=f'{owner} Monthly Completed',
-        line=dict(color='blue')
-    ))
-    line_fig.add_trace(go.Scatter(
-        x=top_monthly['Month'],
-        y=top_monthly['Completed'],
-        mode='lines+markers',
-        name=f'{top_label} Monthly Completed',
-        line=dict(color='green', dash='dash')
-    ))
-    line_fig.add_trace(go.Scatter(
-        x=global_avg['Month'],
-        y=global_avg['Average'],
-        mode='lines+markers',
-        name='Global Monthly Average',
-        line=dict(color='red', dash='dash')
-    ))
+    line_fig.add_trace(go.Scatter(x=owner_monthly['Month'], y=owner_monthly['Completed'],
+                                  mode='lines+markers', name=f"{owner} Monthly Completed", line=dict(color='blue')))
+    line_fig.add_trace(go.Scatter(x=top_monthly['Month'], y=top_monthly['Completed'],
+                                  mode='lines+markers', name=f"{top_label} Monthly Completed", line=dict(color='green', dash='dash')))
+    line_fig.add_trace(go.Scatter(x=global_avg['Month'], y=global_avg['Average'],
+                                  mode='lines+markers', name="Global Monthly Average", line=dict(color='red', dash='dot')))
     line_fig.update_layout(
         title=f"{owner} – Monthly Completed Tasks vs {top_label} & Global Avg",
-        xaxis_title='Month',
-        yaxis_title='Tasks Completed',
-        height=500,
-        margin=dict(t=60, l=40, r=40, b=40),
-        hovermode='x unified'
+        xaxis_title='Month', yaxis_title='Tasks Completed',
+        height=500, margin=dict(t=60, l=40, r=40, b=40), hovermode='x unified'
     )
     line_html = line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # LINE CHART: % Fail
     fail_data = owner_data.copy()
     fail_data['Is Fail'] = fail_data['Closure Code 1'].str.lower().str.contains('fail')
-    monthly_total = fail_data.groupby('Month').size()
-    monthly_fails = fail_data.groupby('Month')['Is Fail'].sum()
-    owner_fail_pct = (monthly_fails / monthly_total * 100).reset_index(name='Fail %')
+    owner_fail_pct = (fail_data.groupby('Month')['Is Fail'].sum() /
+                      fail_data.groupby('Month').size() * 100).reset_index(name='Fail %')
 
     df['Is Fail'] = df['Closure Code 1'].str.lower().str.contains('fail')
     global_fail = df.groupby(['Month', 'Task Owner'])['Is Fail'].mean().reset_index()
@@ -161,123 +137,125 @@ for i, owner in enumerate(valid_owners):
     global_avg_fail['Global Avg Fail %'] *= 100
 
     top_data['Is Fail'] = top_data['Closure Code 1'].str.lower().str.contains('fail')
-    top_fails = top_data.groupby('Month')['Is Fail'].sum()
-    top_total = top_data.groupby('Month').size()
-    top_fail_pct = (top_fails / top_total * 100).reset_index(name='Top Performer Fail %')
+    top_fail_pct = (top_data.groupby('Month')['Is Fail'].sum() /
+                    top_data.groupby('Month').size() * 100).reset_index(name='Top Performer Fail %')
 
     fail_merged = pd.merge(owner_fail_pct, global_avg_fail, on='Month', how='outer')
     fail_merged = pd.merge(fail_merged, top_fail_pct, on='Month', how='outer').sort_values('Month')
 
     fail_fig = go.Figure()
-    fail_fig.add_trace(go.Scatter(
-        x=fail_merged['Month'],
-        y=fail_merged['Fail %'],
-        mode='lines+markers',
-        name=f"{owner} % Fail",
-        line=dict(color='blue')
-    ))
-    fail_fig.add_trace(go.Scatter(
-        x=fail_merged['Month'],
-        y=fail_merged['Top Performer Fail %'],
-        mode='lines+markers',
-        name=f"{top_label} % Fail",
-        line=dict(color='green', dash='dash')
-    ))
-    fail_fig.add_trace(go.Scatter(
-        x=fail_merged['Month'],
-        y=fail_merged['Global Avg Fail %'],
-        mode='lines+markers',
-        name="Global Avg % Fail",
-        line=dict(color='red', dash='dash')
-    ))
+    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Fail %'],
+                                  mode='lines+markers', name=f"{owner} % Fail", line=dict(color='blue')))
+    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Top Performer Fail %'],
+                                  mode='lines+markers', name=f"{top_label} % Fail", line=dict(color='green', dash='dash')))
+    fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Global Avg Fail %'],
+                                  mode='lines+markers', name="Global Avg % Fail", line=dict(color='red', dash='dot')))
     fail_fig.update_layout(
         title=f"{owner} – Percent of Orders Marked as 'Fail' vs {top_label} & Global Avg",
-        xaxis_title='Month',
-        yaxis_title='Failure Rate (%)',
+        xaxis_title='Month', yaxis_title='Failure Rate (%)',
         yaxis=dict(range=[0, 100]),
-        height=400,
-        margin=dict(t=60, l=40, r=40, b=40),
-        hovermode='x unified'
+        height=400, margin=dict(t=60, l=40, r=40, b=40), hovermode='x unified'
     )
     fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
 
-    # Add badge if top performer
+    # Tabs
     badge = " 🏆" if owner == top_performer_name else ""
     tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
     tab_contents.append(f"""
-    <div id="{div_id}" class="tabcontent" style="display:{"block" if i == 0 else "none"}">
-        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={'responsive': True})}
+    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
+        {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0), config={{'responsive': True}})}
         <hr>{delta_section_html}
         <hr>{line_html}
         <hr>{fail_html}
     </div>
     """)
 
-# Final HTML Output
+# === Final HTML Output with Tab Grouping ===
 html_output = f"""
 <html>
 <head>
     <title>Closure Code Dashboard</title>
     <script>
-    function openTab(evt, tabName) {{
-        var i, tabcontent, tablinks;
-        tabcontent = document.getElementsByClassName("tabcontent");
-        for (i = 0; i < tabcontent.length; i++) {{
-            tabcontent[i].style.display = "none";
+    function switchMainTab(evt, tabName) {{
+        var mainTabs = document.getElementsByClassName('main-tab');
+        for (var i = 0; i < mainTabs.length; i++) {{
+            mainTabs[i].style.display = 'none';
         }}
-        tablinks = document.getElementsByClassName("tablink");
-        for (i = 0; i < tablinks.length; i++) {{
-            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        var links = document.getElementsByClassName('maintablink');
+        for (var i = 0; i < links.length; i++) {{
+            links[i].classList.remove('active');
+        }}
+        document.getElementById(tabName).style.display = 'block';
+        evt.currentTarget.classList.add('active');
+    }}
+    function openTab(evt, tabName) {{
+        var tabs = document.getElementsByClassName("tabcontent");
+        for (var i = 0; i < tabs.length; i++) {{
+            tabs[i].style.display = "none";
+        }}
+        var links = document.getElementsByClassName("tablink");
+        for (var i = 0; i < links.length; i++) {{
+            links[i].classList.remove("active");
         }}
         document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.className += " active";
+        evt.currentTarget.classList.add("active");
         setTimeout(() => {{ window.dispatchEvent(new Event('resize')); }}, 200);
     }}
-    window.addEventListener('load', function () {{
-        setTimeout(() => {{ window.dispatchEvent(new Event('resize')); }}, 300);
-    }});
     </script>
     <style>
         body {{
             font-family: sans-serif;
             background-color: #f9f9f9;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            margin: 0; padding: 0;
+            display: flex; flex-direction: column; align-items: center;
         }}
-        .tablink {{
+        .tablink, .maintablink {{
             background-color: #ddd;
             border: none;
             cursor: pointer;
             padding: 10px 20px;
-            font-size: 16px;
             margin: 2px;
+            font-size: 16px;
         }}
-        .tablink.active {{
+        .tablink.active, .maintablink.active {{
             background-color: #bbb;
         }}
         .tabcontent {{
             display: none;
-            width: 100%;
             max-width: 1400px;
+            width: 100%;
             background: white;
-            margin: 0 auto 30px;
+            margin: 20px auto;
             padding: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.05);
             border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
         }}
-        .tab-buttons-wrapper {{
+        .tab-buttons-wrapper, .main-tab-buttons {{
             text-align: center;
             margin-top: 10px;
         }}
+        .main-tab {{ display: none; width: 100%; }}
     </style>
 </head>
 <body>
     <h1>Closure Code Dashboard</h1>
-    <div class="tab-buttons-wrapper">{''.join(tab_buttons)}</div>
-    {''.join(tab_contents)}
+
+    <div class="main-tab-buttons">
+        <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
+        <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual Reports</button>
+    </div>
+
+    <div id="globalTab" class="main-tab" style="display:block">
+        <div class="tabcontent" style="display:block">
+            <h2>Global Closure Code Statistics</h2>
+            <p>Include global metrics or visualizations here.</p>
+        </div>
+    </div>
+
+    <div id="individualTab" class="main-tab" style="display:none">
+        <div class="tab-buttons-wrapper">{''.join(tab_buttons)}</div>
+        {''.join(tab_contents)}
+    </div>
 </body>
 </html>
 """
