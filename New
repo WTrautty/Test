@@ -4,14 +4,14 @@ import plotly.graph_objects as go
 from pandas.tseries.offsets import MonthEnd
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\MainDashboard.xlsx"
-ADDITIONAL_EXCEL = r"C:\Path\To\MultiTabWorkbook.xlsx"
-EXPORT_HTML = r"C:\Path\To\Output\Dashboard.html"
+EXCEL_PATH = r"C:\Path\To\Your\MainData.xlsx"
+ADDITIONAL_EXCEL = r"C:\Path\To\Your\SchedulingWorkbook.xlsx"
+EXPORT_HTML = r"C:\Path\To\Your\OutputDashboard.html"
 TAB_MIN_ENTRIES = 100
 top_performer_name = "Davis, Walter (Walter)"
 top_label = "Top Performer"
 
-# === Load and preprocess main data ===
+# === Load and preprocess data ===
 df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
 df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
 df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
@@ -24,44 +24,19 @@ valid_owners = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
 monthly_totals = df.groupby(['Month', 'Task Owner']).size().reset_index(name='Count')
 global_avg = monthly_totals.groupby('Month')['Count'].mean().reset_index(name='Average')
 
-tab_buttons = []
-tab_contents = []
+tab_buttons, tab_contents = [], []
 
-# === Global Statistics Charts ===
-# 1. Global Failure Rate
-fail_rate = df.groupby('Month')['Is Fail'].mean().reset_index()
-fail_rate['Fail %'] = fail_rate['Is Fail'] * 100
-fail_line_fig = px.line(fail_rate, x='Month', y='Fail %', title='Global Failure Rate per Month')
-fail_line_fig.update_layout(yaxis=dict(range=[0, 100]), height=400)
-fail_line_html = fail_line_fig.to_html(full_html=False, include_plotlyjs=True)
-
-# 2. Global Closure Code Distribution
-global_pie = df['Closure Code 1'].value_counts(normalize=True) * 100
-global_pie_df = global_pie.reset_index()
-global_pie_df.columns = ['Closure Code', 'Percentage']
-closure_pie_fig = px.pie(global_pie_df, names='Closure Code', values='Percentage',
-                         title="Global Closure Code Distribution")
-closure_pie_fig.update_layout(height=400)
-closure_pie_html = closure_pie_fig.to_html(full_html=False, include_plotlyjs=False)
-
-# 3. Global Closed Orders Per Month
-closed_monthly = df.groupby('Month').size().reset_index(name='Closed Orders')
-closed_line_fig = px.line(closed_monthly, x='Month', y='Closed Orders', title="Global Closed Orders Per Month")
-closed_line_fig.update_layout(height=400)
-closed_line_html = closed_line_fig.to_html(full_html=False, include_plotlyjs=False)
-
-# === Individual Tabs ===
+# === Individual Reports ===
 for i, owner in enumerate(valid_owners):
     div_id = f"tab{i}"
-    owner_data = df[df['Task Owner'] == owner].copy()
-    top_data = df[df['Task Owner'] == top_performer_name].copy()
+    owner_data = df[df['Task Owner'] == owner]
+    top_data = df[df['Task Owner'] == top_performer_name]
 
     owner_pie = owner_data['Closure Code 1'].value_counts(normalize=True) * 100
     top_pie = top_data['Closure Code 1'].value_counts(normalize=True) * 100
-    all_codes = sorted(set(owner_pie.index).union(set(top_pie.index)))
+    all_codes = set(owner_pie.index).union(set(top_pie.index))
     owner_pie = owner_pie.reindex(all_codes, fill_value=0)
     top_pie = top_pie.reindex(all_codes, fill_value=0)
-
     pie_df = owner_pie.reset_index()
     pie_df.columns = ['Closure Code', 'Owner %']
     pie_fig = px.pie(pie_df, names='Closure Code', values='Owner %',
@@ -69,199 +44,238 @@ for i, owner in enumerate(valid_owners):
     pie_fig.update_layout(height=400)
 
     delta_df = pd.DataFrame({
-        'Closure Code': all_codes,
-        'Owner %': owner_pie.values,
-        'Top %': top_pie.values
+        'Closure Code': list(all_codes),
+        'Owner %': [owner_pie[code] for code in all_codes],
+        'Top %': [top_pie[code] for code in all_codes]
     })
     delta_df['Delta'] = delta_df['Owner %'] - delta_df['Top %']
     delta_df.sort_values('Delta', inplace=True)
-
-    marker_colors = []
-    for code, delta in zip(delta_df['Closure Code'], delta_df['Delta']):
-        code_lower = str(code).lower()
-        if 'successful' in code_lower:
-            marker_colors.append('green' if delta >= 0 else 'crimson')
-        elif 'fail' in code_lower:
-            marker_colors.append('green' if delta < 0 else 'crimson')
-        else:
-            marker_colors.append('blue')
-
+    marker_colors = [
+        'green' if ('successful' in str(code).lower() and delta >= 0)
+        else 'crimson' if ('successful' in str(code).lower() and delta < 0)
+        else 'green' if ('fail' in str(code).lower() and delta < 0)
+        else 'crimson' if ('fail' in str(code).lower() and delta >= 0)
+        else 'blue'
+        for code, delta in zip(delta_df['Closure Code'], delta_df['Delta'])
+    ]
     delta_fig = go.Figure()
     delta_fig.add_trace(go.Bar(
-        y=delta_df['Closure Code'],
-        x=delta_df['Delta'],
-        orientation='h',
-        marker_color=marker_colors
+        y=delta_df['Closure Code'], x=delta_df['Delta'], orientation='h',
+        marker_color=marker_colors, hovertemplate='Difference: %{x:.1f}%<extra></extra>'
     ))
-    delta_fig.update_layout(
-        title=f"{owner} vs {top_label} – Closure Code Usage Difference",
-        xaxis=dict(title='Percentage Difference (%)', range=[-20, 20]),
-        height=450,
-        showlegend=False
-    )
-    delta_html = delta_fig.to_html(full_html=False, include_plotlyjs=(i == 0))
-
-    # Closure Code Insights
-    insight_html = "<div><h3>Closure Code Insights</h3><ul style='padding-left:20px;'>"
+    delta_fig.update_layout(title=f"{owner} vs {top_label} – Closure Code Usage Difference",
+                            xaxis=dict(range=[-20, 20]), height=450, margin=dict(t=60, l=40, r=40, b=40),
+                            showlegend=False)
+    annotation_html = "<div><h3>Closure Code Insights</h3><ul style='padding-left: 20px;'>"
     for _, row in delta_df.iterrows():
-        code = str(row['Closure Code'])
+        code = str(row['Closure Code']).lower()
         delta = row['Delta']
         direction = 'more' if delta > 0 else 'less'
-        color = 'green' if ('successful' in code.lower() and delta > 0) or ('fail' in code.lower() and delta < 0) else 'crimson' if ('successful' in code.lower() or 'fail' in code.lower()) else 'blue'
-        insight_html += f"<li style='color:{color}; margin-bottom:6px;'>You use <b>{code}</b> {abs(delta):.1f}% {direction} than the {top_label}.</li>"
-    insight_html += "</ul></div>"
+        color = ('green' if 'successful' in code and delta > 0 else
+                 'crimson' if 'successful' in code and delta < 0 else
+                 'green' if 'fail' in code and delta < 0 else
+                 'crimson' if 'fail' in code and delta >= 0 else
+                 'blue')
+        annotation_html += f"<li style='margin-bottom: 6px; color:{color}'>" \
+                           f"You use '<b>{row['Closure Code']}</b>' {abs(delta):.1f}% {direction} than the {top_label}.</li>"
+    annotation_html += "</ul></div>"
 
     delta_section_html = f"""
-    <div style="display:flex; flex-wrap:wrap; gap:40px;">
-        <div style="flex:1 1 50%;">{delta_html}</div>
-        <div style="flex:1 1 45%;">{insight_html}</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start;">
+        <div style="flex: 1 1 50%;">{delta_fig.to_html(full_html=False, include_plotlyjs=False)}</div>
+        <div style="flex: 1 1 45%; min-width: 300px;">{annotation_html}</div>
     </div>
     """
 
     owner_monthly = owner_data.groupby('Month').size().reset_index(name='Completed')
     top_monthly = top_data.groupby('Month').size().reset_index(name='Completed')
     line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(x=owner_monthly['Month'], y=owner_monthly['Completed'], name=owner))
-    line_fig.add_trace(go.Scatter(x=top_monthly['Month'], y=top_monthly['Completed'], name=top_label, line=dict(dash='dash')))
-    line_fig.add_trace(go.Scatter(x=global_avg['Month'], y=global_avg['Average'], name='Global Avg', line=dict(dash='dot')))
-    line_fig.update_layout(title=f"{owner} – Monthly Completed Tasks", height=400)
-    line_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
+    line_fig.add_trace(go.Scatter(x=owner_monthly['Month'], y=owner_monthly['Completed'],
+                                  mode='lines+markers', name=owner))
+    line_fig.add_trace(go.Scatter(x=top_monthly['Month'], y=top_monthly['Completed'],
+                                  mode='lines+markers', name=top_label, line=dict(dash='dash')))
+    line_fig.add_trace(go.Scatter(x=global_avg['Month'], y=global_avg['Average'],
+                                  mode='lines+markers', name="Global Avg", line=dict(dash='dot')))
+    line_fig.update_layout(title=f"{owner} – Monthly Completed Tasks",
+                           xaxis_title='Month', yaxis_title='Completed', height=500,
+                           margin=dict(t=60, l=40, r=40, b=40), hovermode='x unified')
 
-    # Fail Line Chart
-    owner_fail = owner_data.groupby('Month')['Is Fail'].mean().reset_index(name='Fail %')
-    top_fail = top_data.groupby('Month')['Is Fail'].mean().reset_index(name='Top Performer Fail %')
+    fail_data = owner_data.copy()
+    fail_data['Is Fail'] = fail_data['Closure Code 1'].str.lower().str.contains('fail')
+    owner_fail_pct = (fail_data.groupby('Month')['Is Fail'].sum() /
+                      fail_data.groupby('Month').size() * 100).reset_index(name='Fail %')
+    top_data['Is Fail'] = top_data['Closure Code 1'].str.lower().str.contains('fail')
+    top_fail_pct = (top_data.groupby('Month')['Is Fail'].sum() /
+                    top_data.groupby('Month').size() * 100).reset_index(name='Top Performer Fail %')
     global_fail = df.groupby(['Month', 'Task Owner'])['Is Fail'].mean().reset_index()
-    global_avg_fail = global_fail.groupby('Month')['Is Fail'].mean().reset_index(name='Global Avg Fail %')
-    fail_merged = owner_fail.merge(top_fail, on='Month', how='outer').merge(global_avg_fail, on='Month', how='outer')
-    fail_merged[['Fail %', 'Top Performer Fail %', 'Global Avg Fail %']] *= 100
-
+    global_avg_fail = global_fail.groupby('Month')['Is Fail'].mean().reset_index()
+    global_avg_fail.columns = ['Month', 'Global Avg Fail %']
+    global_avg_fail['Global Avg Fail %'] *= 100
+    fail_merged = pd.merge(owner_fail_pct, global_avg_fail, on='Month', how='outer')
+    fail_merged = pd.merge(fail_merged, top_fail_pct, on='Month', how='outer').sort_values('Month')
     fail_fig = go.Figure()
     fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Fail %'], name=owner))
     fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Top Performer Fail %'], name=top_label, line=dict(dash='dash')))
     fail_fig.add_trace(go.Scatter(x=fail_merged['Month'], y=fail_merged['Global Avg Fail %'], name='Global Avg', line=dict(dash='dot')))
-    fail_fig.update_layout(title=f"{owner} – % Fail Rate Comparison", yaxis=dict(range=[0, 100]), height=400)
-    fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+    fail_fig.update_layout(title=f"{owner} – Percent Fail vs {top_label} & Global Avg",
+                           xaxis_title='Month', yaxis_title='Failure Rate (%)',
+                           yaxis=dict(range=[0, 100]), height=400)
 
     badge = " 🏆" if owner == top_performer_name else ""
     tab_buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
     tab_contents.append(f"""
-    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'};">
+    <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'}">
         {pie_fig.to_html(full_html=False, include_plotlyjs=(i == 0))}
         <hr>{delta_section_html}
-        <hr>{line_html}
-        <hr>{fail_html}
+        <hr>{line_fig.to_html(full_html=False, include_plotlyjs=False)}
+        <hr>{fail_fig.to_html(full_html=False, include_plotlyjs=False)}
     </div>
     """)
 
-# === Scheduling Tab ===
+# === Global Charts
+fail_rate = df.groupby('Month')['Is Fail'].mean().reset_index()
+fail_rate['Fail %'] = fail_rate['Is Fail'] * 100
+fail_line_html = px.line(fail_rate, x='Month', y='Fail %', title='Global Failure Rate per Month').to_html(full_html=False, include_plotlyjs=False)
+
+global_pie = df['Closure Code 1'].value_counts(normalize=True) * 100
+global_pie_df = global_pie.reset_index()
+global_pie_df.columns = ['Closure Code', 'Percentage']
+closure_pie_html = px.pie(global_pie_df, names='Closure Code', values='Percentage', title="Global Closure Code Distribution").to_html(full_html=False, include_plotlyjs=False)
+
+closed_monthly = df.groupby('Month').size().reset_index(name='Closed Orders')
+closed_line_html = px.line(closed_monthly, x='Month', y='Closed Orders', title="Global Closed Orders Per Month").to_html(full_html=False, include_plotlyjs=False)
+
+# === Scheduling Charts
 xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine='openpyxl')
-monthly_rows_per_tab = []
-for sheet, data in xls.items():
-    if "End" in data.columns:
-        data = data.dropna(subset=['End']).copy()
-        data['End'] = pd.to_datetime(data['End'], errors='coerce')
-        data = data.dropna(subset=['End'])
-        data['Month'] = data['End'].dt.to_period("M").astype(str)
-        grouped = data.groupby('Month').size().reset_index(name='Count')
-        grouped['Tab'] = sheet
-        monthly_rows_per_tab.append(grouped)
+sheet_monthly_counts = []
+for sheet_name, sheet_df in xls.items():
+    if "End" in sheet_df.columns:
+        sheet_df = sheet_df.dropna(subset=["End"])
+        sheet_df["End"] = pd.to_datetime(sheet_df["End"], errors='coerce')
+        sheet_df = sheet_df.dropna(subset=["End"])
+        sheet_df["Month"] = sheet_df["End"].dt.to_period("M").astype(str)
+        monthly = sheet_df.groupby("Month").size().reset_index(name="Count")
+        monthly["Sheet"] = sheet_name
+        sheet_monthly_counts.append(monthly)
 
-sched_df = pd.concat(monthly_rows_per_tab)
-avg_tab_fig = px.bar(sched_df.groupby('Tab')['Count'].mean().reset_index(),
-                     x='Tab', y='Count', title="Average Rows per Tab per Month")
-total_monthly_fig = px.line(sched_df.groupby('Month')['Count'].sum().reset_index(name='Total Rows'),
-                            x='Month', y='Total Rows', title="Total Rows Across All Tabs")
+combined_sched_data = pd.concat(sheet_monthly_counts, ignore_index=True)
+avg_rows_per_tab = combined_sched_data.groupby("Sheet")["Count"].mean().reset_index()
+bar_avg_tab_html = px.bar(avg_rows_per_tab, x="Sheet", y="Count", title="Average Rows per Tab per Month").to_html(full_html=False, include_plotlyjs=True)
 
-workday_data = []
-for month, group in sched_df.groupby('Month'):
-    total = group['Count'].sum()
-    y, m = map(int, month.split('-'))
-    start = pd.Timestamp(y, m, 1)
-    end = start + MonthEnd(0)
-    weekdays = pd.date_range(start, end, freq='B')
-    workday_data.append({'Month': month, 'Avg Per Workday': total / len(weekdays)})
+total_per_month = combined_sched_data.groupby("Month")["Count"].sum().reset_index(name="Total Rows")
+line_total_fig = go.Figure()
+line_total_fig.add_trace(go.Scatter(x=total_per_month["Month"], y=total_per_month["Total Rows"], mode="lines+markers", name="Total Rows"))
+line_total_fig.update_layout(title="Total Combined Rows per Month", xaxis_title="Month", yaxis_title="Rows", height=400)
+line_total_html = line_total_fig.to_html(full_html=False, include_plotlyjs=False)
 
-workday_df = pd.DataFrame(workday_data)
-workday_fig = px.bar(workday_df, x='Month', y='Avg Per Workday', title="Average Rows per Workday")
+workday_avg_data = []
+for month, group in combined_sched_data.groupby("Month"):
+    total_rows = group["Count"].sum()
+    try:
+        y, m = map(int, month.split("-"))
+        start = pd.Timestamp(y, m, 1)
+        end = start + MonthEnd(0)
+        workdays = pd.date_range(start, end, freq='B')
+        avg_per_day = total_rows / len(workdays)
+        workday_avg_data.append({"Month": month, "Avg Per Workday": avg_per_day})
+    except:
+        continue
 
-scheduling_tab_html = f"""
-<div class="tabcontent" style="display:block">
-    <h2>Scheduling Dashboard</h2>
-    <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
-    <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
-    <hr>{workday_fig.to_html(full_html=False, include_plotlyjs=False)}
-</div>
-"""
+workday_df = pd.DataFrame(workday_avg_data)
+bar_workday_html = px.bar(workday_df, x="Month", y="Avg Per Workday", title="Average Rows per Work Day per Month").to_html(full_html=False, include_plotlyjs=False)
 
-# === Final HTML Output ===
+# === Final HTML Output
 html_output = f"""
-<html>
-<head>
-    <title>Closure Code Dashboard</title>
-    <script>
-    function switchMainTab(evt, tabName) {{
-        const tabs = document.getElementsByClassName('main-tab');
-        for (const tab of tabs) tab.style.display = 'none';
-        for (const btn of document.getElementsByClassName('maintablink')) btn.classList.remove('active');
-        document.getElementById(tabName).style.display = 'block';
-        evt.currentTarget.classList.add('active');
+<html><head><title>Closure Code Dashboard</title>
+<script>
+function switchMainTab(evt, tabName) {{
+    var tabs = document.getElementsByClassName('main-tab');
+    for (var i = 0; i < tabs.length; i++) {{
+        tabs[i].style.display = 'none';
     }}
-    function openTab(evt, tabName) {{
-        const tabs = document.getElementsByClassName("tabcontent");
-        for (const tab of tabs) tab.style.display = "none";
-        for (const btn of document.getElementsByClassName("tablink")) btn.classList.remove("active");
-        document.getElementById(tabName).style.display = "block";
-        evt.currentTarget.classList.add("active");
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
+    var links = document.getElementsByClassName('maintablink');
+    for (var i = 0; i < links.length; i++) {{
+        links[i].classList.remove('active');
     }}
-    </script>
-    <style>
-        body {{ font-family: sans-serif; background: #f9f9f9; margin: 0; padding: 0; }}
-        .maintablink, .tablink {{
-            background-color: #ddd; border: none; padding: 10px 20px; margin: 5px; font-size: 16px;
-        }}
-        .maintablink.active, .tablink.active {{ background-color: #bbb; }}
-        .tabcontent {{
-            display: none;
-            max-width: 1400px;
-            margin: 20px auto;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-        }}
-        .main-tab-buttons, .tab-buttons-wrapper {{ text-align: center; }}
-    </style>
-</head>
+    document.getElementById(tabName).style.display = 'block';
+    evt.currentTarget.classList.add('active');
+}}
+function openTab(evt, tabName) {{
+    var tabs = document.getElementsByClassName("tabcontent");
+    for (var i = 0; i < tabs.length; i++) {{
+        tabs[i].style.display = "none";
+    }}
+    var links = document.getElementsByClassName("tablink");
+    for (var i = 0; i < links.length; i++) {{
+        links[i].classList.remove("active");
+    }}
+    document.getElementById(tabName).style.display = "block";
+    evt.currentTarget.classList.add("active");
+    setTimeout(() => {{ window.dispatchEvent(new Event('resize')); }}, 200);
+}}
+</script>
+<style>
+body {{
+    font-family: sans-serif;
+    background-color: #f9f9f9;
+    margin: 0; padding: 20px;
+}}
+.maintablink {{
+    background-color: #ddd;
+    border: none;
+    cursor: pointer;
+    padding: 10px 20px;
+    margin: 2px;
+    font-size: 16px;
+}}
+.maintablink.active {{ background-color: #bbb; }}
+.tablink.active {{ background-color: #bbb; }}
+.tabcontent {{
+    display: none;
+    max-width: 1400px;
+    margin: 20px auto;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.05);
+}}
+.tab-buttons-wrapper, .main-tab-buttons {{
+    text-align: center;
+    margin-top: 10px;
+}}
+.main-tab {{ display: none; width: 100%; }}
+</style></head>
 <body>
-    <h1>Closure Code Dashboard</h1>
-    <div class="main-tab-buttons">
-        <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
-        <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual Reports</button>
-        <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+<h1 style="text-align:center;">Closure Code Dashboard</h1>
+<div class="main-tab-buttons">
+    <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
+    <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual Reports</button>
+    <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+</div>
+<div id="globalTab" class="main-tab" style="display:block">
+    <div class="tabcontent">
+        <h2>Global Closure Code Statistics</h2>
+        <hr>{fail_line_html}
+        <hr>{closure_pie_html}
+        <hr>{closed_line_html}
     </div>
-
-    <div id="globalTab" class="main-tab" style="display:block">
-        <div class="tabcontent">
-            <h2>Global Statistics</h2>
-            <hr>{fail_line_html}
-            <hr>{closure_pie_html}
-            <hr>{closed_line_html}
-        </div>
+</div>
+<div id="individualTab" class="main-tab" style="display:none">
+    <div class="tab-buttons-wrapper">{''.join(tab_buttons)}</div>
+    {''.join(tab_contents)}
+</div>
+<div id="schedulingTab" class="main-tab" style="display:none">
+    <div class="tabcontent">
+        <h2>Scheduling Dashboard</h2>
+        <hr>{bar_avg_tab_html}
+        <hr>{line_total_html}
+        <hr>{bar_workday_html}
     </div>
-
-    <div id="individualTab" class="main-tab" style="display:none">
-        <div class="tab-buttons-wrapper">{''.join(tab_buttons)}</div>
-        {''.join(tab_contents)}
-    </div>
-
-    <div id="schedulingTab" class="main-tab" style="display:none">
-        {scheduling_tab_html}
-    </div>
-</body>
-</html>
+</div>
+</body></html>
 """
 
-# === Write to file ===
+# === Write to HTML file ===
 with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
     f.write(html_output)
 
