@@ -1,85 +1,40 @@
-import win32com.client
-from datetime import datetime, timedelta
-import openpyxl
-from openpyxl import Workbook
-import re
+# === Load Multi-Sheet Excel File and Count End Dates per Month ===
+ADDITIONAL_EXCEL = r"C:\Path\To\Your\MultiSheetWorkbook.xlsx"  # <-- UPDATE THIS PATH
+end_month_data = []
 
-# === Settings ===
-EXPORT_FILE = "Outlook_Calendars.xlsx"
-DAYS_FORWARD = 30
+# Load all sheets
+xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine='openpyxl')
 
-# === Helpers ===
-def strip_tz(dt):
-    """Remove timezone info from datetime if present."""
-    return dt.replace(tzinfo=None) if hasattr(dt, 'tzinfo') and dt.tzinfo else dt
+for sheet_name, sheet_df in xls.items():
+    if "End" in sheet_df.columns:
+        sheet_df = sheet_df.dropna(subset=["End"])
+        sheet_df["End"] = pd.to_datetime(sheet_df["End"], errors='coerce')
+        sheet_df = sheet_df.dropna(subset=["End"])
+        sheet_df["Month"] = sheet_df["End"].dt.to_period("M").astype(str)
+        counts = sheet_df.groupby("Month").size().reset_index(name="Count")
+        counts["Sheet"] = sheet_name
+        end_month_data.append(counts)
 
-def sanitize_sheet_name(name):
-    """Make Excel sheet name safe (max 31 characters, no forbidden chars)."""
-    name = re.sub(r'[\\/*?:\[\]]+', '_', name)
-    return name[:31]
+# Combine all sheets into one DataFrame
+combined_end_data = pd.concat(end_month_data, ignore_index=True)
 
-# === Initialize Excel workbook ===
-wb = Workbook()
-wb.remove(wb.active)  # remove default sheet
+# === Line Chart: Monthly Row Counts per Tab ===
+line_fig_tabs = go.Figure()
+for sheet in combined_end_data["Sheet"].unique():
+    sheet_data = combined_end_data[combined_end_data["Sheet"] == sheet]
+    line_fig_tabs.add_trace(go.Scatter(
+        x=sheet_data["Month"],
+        y=sheet_data["Count"],
+        mode="lines+markers",
+        name=sheet
+    ))
 
-# === Connect to Outlook ===
-outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-now = datetime.now()
-future = now + timedelta(days=DAYS_FORWARD)
+line_fig_tabs.update_layout(
+    title="Row Counts per Month by Tab (from Additional Workbook)",
+    xaxis_title="Month",
+    yaxis_title="Row Count",
+    height=400,
+    hovermode="x unified"
+)
 
-# === Loop through all mailboxes ===
-for i in range(outlook.Folders.Count):
-    try:
-        mailbox = outlook.Folders.Item(i + 1)
-        calendar = mailbox.Folders("Calendar")
-
-        # Get calendar items
-        items = calendar.Items
-        items.Sort("[Start]")
-        items.IncludeRecurrences = True
-
-        restriction = "[Start] >= '{}' AND [Start] <= '{}'".format(
-            now.strftime('%m/%d/%Y %I:%M %p'),
-            future.strftime('%m/%d/%Y %I:%M %p')
-        )
-        restricted_items = items.Restrict(restriction)
-
-        # Create Excel sheet
-        sheet_name = sanitize_sheet_name(mailbox.Name)
-        ws = wb.create_sheet(title=sheet_name)
-        ws.append(["Subject", "Start", "End", "Location", "44 Number", "NSC Code"])
-
-        for item in restricted_items:
-            try:
-                # Extract appointment details
-                subject = item.Subject
-                start = strip_tz(item.Start)
-                end = strip_tz(item.End)
-                location = item.Location
-                body = item.Body if hasattr(item, 'Body') else ""
-
-                # Search for 9-digit number starting with 44
-                match_44 = re.search(r"\b44\d{7}\b", body)
-                number_44 = match_44.group(0) if match_44 else ""
-
-                # Search for 8-character NSC code after "NSC:"
-                match_nsc = re.search(r"NSC:\s*([A-Za-z0-9]{8})", subject)
-                nsc_code = match_nsc.group(1) if match_nsc else ""
-
-                # Append all data to sheet
-                ws.append([subject, start, end, location, number_44, nsc_code])
-
-            except Exception as e:
-                ws.append(["Error reading item", "", "", "", "", str(e)])
-
-        print(f"✅ Exported: {mailbox.Name}")
-
-    except Exception as e:
-        print(f"❌ Skipping mailbox {i+1}: {e}")
-
-# === Save the Excel file ===
-try:
-    wb.save(EXPORT_FILE)
-    print(f"\n✅ Export complete: {EXPORT_FILE}")
-except Exception as e:
-    print(f"\n❌ Failed to save Excel file: {e}")
+end_tab_chart_html = line_fig_tabs.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
