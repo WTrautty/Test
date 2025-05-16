@@ -1,157 +1,61 @@
+import win32com.client
+from datetime import datetime
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
 
 # === Configuration ===
-EXCEL_PATH = r"C:\Path\To\Your\File.xlsx"  # Replace with your actual file path
-EXPORT_HTML = r"C:\Path\To\Your\Output\Dashboard.html"
-TAB_MIN_ENTRIES = 40
-top_performer_name = "Davis, Walter (Walter)"
-top_label = "Top Performer"
+START_DATE = datetime(2024, 1, 1)
+EXPORT_PATH = "outlook_appointments_2024.xlsx"
 
-# === Load and preprocess data ===
-df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
-df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
-df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
-df = df.dropna(subset=['Completed Date'])
-df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
+def get_all_appointments(folder, start_date, results):
+    try:
+        items = folder.Items
+        items.IncludeRecurrences = True
+        items.Sort("[Start]")
 
-# === Generate Global Statistics Charts ===
+        restriction = f"[Start] >= '{start_date.strftime('%m/%d/%Y %H:%M %p')}'"
+        restricted_items = items.Restrict(restriction)
 
-# Global Failure Rate Line Chart
-df['Is Fail'] = df['Closure Code 1'].str.lower().str.contains('fail')
-monthly_fail_rate = df.groupby('Month')['Is Fail'].mean().reset_index()
-monthly_fail_rate['Fail %'] = monthly_fail_rate['Is Fail'] * 100
+        for appt in restricted_items:
+            try:
+                results.append({
+                    "Mailbox": folder.Parent.Name,
+                    "Folder": folder.Name,
+                    "Subject": appt.Subject,
+                    "Start": appt.Start,
+                    "End": appt.End,
+                    "Location": appt.Location,
+                    "Organizer": appt.Organizer if hasattr(appt, 'Organizer') else '',
+                })
+            except Exception as e:
+                print(f"Error reading appointment: {e}")
 
-fail_line_fig = go.Figure()
-fail_line_fig.add_trace(go.Scatter(
-    x=monthly_fail_rate['Month'],
-    y=monthly_fail_rate['Fail %'],
-    mode='lines+markers',
-    name="Global Failure Rate",
-    line=dict(color='crimson')
-))
-fail_line_fig.update_layout(
-    title="Global Failure Rate per Month",
-    xaxis_title="Month",
-    yaxis_title="Failure Rate (%)",
-    yaxis=dict(range=[0, 100]),
-    height=400
-)
-fail_line_html = fail_line_fig.to_html(full_html=False, include_plotlyjs=True, config={'responsive': True})
+        # Recurse into subfolders
+        for subfolder in folder.Folders:
+            get_all_appointments(subfolder, start_date, results)
 
-# Global Closure Code Distribution Pie Chart
-closure_distribution = df['Closure Code 1'].value_counts(normalize=True) * 100
-pie_df = closure_distribution.reset_index()
-pie_df.columns = ['Closure Code', 'Percentage']
-closure_pie_fig = px.pie(pie_df, names='Closure Code', values='Percentage', title="Global Closure Code Distribution")
-closure_pie_fig.update_layout(height=400)
-closure_pie_html = closure_pie_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+    except Exception as e:
+        print(f"Error accessing folder '{folder.Name}': {e}")
 
-# Global Closed Orders Line Chart
-monthly_closed = df.groupby('Month').size().reset_index(name='Closed Orders')
-closed_line_fig = go.Figure()
-closed_line_fig.add_trace(go.Scatter(
-    x=monthly_closed['Month'],
-    y=monthly_closed['Closed Orders'],
-    mode='lines+markers',
-    name="Closed Orders",
-    line=dict(color='blue')
-))
-closed_line_fig.update_layout(
-    title="Global Closed Orders per Month",
-    xaxis_title="Month",
-    yaxis_title="Closed Orders",
-    height=400
-)
-closed_line_html = closed_line_fig.to_html(full_html=False, include_plotlyjs=False, config={'responsive': True})
+def pull_outlook_appointments(start_date):
+    outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+    all_appointments = []
 
-# === Combine into Global Tab ===
-global_tab_html = f"""
-<div class="tabcontent" style="display:block">
-    <h2>Global Closure Code Statistics</h2>
-    <hr>{fail_line_html}
-    <hr>{closure_pie_html}
-    <hr>{closed_line_html}
-</div>
-"""
+    for i in range(outlook.Folders.Count):
+        try:
+            mailbox = outlook.Folders.Item(i + 1)
+            calendar_folder = mailbox.Folders["Calendar"]
+            print(f"Scanning: {mailbox.Name} -> Calendar")
+            get_all_appointments(calendar_folder, start_date, all_appointments)
+        except Exception as e:
+            print(f"Skipping {mailbox.Name}: {e}")
 
-# === HTML Template with Main Tab Group ===
-html_output = f"""
-<html>
-<head>
-    <title>Closure Code Dashboard</title>
-    <script>
-    function switchMainTab(evt, tabName) {{
-        const tabs = document.getElementsByClassName('main-tab');
-        for (let i = 0; i < tabs.length; i++) {{
-            tabs[i].style.display = 'none';
-        }}
-        const buttons = document.getElementsByClassName('maintablink');
-        for (let i = 0; i < buttons.length; i++) {{
-            buttons[i].classList.remove('active');
-        }}
-        document.getElementById(tabName).style.display = 'block';
-        evt.currentTarget.classList.add('active');
-    }}
-    </script>
-    <style>
-        body {{
-            font-family: sans-serif;
-            background-color: #f9f9f9;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }}
-        .maintablink {{
-            background-color: #ddd;
-            border: none;
-            cursor: pointer;
-            padding: 10px 20px;
-            margin: 5px;
-            font-size: 16px;
-        }}
-        .maintablink.active {{
-            background-color: #bbb;
-        }}
-        .main-tab {{
-            display: none;
-            width: 100%;
-            max-width: 1400px;
-        }}
-        .tabcontent {{
-            width: 100%;
-            background: white;
-            margin: 20px auto;
-            padding: 20px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.05);
-            border-radius: 8px;
-        }}
-    </style>
-</head>
-<body>
-    <h1>Closure Code Dashboard</h1>
-    <div>
-        <button class="maintablink active" onclick="switchMainTab(event, 'globalTab')">Global Statistics</button>
-        <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual Reports</button>
-    </div>
+    return all_appointments
 
-    <div id="globalTab" class="main-tab" style="display:block">
-        {global_tab_html}
-    </div>
-
-    <div id="individualTab" class="main-tab">
-        <!-- You can paste your per-task owner dashboard tab group here -->
-        <p>Individual Reports go here.</p>
-    </div>
-</body>
-</html>
-"""
-
-# === Write to File ===
-with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
-    f.write(html_output)
-
-print(f"✅ Dashboard created with global statistics at: {EXPORT_HTML}")
+if __name__ == "__main__":
+    appointments = pull_outlook_appointments(START_DATE)
+    if appointments:
+        df = pd.DataFrame(appointments)
+        df.to_excel(EXPORT_PATH, index=False)
+        print(f"\nExported {len(appointments)} appointments to {EXPORT_PATH}")
+    else:
+        print("No appointments found.")
