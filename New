@@ -1,28 +1,33 @@
-# Check month formatting
-print("\n[DEBUG] Unique Month values:")
-print(df["Month"].unique())
+[DEBUG] Unique Month values:
+['2024-01' '2024-02' '2024-03' '2024-04' '2024-05' '2024-06' '2024-07'
+ '2024-08' '2024-09' '2024-10' '2024-11' '2024-12' '2025-01' '2025-02'
+ '2025-03' '2025-04' '2025-05']
 
-# Check monthly group counts
-monthly_data = df.groupby("Month").agg(
-    Fail_Rate=("Is Fail", "mean"),
-    Order_Count=("Is Fail", "count")
-).reset_index()
+[DEBUG] Monthly Aggregated DataFrame:
+      Month  Fail_Rate  Order_Count
+0   2024-01   0.169540          348
+1   2024-02   0.166667          432
+2   2024-03   0.125541          462
+3   2024-04   0.138067          507
+4   2024-05   0.144543          339
+5   2024-06   0.160804          199
+6   2024-07   0.137143          175
+7   2024-08   0.165877          211
+8   2024-09   0.146919          211
+9   2024-10   0.129771          262
+10  2024-11   0.182609          115
+11  2024-12   0.205128          117
+12  2025-01   0.152542          118
+13  2025-02   0.147059          136
+14  2025-03   0.190909          110
+15  2025-04   0.090909          176
+16  2025-05   0.053333           75
 
-print("\n[DEBUG] Monthly Aggregated DataFrame:")
-print(monthly_data)
+[DEBUG] Unique Order Counts per Month:
+[348 432 462 507 339 199 175 211 262 115 117 118 136 110 176  75]
 
-# Check if Order_Count is constant
-print("\n[DEBUG] Unique Order Counts per Month:")
-print(monthly_data["Order_Count"].unique())
+[DEBUG] Pearson inputs:
+Order Counts: [348, 432, 462, 507, 339, 199, 175, 211, 211, 262, 115, 117, 118, 136, 110, 176, 75]
+Failure Rates: [0.16954022988505746, 0.16666666666666666, 0.12554112554112554, 0.13806706114398423, 0.14454277286135694, 0.16080402010050251, 0.13714285714285715, 0.16587677725118483, 0.14691943127962084, 0.1297709923664122, 0.1826086956521739, 0.20512820512820512, 0.15254237288135594, 0.14705882352941177, 0.19090909090909092, 0.09090909090909091, 0.05333333333333334]  
 
-# Preview correlation inputs
-print("\n[DEBUG] Pearson inputs:")
-print("Order Counts:", monthly_data["Order_Count"].tolist())
-print("Failure Rates:", monthly_data["Fail_Rate"].tolist())
-
-# Check correlation result
-if len(monthly_data["Order_Count"].unique()) > 1:
-    volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
-    print(f"\n[DEBUG] Pearson Correlation: r={volume_corr:.3f}, p={volume_p:.4f}")
-else:
-    print("\n[DEBUG] Pearson Correlation skipped: constant Order_Count")
+[DEBUG] Pearson Correlation: r=-0.012, p=0.9636
