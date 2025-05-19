@@ -1,167 +1,168 @@
 html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Closure Code Dashboard</title>
-      <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-      <script>
-        function switchMainTab(evt, tabId) {{
-          var tabs = document.querySelectorAll('.main-tab');
-          tabs.forEach(function(tab) {{
-            tab.style.display = 'none';
-          }});
-          var buttons = document.querySelectorAll('.maintablink');
-          buttons.forEach(function(button) {{
-            button.classList.remove('active');
-          }});
-          document.getElementById(tabId).style.display = 'block';
-          evt.currentTarget.classList.add('active');
-          window.dispatchEvent(new Event('resize'));
-        }}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Closure Code Dashboard</title>
+  <script src="plotly-latest.min.js"></script> <!-- Local Plotly file -->
 
-        function openTab(evt, tabId) {{
-          var tabs = document.querySelectorAll('.tabcontent');
-          tabs.forEach(function(tab) {{
-            tab.style.display = 'none';
-          }});
-          var buttons = document.querySelectorAll('.tablink');
-          buttons.forEach(function(button) {{
-            button.classList.remove('active');
-          }});
-          document.getElementById(tabId).style.display = 'block';
-          evt.currentTarget.classList.add('active');
-          window.dispatchEvent(new Event('resize'));
-        }}
+  <style>
+    body {{
+        font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: #f9fafc;
+        margin: 0;
+        padding: 20px;
+        color: #333;
+    }}
 
-        // Set initial active tab
-        window.onload = function() {{
-          document.getElementById('globalTab').style.display = 'block';
-          document.querySelector('.maintablink').classList.add('active');
-        }};
-      </script>
-        <style>
-        body {{ 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #eef2f7; 
-            margin: 0; 
-            padding: 30px; 
-            color: #333;
-        }}
+    h1 {{
+        text-align: center;
+        font-size: 30px;
+        color: #222;
+        margin-bottom: 30px;
+        font-weight: 600;
+    }}
 
-        h1 {{
-            text-align: center;
-            font-size: 32px;
-            color: #222;
-            margin-bottom: 40px;
-        }}
+    .main-tab-buttons-wrapper {{
+        max-width: 1100px;
+        margin: 0 auto 30px auto;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+    }}
 
-        h2 {{
-            color: #444;
-            margin-top: 0;
-            font-size: 24px;
-        }}
+    .maintablink {{
+        flex: 1;
+        text-align: center;
+        padding: 14px 0;
+        border: none;
+        font-weight: 600;
+        font-size: 14px;
+        background: linear-gradient(to right, #6a11cb, #2575fc);
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }}
 
-        .main-tab {{
-            display: none; 
-            padding: 25px; 
-            background: white; 
-            border-radius: 16px; 
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1); 
-            margin-top: 30px;
-            max-width: 1000px;
-            margin-left: auto;
-            margin-right: auto;
-        }}
+    .maintablink:hover {{
+        background: linear-gradient(to right, #5a0eb5, #1e63d8);
+    }}
 
-        .tabcontent {{ 
-            display: none; 
-            margin-top: 20px; 
-        }}
+    .active {{
+        background: linear-gradient(to right, #11998e, #38ef7d) !important;
+        color: white;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+    }}
 
-        .tab-buttons-wrapper, .main-tab-buttons-wrapper {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 20px;
-        }}
+    .main-tab {{
+        display: none;
+        background: white;
+        padding: 30px;
+        margin-top: 20px;
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        max-width: 1100px;
+        margin-left: auto;
+        margin-right: auto;
+    }}
 
-        .main-tab-buttons-wrapper {{
-            max-width: 1000px;
-            margin: 0 auto 30px auto;
-            display: flex;
-            justify-content: space-between;
-        }}
+    .tab-buttons-wrapper {{
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+    }}
 
+    .tablink {{
+        padding: 10px 20px;
+        border: none;
+        font-weight: 600;
+        background: #f1f1f1;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }}
+
+    .tablink:hover {{
+        background: #e0e0e0;
+    }}
+
+    .tabcontent {{
+        display: none;
+        margin-top: 20px;
+    }}
+
+    hr {{
+        border: 0;
+        height: 2px;
+        background: #ccc;
+        margin: 30px 0;
+    }}
+
+    @media (max-width: 768px) {{
         .maintablink {{
-            flex: 1;
-            text-align: center;
-            margin: 0;
-            padding: 12px 0;
-            border: none;
-            font-weight: bold;
-            font-size: 15px;
-            background: linear-gradient(to right, #6a11cb, #2575fc);
-            color: white;
-            border-radius: 8px;
-            transition: background 0.3s ease;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }}
-
-        .maintablink:hover {{
-            background: linear-gradient(to right, #5a0eb5, #1e63d8);
-        }}
-
-        .tablink {{
-            margin: 6px;
-            padding: 10px 20px;
-            border: none;
-            font-weight: bold;
-            background: #f1f1f1;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.3s ease;
-        }}
-
-        .tablink:hover {{
-            background: #ddd;
-        }}
-
-        .active {{ 
-            background: linear-gradient(to right, #11998e, #38ef7d) !important;
-            color: white;
-            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
-        }}
-
-        hr {{ 
-            border: 0; 
-            height: 2px; 
-            background: #ccc; 
-            margin: 30px 0; 
-        }}
-
-        @media (max-width: 768px) {{
-            .maintablink {{
             font-size: 13px;
-            padding: 10px 0;
-            }}
-            .main-tab-buttons-wrapper {{
-            flex-direction: column;
-            }}
+            padding: 12px 0;
         }}
-        </style>
-    </head>
-    <body>
-      <h1>Closure Code Dashboard</h1>
-        <div class="main-tab-buttons-wrapper">
-            <button class="maintablink" onclick="switchMainTab(event, 'globalTab')">Global</button>
-            <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual</button>
-            <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
-            <button class="maintablink" onclick="switchMainTab(event, 'lecTab')">LEC</button>
-        </div>
-      {generate_global_tab(df)}
-      {generate_individual_tab(df)}
-      {generate_scheduling_tab()}
-      {generate_lec_tab(df)}
-    </body>
-    </html>
-    """
+        .main-tab-buttons-wrapper {{
+            flex-direction: column;
+        }}
+    }}
+  </style>
+
+  <script>
+    function switchMainTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.main-tab');
+      tabs.forEach(function(tab) {{
+        tab.style.display = 'none';
+      }});
+      var buttons = document.querySelectorAll('.maintablink');
+      buttons.forEach(function(button) {{
+        button.classList.remove('active');
+      }});
+      document.getElementById(tabId).style.display = 'block';
+      evt.currentTarget.classList.add('active');
+      window.dispatchEvent(new Event('resize'));
+    }}
+
+    function openTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.tabcontent');
+      tabs.forEach(function(tab) {{
+        tab.style.display = 'none';
+      }});
+      var buttons = document.querySelectorAll('.tablink');
+      buttons.forEach(function(button) {{
+        button.classList.remove('active');
+      }});
+      document.getElementById(tabId).style.display = 'block';
+      evt.currentTarget.classList.add('active');
+      window.dispatchEvent(new Event('resize'));
+    }}
+
+    window.onload = function() {{
+      document.getElementById('globalTab').style.display = 'block';
+      document.querySelector('.maintablink').classList.add('active');
+    }};
+  </script>
+</head>
+
+<body>
+  <h1>Closure Code Dashboard</h1>
+
+  <div class="main-tab-buttons-wrapper">
+    <button class="maintablink" onclick="switchMainTab(event, 'globalTab')">Global</button>
+    <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual</button>
+    <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+    <button class="maintablink" onclick="switchMainTab(event, 'lecTab')">LEC</button>
+  </div>
+
+  {generate_global_tab(df)}
+  {generate_individual_tab(df)}
+  {generate_scheduling_tab()}
+  {generate_lec_tab(df)}
+</body>
+</html>
+"""
