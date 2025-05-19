@@ -5,18 +5,34 @@ def generate_lec_tab(df):
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    # Pie chart: all LEC appearances
-    lec_counts = df["Revised LEC"].value_counts(dropna=False).reset_index()
-    lec_counts.columns = ["LEC", "Count"]
-    lec_total_pie = px.pie(lec_counts, names="LEC", values="Count", title="All Revised LEC Appearances")
+    # ---- Total LEC Pie (≥1% threshold) ----
+    lec_counts = df["Revised LEC"].value_counts(dropna=False)
+    total_count = lec_counts.sum()
+    lec_filtered = lec_counts[lec_counts / total_count >= 0.01]
+    misc_total = lec_counts[lec_counts / total_count < 0.01].sum()
+    lec_final = lec_filtered.append(pd.Series({"Misc. LECs": misc_total}))
+    lec_total_pie = px.pie(
+        lec_final.reset_index(),
+        names="index",
+        values="Revised LEC",
+        title="All Revised LEC Appearances (≥1%)"
+    )
     lec_total_pie.update_layout(height=300)
     lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
 
-    # Pie chart: only LECs associated with failures
+    # ---- Fail LEC Pie (≥1% of failures) ----
     fail_df = df[df["Is Fail"] == True]
-    lec_fail_counts = fail_df["Revised LEC"].value_counts(dropna=False).reset_index()
-    lec_fail_counts.columns = ["LEC", "Count"]
-    lec_fail_pie = px.pie(lec_fail_counts, names="LEC", values="Count", title="Revised LEC Appearances on Failures")
+    lec_fail_counts = fail_df["Revised LEC"].value_counts(dropna=False)
+    total_fails = lec_fail_counts.sum()
+    lec_fail_filtered = lec_fail_counts[lec_fail_counts / total_fails >= 0.01]
+    misc_fail = lec_fail_counts[lec_fail_counts / total_fails < 0.01].sum()
+    lec_fail_final = lec_fail_filtered.append(pd.Series({"Misc. LECs": misc_fail}))
+    lec_fail_pie = px.pie(
+        lec_fail_final.reset_index(),
+        names="index",
+        values="Revised LEC",
+        title="Revised LEC Appearances on Failures (≥1%)"
+    )
     lec_fail_pie.update_layout(height=300)
     lec_fail_html = lec_fail_pie.to_html(full_html=False, include_plotlyjs=False)
 
