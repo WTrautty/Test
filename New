@@ -123,6 +123,7 @@ def generate_failure_analysis_tab(df):
     projection_fig = go.Figure()
     buttons = []
     visibility_matrix = []
+    annotations = []
     titles = []
 
     for i, (lec, lec_rate) in enumerate(lec_failure_rates.items()):
@@ -150,29 +151,37 @@ def generate_failure_analysis_tab(df):
         new_rate = (projected.sum() / actual_monthly["Total_Orders"].sum()) * 100
         old_rate = (actual_monthly["Actual_Failures"].sum() / actual_monthly["Total_Orders"].sum()) * 100
         diff = old_rate - new_rate
-        titles.append(
-            f"Projected vs. Actual Failures if All Orders Used {lec}<br>Total Orders Saved: {total_saved} | New Failure Rate: {new_rate:.2f}% | Difference: {diff:.2f}%"
-        )
-
-    buttons = [
-        dict(
-            label=lec,
-            method="update",
-            args=[
-                {"visible": visibility_matrix[i]},
-                {"title": titles[i]}
-            ]
-        )
-        for i, lec in enumerate(lec_failure_rates.index)
-    ]
+        annotation_text = f"Total Saved: {total_saved}\\nNew Rate: {new_rate:.2f}%\\nDifference: {diff:.2f}%"
+        annotations.append({
+            "text": annotation_text,
+            "x": 1.05,
+            "y": 0.5,
+            "xref": "paper",
+            "yref": "paper",
+            "showarrow": False,
+            "align": "left",
+            "font": {"size": 12},
+            "visible": (i == 0)
+        })
+        titles.append(f"Projected vs. Actual Failures if All Orders Used {lec}")
 
     projection_fig.update_layout(
         title=titles[0],
         yaxis_title="Number of Failures",
         xaxis_title="Month",
         height=450,
+        annotations=[a for a in annotations if a["visible"]],
         updatemenus=[{
-            "buttons": buttons,
+            "buttons": [
+                dict(
+                    label=lec,
+                    method="update",
+                    args=[
+                        {"visible": visibility_matrix[i]},
+                        {"title": titles[i], "annotations": [annotations[i]]}
+                    ]
+                ) for i, lec in enumerate(lec_failure_rates.index)
+            ],
             "direction": "down",
             "showactive": True,
             "x": 1,
