@@ -32,7 +32,7 @@ def generate_failure_analysis_tab(df):
     owner_min_dim = min(owner_contingency.shape) - 1
     owner_cramers_v = np.sqrt(owner_chi2 / (owner_n * owner_min_dim)) if owner_min_dim > 0 else 0
 
-    # === Pearson correlation between monthly order volume and failure rate ===
+    # === Pearson correlation: monthly order volume vs failure rate ===
     monthly_data = df.groupby("Month").agg(
         Fail_Rate=("Is Fail", "mean"),
         Order_Count=("Is Fail", "count")
@@ -41,7 +41,7 @@ def generate_failure_analysis_tab(df):
     if len(monthly_data["Order_Count"].unique()) > 1:
         volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
     else:
-        volume_corr, volume_p = 0, 1  # Avoid undefined correlation
+        volume_corr, volume_p = 0, 1
 
     volume_annotation = (
         f"Pearson r = {volume_corr:.3f}<br>p = {volume_p:.2e}<br><i>(Weak & Not Significant)</i>"
@@ -49,7 +49,7 @@ def generate_failure_analysis_tab(df):
         f"Pearson r = {volume_corr:.3f}<br>p = {volume_p:.2e}"
     )
 
-    # === Bar: Correlation Summary ===
+    # === Correlation Summary Bar Chart ===
     fig = go.Figure(data=[
         go.Bar(
             x=["Revised LEC", "Task Owner", "Monthly Volume"],
@@ -91,12 +91,12 @@ def generate_failure_analysis_tab(df):
         yaxis=dict(title="Failure Rate (%)", range=[0, 100]),
         yaxis2=dict(title="Order Volume", overlaying="y", side="right"),
         xaxis=dict(title="Month"),
-        legend=dict(x=0.01, y=0.99),
+        legend=dict(x=1, y=1, xanchor='right', yanchor='top'),
         height=400
     )
     monthly_line_html = monthly_line.to_html(full_html=False, include_plotlyjs=False)
 
-    # === Bar: Task Owner Failure Rates ===
+    # === Horizontal Bar: Task Owner Failure Rates ===
     owner_failure_rate = df.groupby("Task Owner")["Is Fail"].mean().sort_values(ascending=True) * 100
     owner_fail_bar = go.Figure(go.Bar(
         x=owner_failure_rate.values,
@@ -113,7 +113,37 @@ def generate_failure_analysis_tab(df):
     )
     owner_fail_bar_html = owner_fail_bar.to_html(full_html=False, include_plotlyjs=False)
 
-    # === Full HTML Return ===
+    # === Optimization Impact Bar Chart ===
+    lec_failure_rates = df.groupby("Revised LEC")["Is Fail"].mean()
+    owner_failure_rates = df.groupby("Task Owner")["Is Fail"].mean()
+
+    best_lec = lec_failure_rates.idxmin()
+    best_lec_rate = lec_failure_rates.min()
+
+    best_owner = owner_failure_rates.idxmin()
+    best_owner_rate = owner_failure_rates.min()
+
+    actual_failure_rate = df["Is Fail"].mean()
+    lec_diff = actual_failure_rate - best_lec_rate
+    owner_diff = actual_failure_rate - best_owner_rate
+
+    diff_fig = go.Figure(data=[
+        go.Bar(
+            x=["LEC Optimization", "Task Owner Optimization"],
+            y=[lec_diff * 100, owner_diff * 100],
+            text=[f"{lec_diff*100:.2f}%", f"{owner_diff*100:.2f}%"],
+            textposition="auto",
+            marker_color=["#1abc9c", "#9b59b6"]
+        )
+    ])
+    diff_fig.update_layout(
+        title="Projected Reduction in Failure Rate from Optimal LEC or Task Owner",
+        yaxis_title="Failure Rate Reduction (%)",
+        height=400
+    )
+    diff_fig_html = diff_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Return HTML for Tab ===
     return f"""
     <div id="failureTab" class="main-tab">
       <h2>Failure Analysis</h2>
@@ -129,5 +159,9 @@ def generate_failure_analysis_tab(df):
       <hr>
       <h3>Failure Rate by Task Owner</h3>
       {owner_fail_bar_html}
+
+      <hr>
+      <h3>Projected Failure Rate Reduction if Optimized</h3>
+      {diff_fig_html}
     </div>
     """
