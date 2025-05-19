@@ -113,37 +113,38 @@ def generate_failure_analysis_tab(df):
     )
     owner_fail_bar_html = owner_fail_bar.to_html(full_html=False, include_plotlyjs=False)
 
-    # === Optimization Impact Bar Chart ===
+    # === Optimization Projection Bar Chart (Static Best) ===
     lec_failure_rates = df.groupby("Revised LEC")["Is Fail"].mean()
     owner_failure_rates = df.groupby("Task Owner")["Is Fail"].mean()
 
-    best_lec = lec_failure_rates.idxmin()
-    best_lec_rate = lec_failure_rates.min()
-
-    best_owner = owner_failure_rates.idxmin()
-    best_owner_rate = owner_failure_rates.min()
-
     actual_failure_rate = df["Is Fail"].mean()
+
+    best_lec = "Frontier"  # 👈 Static selection
+    best_owner = "Alice"   # 👈 Static selection
+
+    best_lec_rate = lec_failure_rates.get(best_lec, actual_failure_rate)
+    best_owner_rate = owner_failure_rates.get(best_owner, actual_failure_rate)
+
     lec_diff = actual_failure_rate - best_lec_rate
     owner_diff = actual_failure_rate - best_owner_rate
 
     diff_fig = go.Figure(data=[
         go.Bar(
-            x=["LEC Optimization", "Task Owner Optimization"],
+            x=[f"All Orders as {best_lec}", f"All Orders as {best_owner}"],
             y=[lec_diff * 100, owner_diff * 100],
-            text=[f"{lec_diff*100:.2f}%", f"{owner_diff*100:.2f}%"],
+            text=[f"{lec_diff * 100:.2f}%", f"{owner_diff * 100:.2f}%"],
             textposition="auto",
             marker_color=["#1abc9c", "#9b59b6"]
         )
     ])
     diff_fig.update_layout(
-        title="Projected Reduction in Failure Rate from Optimal LEC or Task Owner",
+        title="Projected Reduction in Failure Rate from Selecting Preferred LEC or Task Owner",
         yaxis_title="Failure Rate Reduction (%)",
         height=400
     )
     diff_fig_html = diff_fig.to_html(full_html=False, include_plotlyjs=False)
 
-    # === Return HTML for Tab ===
+    # === Return Assembled Tab HTML ===
     return f"""
     <div id="failureTab" class="main-tab">
       <h2>Failure Analysis</h2>
