@@ -48,12 +48,12 @@ def generate_lec_tab(df):
     )
     lec_fail_fig.update_traces(rotation=90, direction="clockwise", sort=False)
 
-    # === Step 3: Collect all unique LECs and assign consistent colors ===
+    # === Step 3: Color map for all LECs ===
     all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
     palette = qualitative.Alphabet
     lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
 
-    # === Step 4: Apply colors to the pies ===
+    # === Step 4: Apply Colors to Pie Charts ===
     def apply_colors(fig, df):
         fig.update_traces(
             marker=dict(colors=[lec_color_map[lec] for lec in df["LEC"]])
@@ -63,7 +63,7 @@ def generate_lec_tab(df):
     apply_colors(lec_total_fig, lec_total_df)
     apply_colors(lec_fail_fig, lec_fail_df)
 
-    # === Step 5: Create failure rate bar chart ===
+    # === Step 5: Failure Rate Bar Chart ===
     fail_counts = df[df["Is Fail"]].groupby("Revised LEC").size()
     total_counts = df.groupby("Revised LEC").size()
     failure_rate = (fail_counts / total_counts).fillna(0) * 100
@@ -87,7 +87,32 @@ def generate_lec_tab(df):
     )
     lec_fail_bar_html = fail_bar_fig.to_html(full_html=False, include_plotlyjs=False)
 
-    # === Step 6: Combine HTML
+    # === Step 6: Usage vs. Failure Rate Scatter ===
+    total_sum = total_counts.sum()
+    usage_rate = (total_counts / total_sum * 100).fillna(0)
+    scatter_df = pd.DataFrame({
+        "LEC": usage_rate.index,
+        "Usage Rate": usage_rate.values,
+        "Failure Rate": failure_rate.reindex(usage_rate.index).fillna(0).values,
+        "Total Count": total_counts.values,
+        "Color": [lec_color_map.get(lec, "#888888") for lec in usage_rate.index]
+    })
+    scatter_df = scatter_df[scatter_df["LEC"].isin(all_lecs)]
+
+    usage_scatter_fig = px.scatter(
+        scatter_df,
+        x="Usage Rate",
+        y="Failure Rate",
+        size="Total Count",
+        color="LEC",
+        color_discrete_map=lec_color_map,
+        hover_name="LEC",
+        title="Usage Rate vs. Failure Rate per LEC"
+    )
+    usage_scatter_fig.update_layout(height=600)
+    lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Step 7: Export HTML
     lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
     lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
@@ -97,5 +122,6 @@ def generate_lec_tab(df):
       <hr>{lec_total_html}
       <hr>{lec_fail_html}
       <hr>{lec_fail_bar_html}
+      <hr>{lec_usage_scatter_html}
     </div>
     """
