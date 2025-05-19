@@ -1,238 +1,26 @@
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from pandas.tseries.offsets import MonthEnd
+Try using .loc[row_indexer,col_indexer] = value instead
 
-# === Configuration ===
-EXCEL_PATH = r"C:\Users\Downloads\data (5).xlsx"
-EXPORT_HTML = r"C:\Users\Dashboards.html"
-TAB_MIN_ENTRIES = 100
-TOP_PERFORMER = "Davis, Walter (Walter)"
-TOP_LABEL = "Top Performer"
-ADDITIONAL_EXCEL = r"C:\Users\Auditing Script\Outlook_Calendars.xlsx"
+See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
 
+c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py:167: FutureWarning:
 
-def generate_global_tab(df):
-    # Pie chart: closure code distribution
-    pie_df = df['Closure Code 1'].value_counts(normalize=True).mul(100).reset_index()
-    pie_df.columns = ['Closure Code', 'Percentage']
-    pie = px.pie(pie_df, names='Closure Code', values='Percentage',
-                 title="Global Closure Code Distribution")
-    pie.update_layout(height=300)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=False)
+'M' is deprecated and will be removed in a future version, please use 'ME' instead.
 
-    # Closed orders line
-    closed = df.groupby(df['Completed Date'].dt.to_period('M').astype(str)).size().reset_index(name='Closed Orders')
-    closed_line = px.line(closed, x='Completed Date', y='Closed Orders', title="Global Closed Orders Per Month")
-    closed_html = closed_line.to_html(full_html=False, include_plotlyjs=False)
-
-    # Failure rate line
-    df['Is Fail'] = df['Closure Code 1'].str.lower().str.contains('fail')
-    fail = df.groupby(df['Month'])['Is Fail'].mean().mul(100).reset_index(name='Fail %')
-    fail_line = px.line(fail, x='Month', y='Fail %', title="Global Failure Rate per Month")
-    fail_line.update_layout(yaxis=dict(range=[0, 100]))
-    fail_html = fail_line.to_html(full_html=False, include_plotlyjs=True)
-
-    return f"""
-    <div id="globalTab" class="main-tab" style="display:block">
-      <h2>Global Statistics</h2>
-      <hr>{fail_html}
-      <hr>{pie_html}
-      <hr>{closed_html}
-    </div>
-    """
-
-
-def generate_individual_tab(df):
-    owner_counts = df['Task Owner'].value_counts()
-    valid = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
-    top_data = df[df['Task Owner'] == TOP_PERFORMER]
-    global_avg = (
-        df.groupby('Month').size().groupby(level=0).mean()
-        .reset_index(name='Average')
-    )
-
-    buttons = []
-    contents = []
-    for i, owner in enumerate(valid):
-        owner_df = df[df['Task Owner'] == owner]
-        div_id = f"tab{i}"
-        badge = " 🏆" if owner == TOP_PERFORMER else ""
-
-        # Owner closure pie
-        op = owner_df['Closure Code 1'].value_counts(normalize=True).mul(100)
-        tp = top_data['Closure Code 1'].value_counts(normalize=True).mul(100)
-        codes = sorted(set(op.index).union(tp.index))
-        op = op.reindex(codes, fill_value=0)
-        tp = tp.reindex(codes, fill_value=0)
-        pie_df = pd.DataFrame({
-            'Closure Code': codes,
-            'Owner %': op.values
-        })
-        pie = px.pie(pie_df, names='Closure Code', values='Owner %',
-                     title=f"{owner}'s Closure Code Distribution")
-        pie.update_layout(height=300)
-        pie_html = pie.to_html(full_html=False, include_plotlyjs=(i == 0))
-
-        # Diverging bar
-        diff = (op - tp).reset_index()
-        diff.columns = ['Closure Code', 'Delta']
-        diff = diff.sort_values('Delta')
-        colors = [
-            ('green' if d >= 0 else 'crimson')
-            if 'successful' in c.lower()
-            else ('green' if d < 0 else 'crimson')
-            if 'fail' in c.lower()
-            else 'blue'
-            for c, d in zip(diff['Closure Code'], diff['Delta'])
-        ]
-        bar = go.Figure(go.Bar(
-            y=diff['Closure Code'],
-            x=diff['Delta'],
-            orientation='h',
-            marker_color=colors
-        ))
-        bar.update_layout(title=f"{owner} vs {TOP_LABEL} – Closure Code Δ", xaxis=dict(range=[-20,20]), height=300)
-        bar_html = bar.to_html(full_html=False, include_plotlyjs=False)
-
-        # Completed tasks line
-        own_monthly = owner_df.groupby('Month').size().reset_index(name='Completed')
-        top_monthly = top_data.groupby('Month').size().reset_index(name='Completed')
-        line = go.Figure()
-        line.add_trace(go.Scatter(x=own_monthly['Month'], y=own_monthly['Completed'], name=owner))
-        line.add_trace(go.Scatter(x=top_monthly['Month'], y=top_monthly['Completed'],
-                                  name=TOP_LABEL, line=dict(dash='dash')))
-        line.add_trace(go.Scatter(x=global_avg['Month'], y=global_avg['Average'],
-                                  name='Global Avg', line=dict(dash='dot')))
-        line.update_layout(title=f"{owner} – Monthly Completed Tasks", height=300)
-        line_html = line.to_html(full_html=False, include_plotlyjs=False)
-
-        # Fail rate comparison
-        of = owner_df['Is Fail'] = owner_df['Closure Code 1'].str.lower().str.contains('fail')
-        tf = top_data['Is Fail'] = top_data['Closure Code 1'].str.lower().str.contains('fail')
-        ofail = owner_df.groupby('Month')['Is Fail'].mean().mul(100).reset_index(name='Fail %')
-        tfail = top_data.groupby('Month')['Is Fail'].mean().mul(100).reset_index(name='Top Fail %')
-        gf = df.groupby('Month')['Is Fail'].mean().mul(100).reset_index(name='Global Fail %')
-        ff = ofail.merge(tfail, on='Month', how='outer').merge(gf, on='Month', how='outer')
-        fail_fig = go.Figure()
-        fail_fig.add_trace(go.Scatter(x=ff['Month'], y=ff['Fail %'], name=owner))
-        fail_fig.add_trace(go.Scatter(x=ff['Month'], y=ff['Top Fail %'], name=TOP_LABEL, line=dict(dash='dash')))
-        fail_fig.add_trace(go.Scatter(x=ff['Month'], y=ff['Global Fail %'], name='Global Avg', line=dict(dash='dot')))
-        fail_fig.update_layout(title=f"{owner} – % Fail Rate", yaxis=dict(range=[0,100]), height=300)
-        fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
-
-        buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
-        contents.append(f"""
-        <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'};">
-          {pie_html}
-          <hr>{bar_html}
-          <hr>{line_html}
-          <hr>{fail_html}
-        </div>
-        """)
-
-    return f"""
-    <div id="individualTab" class="main-tab" style="display:none">
-      <h2>Individual Reports</h2>
-      <div class="tab-buttons-wrapper">{''.join(buttons)}</div>
-      {''.join(contents)}
-    </div>
-    """
-
-
-def generate_scheduling_tab():
-    xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine='openpyxl')
-    records = []
-    for name, sheet in xls.items():
-        if "End" not in sheet: 
-            continue
-        s = sheet.dropna(subset=['End']).copy()
-        s['End'] = pd.to_datetime(s['End'], errors='coerce')
-        s = s.dropna(subset=['End'])
-        s['Month'] = s['End'].dt.to_period('M').astype(str)
-        counts = s.groupby('Month').size().reset_index(name='Count')
-        counts['Tab'] = name
-        records.append(counts)
-    sched = pd.concat(records)
-
-    avg_tab = px.bar(sched.groupby('Tab')['Count'].mean().reset_index(),
-                     x='Tab', y='Count', title="Avg Rows per Tab per Month")
-    total = px.line(sched.groupby('Month')['Count'].sum().reset_index(name='Total Rows'),
-                    x='Month', y='Total Rows', title="Total Rows Across All Tabs")
-    # avg per workday
-    wd = []
-    for m, grp in sched.groupby('Month'):
-        total_rows = grp['Count'].sum()
-        y, mm = map(int, m.split('-'))
-        days = pd.date_range(start=f"{y}-{mm}-01", periods=1, freq='M').days_in_month
-        workdays = pd.date_range(f"{y}-{mm}-01", periods=days, freq='B')
-        wd.append({'Month': m, 'Avg Workday': total_rows / len(workdays)})
-    wd_df = pd.DataFrame(wd)
-    workday = px.bar(wd_df, x='Month', y='Avg Workday', title="Avg Rows per Workday")
-
-    return f"""
-    <div id="schedulingTab" class="main-tab" style="display:none">
-      <h2>Scheduling Dashboard</h2>
-      <hr>{avg_tab.to_html(full_html=False, include_plotlyjs=True)}
-      <hr>{total.to_html(full_html=False, include_plotlyjs=False)}
-      <hr>{workday.to_html(full_html=False, include_plotlyjs=False)}
-    </div>
-    """
-
-
-def main():
-    # load and prep
-    df = pd.read_excel(EXCEL_PATH, engine='openpyxl')
-    df = df[['Task Owner', 'Closure Code 1', 'Completed Date']].dropna()
-    df['Completed Date'] = pd.to_datetime(df['Completed Date'], errors='coerce')
-    df = df.dropna(subset=['Completed Date'])
-    df['Month'] = df['Completed Date'].dt.to_period('M').astype(str)
-
-    # build
-    global_html = generate_global_tab(df)
-    individual_html = generate_individual_tab(df)
-    scheduling_html = generate_scheduling_tab()
-
-    # assemble full page
-    html = f"""
-    <html><head>
-      <title>Closure Code Dashboard</title>
-      <script>
-        function switchMainTab(evt, tabId) {{
-          document.querySelectorAll('.main-tab').forEach(t => t.style.display='none');
-          evt.currentTarget.classList.add('active');
-          document.getElementById(tabId).style.display='block';
-        }}
-        function openTab(evt, tabId) {{
-          document.querySelectorAll('.tabcontent').forEach(t => t.style.display='none');
-          evt.currentTarget.classList.add('active');
-          document.getElementById(tabId).style.display='block';
-          setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
-        }}
-      </script>
-      <style>
-        body {{ font-family: sans-serif; background:#f9f9f9; }}
-        .maintablink, .tablink {{ margin:4px; padding:8px 16px; }}
-        .active {{ background:#bbb; }}
-        .main-tab {{ display:none; padding:20px; }}
-      </style>
-    </head><body>
-      <h1>Closure Code Dashboard</h1>
-      <div>
-        <button class="maintablink active" onclick="switchMainTab(event,'globalTab')">Global</button>
-        <button class="maintablink" onclick="switchMainTab(event,'individualTab')">Individual</button>
-        <button class="maintablink" onclick="switchMainTab(event,'schedulingTab')">Scheduling</button>
-      </div>
-      {global_html}
-      {individual_html}
-      {scheduling_html}
-    </body></html>
-    """
-
-    with open(EXPORT_HTML, 'w', encoding='utf-8') as f:
-        f.write(html)
-    print(f"✅ Dashboard created at: {EXPORT_HTML}")
-
-
-if __name__ == "__main__":
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 238, in <module>
     main()
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 194, in main
+    scheduling_html = generate_scheduling_tab()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 168, in generate_scheduling_tab
+    workdays = pd.date_range(f"{y}-{mm}-01", periods=days, freq='B')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\indexes\datetimes.py", line 1008, in date_range
+    dtarr = DatetimeArray._generate_range(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\arrays\datetimes.py", line 412, in _generate_range
+    periods = dtl.validate_periods(periods)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\arrays\datetimelike.py", line 2504, in validate_periods
+    raise TypeError(f"periods must be a number, got {periods}")
+TypeError: periods must be a number, got Index([31], dtype='int32')
