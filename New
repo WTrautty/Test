@@ -125,20 +125,26 @@ def generate_failure_analysis_tab(df):
     actual_monthly["Projected Failures"] = actual_monthly["Total_Orders"] * best_lec_rate
     actual_monthly["Orders Saved"] = actual_monthly["Actual_Failures"] - actual_monthly["Projected Failures"]
 
-    line_fig = go.Figure()
-    line_fig.add_trace(go.Scatter(
+    projection_fig = go.Figure()
+    projection_fig.add_trace(go.Scatter(
         x=actual_monthly["Month"],
-        y=actual_monthly["Orders Saved"],
+        y=actual_monthly["Actual_Failures"],
         mode="lines+markers",
-        name=f"Orders Saved if LEC = {best_lec}"
+        name="Actual Failures"
     ))
-    line_fig.update_layout(
-        title=f"Orders Saved Per Month by Choosing {best_lec}",
-        yaxis_title="Orders Saved",
+    projection_fig.add_trace(go.Scatter(
+        x=actual_monthly["Month"],
+        y=actual_monthly["Projected Failures"],
+        mode="lines+markers",
+        name=f"Projected Failures (if LEC = {best_lec})"
+    ))
+    projection_fig.update_layout(
+        title=f"Projected vs. Actual Failures if All Orders Used {best_lec}",
+        yaxis_title="Number of Failures",
         xaxis_title="Month",
         height=400
     )
-    line_fig_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
+    projection_fig_html = projection_fig.to_html(full_html=False, include_plotlyjs=False)
 
     total_saved = int(actual_monthly["Orders Saved"].sum())
 
@@ -159,8 +165,8 @@ def generate_failure_analysis_tab(df):
       {owner_fail_bar_html}
 
       <hr>
-      <h3>Orders Saved Over Time if All Orders Used {best_lec}</h3>
+      <h3>Projected vs. Actual Failures if All Orders Used {best_lec}</h3>
       <p>Total Orders Saved: <strong>{total_saved}</strong></p>
-      {line_fig_html}
+      {projection_fig_html}
     </div>
     """
