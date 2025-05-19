@@ -1,10 +1,20 @@
-for month_str, grp in sched.groupby("Month"):
-    total = grp["Count"].sum()
-    try:
-        year, mon = map(int, month_str.split("-"))
-        start_date = pd.Timestamp(f"{year}-{mon:02d}-01")
-        end_date = start_date + pd.offsets.MonthEnd(1)
-        workdays = pd.date_range(start=start_date, end=end_date, freq="B").size
-        workday_data.append({"Month": month_str, "Avg Per Workday": total / workdays})
-    except ValueError:
-        continue
+# Prep base figure
+total_monthly_fig = go.Figure()
+
+# Add total line
+total_df = sched.groupby("Month")["Count"].sum().reset_index(name="Total Rows")
+total_monthly_fig.add_trace(
+    go.Scatter(x=total_df["Month"], y=total_df["Total Rows"], name="Total", line=dict(width=3))
+)
+
+# Add each individual tab line
+for tab, group in sched.groupby("Tab"):
+    monthly = group.groupby("Month")["Count"].sum().reset_index()
+    total_monthly_fig.add_trace(
+        go.Scatter(x=monthly["Month"], y=monthly["Count"], name=tab, line=dict(dash="dot"))
+    )
+
+total_monthly_fig.update_layout(
+    title="Total Rows Across All Tabs and Per Calendar",
+    height=300
+)
