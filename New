@@ -1,5 +1,16 @@
-    usage_mean = scatter_df["Usage Rate"].mean()
-    fail_mean = scatter_df["Failure Rate"].mean()
+    # === Step 6: Usage vs. Failure Rate Scatter ===
+    total_sum = total_counts.sum()
+    usage_rate = (total_counts / total_sum * 100).fillna(0)
+    scatter_df = pd.DataFrame({
+        "LEC": usage_rate.index,
+        "Usage Rate": (usage_rate.round()).astype(int),
+        "Failure Rate": (failure_rate.reindex(usage_rate.index).fillna(0).round()).astype(int),
+        "Total Count": total_counts.values
+    })
+    scatter_df = scatter_df[scatter_df["LEC"].isin(all_lecs)]
+
+    usage_mean = 12.5
+    fail_mean = 20
 
     usage_scatter_fig = px.scatter(
         scatter_df,
@@ -9,24 +20,35 @@
         color="LEC",
         color_discrete_map=lec_color_map,
         hover_name="LEC",
+        hover_data={
+            "Usage Rate": True,
+            "Failure Rate": True,
+            "Total Count": True
+        },
         title="Usage Rate vs. Failure Rate per LEC"
+    )
+
+    # Format hover labels with % symbols
+    usage_scatter_fig.update_traces(
+        hovertemplate=(
+            "<b>%{hovertext}</b><br><br>" +
+            "Usage Rate: %{x}%<br>" +
+            "Failure Rate: %{y}%<br>" +
+            "Total Count: %{marker.size}<extra></extra>"
+        )
     )
 
     usage_scatter_fig.update_layout(
         height=600,
+        xaxis=dict(title="Usage Rate (%)", range=[0, 25]),
+        yaxis=dict(title="Failure Rate (%)", range=[0, 40]),
         shapes=[
-            # Vertical line at mean usage
             dict(
-                type="line",
-                x0=usage_mean, x1=usage_mean,
-                y0=0, y1=100,
+                type="line", x0=usage_mean, x1=usage_mean, y0=0, y1=40,
                 line=dict(color="gray", width=2, dash="dash")
             ),
-            # Horizontal line at mean failure rate
             dict(
-                type="line",
-                x0=0, x1=100,
-                y0=fail_mean, y1=fail_mean,
+                type="line", x0=0, x1=25, y0=fail_mean, y1=fail_mean,
                 line=dict(color="gray", width=2, dash="dash")
             )
         ],
@@ -37,3 +59,5 @@
             dict(x=usage_mean * 1.5, y=fail_mean * 1.5, text="High usage, High failure", showarrow=False),
         ]
     )
+
+    lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
