@@ -2,7 +2,7 @@ def generate_lec_tab(df):
     if "Revised LEC" not in df.columns:
         return "<div id='lecTab' class='main-tab'><h2>'Revised LEC' column not found in data.</h2></div>"
 
-    import hashlib  # Ensure this is also at the top of your script
+    import hashlib  # required for consistent hashing
 
     def get_color_from_name(name, palette):
         """Hash the LEC name to a stable color from the palette."""
@@ -20,6 +20,7 @@ def generate_lec_tab(df):
     lec_final = pd.concat([lec_filtered, pd.Series({"Misc. LECs": misc_total})])
     lec_total_df = lec_final.reset_index()
     lec_total_df.columns = ["LEC", "Count"]
+    lec_total_df = lec_total_df.sort_values("Count", ascending=False)
 
     # --- Fail LEC Pie (≥1%) ---
     fail_df = df[df["Is Fail"] == True]
@@ -30,14 +31,13 @@ def generate_lec_tab(df):
     lec_fail_final = pd.concat([lec_fail_filtered, pd.Series({"Misc. LECs": misc_fail})])
     lec_fail_df = lec_fail_final.reset_index()
     lec_fail_df.columns = ["LEC", "Count"]
+    lec_fail_df = lec_fail_df.sort_values("Count", ascending=False)
 
-    # --- Assign consistent color map + order ---
-    all_lecs = set(map(str, lec_total_df["LEC"])).union(map(str, lec_fail_df["LEC"]))
-    all_lecs = sorted(all_lecs)  # consistent display order
-
+    # --- Combine for consistent ordering + color mapping ---
+    ordered_lecs = list(lec_total_df["LEC"]) + [lec for lec in lec_fail_df["LEC"] if lec not in lec_total_df["LEC"]]
     from plotly.colors import qualitative
     palette = qualitative.Plotly
-    lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
+    lec_color_map = {lec: get_color_from_name(lec, palette) for lec in ordered_lecs}
 
     # --- Total Pie Chart ---
     lec_total_pie = px.pie(
@@ -46,7 +46,7 @@ def generate_lec_tab(df):
         values="Count",
         title="All Revised LEC Appearances (≥1%)",
         color_discrete_map=lec_color_map,
-        category_orders={"LEC": all_lecs}
+        category_orders={"LEC": ordered_lecs}
     )
     lec_total_pie.update_layout(height=300)
     lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
@@ -58,7 +58,7 @@ def generate_lec_tab(df):
         values="Count",
         title="Revised LEC Appearances on Failures (≥1%)",
         color_discrete_map=lec_color_map,
-        category_orders={"LEC": all_lecs}
+        category_orders={"LEC": ordered_lecs}
     )
     lec_fail_pie.update_layout(height=300)
     lec_fail_html = lec_fail_pie.to_html(full_html=False, include_plotlyjs=False)
