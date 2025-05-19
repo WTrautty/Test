@@ -20,7 +20,7 @@ def generate_lec_tab(df):
     lec_final = pd.concat([lec_filtered, pd.Series({"Misc. LECs": misc_total})])
     lec_total_df = lec_final.reset_index()
     lec_total_df.columns = ["LEC", "Count"]
-    lec_total_df = lec_total_df.sort_values("Count", ascending=False)
+    lec_total_df = lec_total_df.sort_values("Count", ascending=False)  # descending order
 
     # --- Fail LEC Pie (≥1%) ---
     fail_df = df[df["Is Fail"] == True]
@@ -48,7 +48,19 @@ def generate_lec_tab(df):
         color_discrete_map=lec_color_map,
         category_orders={"LEC": ordered_lecs}
     )
-    lec_total_pie.update_layout(height=300)
+    lec_total_pie.update_layout(
+        height=300,
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        showlegend=True,
+        margin=dict(t=50, b=20),
+        legend_title_text="LEC",
+        legend_orientation="v",
+        legend=dict(x=1.02),
+        # 👇 force top-left start
+        piecolorway=palette,
+        startangle=90
+    )
     lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
 
     # --- Fail Pie Chart ---
@@ -60,7 +72,17 @@ def generate_lec_tab(df):
         color_discrete_map=lec_color_map,
         category_orders={"LEC": ordered_lecs}
     )
-    lec_fail_pie.update_layout(height=300)
+    lec_fail_pie.update_layout(
+        height=300,
+        uniformtext_minsize=10,
+        uniformtext_mode='hide',
+        showlegend=True,
+        margin=dict(t=50, b=20),
+        legend_title_text="LEC",
+        legend_orientation="v",
+        legend=dict(x=1.02),
+        startangle=90  # 👈 force top-left start
+    )
     lec_fail_html = lec_fail_pie.to_html(full_html=False, include_plotlyjs=False)
 
     return f"""
