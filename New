@@ -1,67 +1,46 @@
 def generate_failure_analysis_tab(df):
-    from scipy.stats import pearsonr
+    import pandas as pd
+    import numpy as np
+    from scipy.stats import chi2_contingency
     import plotly.graph_objects as go
 
-    # Validate required columns
-    if "Revised LEC" not in df.columns or "Task Owner" not in df.columns:
+    if "Revised LEC" not in df.columns or "Closure Code 1" not in df.columns:
         return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
 
     df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
     df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
-    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
 
-    # === Step 1: Group-level failure rates and category frequency ===
-    lec_failure_rate = df.groupby("Revised LEC")["Is Fail"].mean()
-    lec_freq = df["Revised LEC"].value_counts(normalize=True).reindex(lec_failure_rate.index)
+    # Create contingency table
+    contingency = pd.crosstab(df["Revised LEC"], df["Is Fail"])
 
-    owner_failure_rate = df.groupby("Task Owner")["Is Fail"].mean()
-    owner_freq = df["Task Owner"].value_counts(normalize=True).reindex(owner_failure_rate.index)
+    # Compute Chi-squared and Cramér's V
+    chi2, p, dof, expected = chi2_contingency(contingency)
+    n = contingency.sum().sum()
+    min_dim = min(contingency.shape) - 1
+    cramers_v = np.sqrt(chi2 / (n * min_dim)) if min_dim > 0 else 0
 
-    # === Step 2: Pearson correlation between frequency and failure rate ===
-    lec_corr, lec_pval = pearsonr(lec_freq, lec_failure_rate)
-    owner_corr, owner_pval = pearsonr(owner_freq, owner_failure_rate)
-
-    # === Step 3: Correlation coefficient display ===
-    corr_fig = go.Figure(data=[
+    # Display in bar format
+    fig = go.Figure(data=[
         go.Bar(
-            x=["Revised LEC", "Task Owner"],
-            y=[lec_corr, owner_corr],
-            text=[
-                f"Pearson r = {lec_corr:.3f}<br>p = {lec_pval:.4f}",
-                f"Pearson r = {owner_corr:.3f}<br>p = {owner_pval:.4f}"
-            ],
+            x=["Cramér's V"],
+            y=[cramers_v],
+            text=[f"V = {cramers_v:.3f}<br>p = {p:.2e}"],
             textposition="auto",
-            marker_color=["#1f77b4", "#ff7f0e"]
+            marker_color="#3498db"
         )
     ])
-    corr_fig.update_layout(
-        title="Pearson Correlation: Frequency vs. Failure Rate",
-        yaxis_title="Pearson Correlation Coefficient (r)",
-        yaxis=dict(range=[-1, 1]),
-        height=400
-    )
-
-    # === Step 4: Top failure-prone LECs chart ===
-    lec_top_failures = lec_failure_rate.sort_values(ascending=False).head(10)
-    lec_fail_bar = go.Figure(go.Bar(
-        x=lec_top_failures.values,
-        y=lec_top_failures.index,
-        orientation="h",
-        marker_color="#e74c3c"
-    ))
-    lec_fail_bar.update_layout(
-        title="Top 10 LECs by Failure Rate",
-        xaxis_title="Failure Rate",
+    fig.update_layout(
+        title="Cramér's V: LEC vs. Failure",
+        yaxis_title="Association Strength",
+        yaxis=dict(range=[0, 1]),
         height=400
     )
 
     return f"""
     <div id="failureTab" class="main-tab">
       <h2>Failure Analysis</h2>
-      <p>This tab explores how strongly the type of 'Revised LEC' and 'Task Owner' are associated with failure rates, using Pearson correlation on frequency vs. failure rate.</p>
-      {corr_fig.to_html(full_html=False, include_plotlyjs=False)}
-      <hr>
-      {lec_fail_bar.to_html(full_html=False, include_plotlyjs=False)}
+      <p>This chart shows the strength of association between 'Revised LEC' and failure outcomes using Cramér's V.</p>
+      {fig.to_html(full_html=False, include_plotlyjs=False)}
     </div>
     """
