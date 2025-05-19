@@ -2,47 +2,67 @@ def generate_failure_analysis_tab(df):
     from scipy.stats import pearsonr
     import plotly.graph_objects as go
 
-    # Ensure necessary columns are present
+    # Ensure required columns exist
     if "Revised LEC" not in df.columns or "Task Owner" not in df.columns:
         return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
 
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    
-    # Encode categorical variables
-    lec_encoded = df["Revised LEC"].astype("category").cat.codes
-    owner_encoded = df["Task Owner"].astype("category").cat.codes
-    fail_labels = df["Is Fail"].astype(int)
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown")
+    df["Task Owner"] = df["Task Owner"].fillna("Unknown")
 
-    # Calculate Pearson correlation
-    lec_corr, lec_pval = pearsonr(lec_encoded, fail_labels)
-    owner_corr, owner_pval = pearsonr(owner_encoded, fail_labels)
+    # === Step 1: Grouped failure rates ===
+    lec_failure_rate = df.groupby("Revised LEC")["Is Fail"].mean()
+    lec_freq = df["Revised LEC"].value_counts(normalize=True).reindex(lec_failure_rate.index)
 
-    # Prepare chart
+    owner_failure_rate = df.groupby("Task Owner")["Is Fail"].mean()
+    owner_freq = df["Task Owner"].value_counts(normalize=True).reindex(owner_failure_rate.index)
+
+    # === Step 2: Pearson correlation between frequency and failure rate ===
+    lec_corr, lec_pval = pearsonr(lec_freq, lec_failure_rate)
+    owner_corr, owner_pval = pearsonr(owner_freq, owner_failure_rate)
+
+    # === Step 3: Visualize correlation results ===
     fig = go.Figure(data=[
         go.Bar(
             x=["Revised LEC", "Task Owner"],
             y=[lec_corr, owner_corr],
             text=[
-                f"p={lec_pval:.4f}",
-                f"p={owner_pval:.4f}"
+                f"Pearson r = {lec_corr:.3f}<br>p = {lec_pval:.4f}",
+                f"Pearson r = {owner_corr:.3f}<br>p = {owner_pval:.4f}"
             ],
-            textposition="outside",
+            textposition="auto",
             marker_color=["#1f77b4", "#ff7f0e"]
         )
     ])
 
     fig.update_layout(
-        title="Pearson Correlation with Failure",
-        yaxis_title="Pearson Coefficient",
+        title="Pearson Correlation: Frequency vs. Failure Rate",
+        yaxis_title="Pearson Correlation Coefficient (r)",
         yaxis=dict(range=[-1, 1]),
+        height=400
+    )
+
+    # === Optional: Detailed failure rate bar chart ===
+    lec_top_failures = lec_failure_rate.sort_values(ascending=False).head(10)
+    lec_fail_bar = go.Figure(go.Bar(
+        x=lec_top_failures.values,
+        y=lec_top_failures.index,
+        orientation="h",
+        marker_color="#e74c3c"
+    ))
+    lec_fail_bar.update_layout(
+        title="Top 10 LECs by Failure Rate",
+        xaxis_title="Failure Rate",
         height=400
     )
 
     return f"""
     <div id="failureTab" class="main-tab">
       <h2>Failure Analysis</h2>
-      <p>This chart shows how strongly 'Revised LEC' and 'Task Owner' are correlated with failure outcomes.</p>
+      <p>This tab explores how strongly the type of 'Revised LEC' and 'Task Owner' are associated with failure rates.</p>
       {fig.to_html(full_html=False, include_plotlyjs=False)}
+      <hr>
+      {lec_fail_bar.to_html(full_html=False, include_plotlyjs=False)}
     </div>
     """
