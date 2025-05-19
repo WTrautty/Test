@@ -1,10 +1,60 @@
-Traceback (most recent call last):
-  File "c:\Users\\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 470, in <module>
-    main()
-  File "c:\Users\\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 461, in main
-    {generate_lec_tab(df)}
-     ^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 295, in generate_lec_tab      
+def generate_lec_tab(df):
+    if "Revised LEC" not in df.columns:
+        return "<div id='lecTab' class='main-tab'><h2>'Revised LEC' column not found in data.</h2></div>"
+
+    df = df.copy()
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+
+    # --- Total LEC Pie (≥1%) ---
+    lec_counts = df["Revised LEC"].fillna("Unknown").astype(str).value_counts()
+    total_count = lec_counts.sum()
+    lec_filtered = lec_counts[lec_counts / total_count >= 0.01]
+    misc_total = lec_counts[lec_counts / total_count < 0.01].sum()
+    lec_final = pd.concat([lec_filtered, pd.Series({"Misc. LECs": misc_total})])
+    lec_total_df = lec_final.reset_index()
+    lec_total_df.columns = ["LEC", "Count"]
+
+    # --- Fail LEC Pie (≥1%) ---
+    fail_df = df[df["Is Fail"] == True]
+    lec_fail_counts = fail_df["Revised LEC"].fillna("Unknown").astype(str).value_counts()
+    total_fails = lec_fail_counts.sum()
+    lec_fail_filtered = lec_fail_counts[lec_fail_counts / total_fails >= 0.01]
+    misc_fail = lec_fail_counts[lec_fail_counts / total_fails < 0.01].sum()
+    lec_fail_final = pd.concat([lec_fail_filtered, pd.Series({"Misc. LECs": misc_fail})])
+    lec_fail_df = lec_fail_final.reset_index()
+    lec_fail_df.columns = ["LEC", "Count"]
+
+    # --- Assign consistent colors across both charts ---
+    all_lecs = set(map(str, lec_total_df["LEC"])).union(map(str, lec_fail_df["LEC"]))
+    colors = plotly.colors.qualitative.Plotly
     lec_color_map = {lec: colors[i % len(colors)] for i, lec in enumerate(sorted(all_lecs))}
-                                                                          ^^^^^^^^^^^^^^^^
-TypeError: '<' not supported between instances of 'float' and 'str'
+
+    # --- Total LEC Pie ---
+    lec_total_pie = px.pie(
+        lec_total_df,
+        names="LEC",
+        values="Count",
+        title="All Revised LEC Appearances (≥1%)",
+        color_discrete_map=lec_color_map
+    )
+    lec_total_pie.update_layout(height=300)
+    lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
+
+    # --- Fail LEC Pie ---
+    lec_fail_pie = px.pie(
+        lec_fail_df,
+        names="LEC",
+        values="Count",
+        title="Revised LEC Appearances on Failures (≥1%)",
+        color_discrete_map=lec_color_map
+    )
+    lec_fail_pie.update_layout(height=300)
+    lec_fail_html = lec_fail_pie.to_html(full_html=False, include_plotlyjs=False)
+
+    return f"""
+    <div id="lecTab" class="main-tab">
+      <h2>LEC Insights</h2>
+      <hr>{lec_total_html}
+      <hr>{lec_fail_html}
+    </div>
+    """
