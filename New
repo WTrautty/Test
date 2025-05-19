@@ -151,18 +151,17 @@ def generate_failure_analysis_tab(df):
         new_rate = (projected.sum() / actual_monthly["Total_Orders"].sum()) * 100
         old_rate = (actual_monthly["Actual_Failures"].sum() / actual_monthly["Total_Orders"].sum()) * 100
         diff = old_rate - new_rate
-        annotation_text = f"Total Saved: {total_saved}\\nNew Rate: {new_rate:.2f}%\\nDifference: {diff:.2f}%"
-        annotations.append({
-            "text": annotation_text,
-            "x": 1.05,
-            "y": 0.5,
-            "xref": "paper",
-            "yref": "paper",
-            "showarrow": False,
-            "align": "left",
-            "font": {"size": 12},
-            "visible": (i == 0)
-        })
+        annotation_text = f"<b>Total Saved:</b> {total_saved}<br><b>New Rate:</b> {new_rate:.2f}%<br><b>Difference:</b> {diff:.2f}%"
+        annotations.append(dict(
+            text=annotation_text,
+            x=1.05,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            align="left",
+            font=dict(size=12)
+        ))
         titles.append(f"Projected vs. Actual Failures if All Orders Used {lec}")
 
     projection_fig.update_layout(
@@ -170,7 +169,7 @@ def generate_failure_analysis_tab(df):
         yaxis_title="Number of Failures",
         xaxis_title="Month",
         height=450,
-        annotations=[a for a in annotations if a["visible"]],
+        annotations=[annotations[0]],
         updatemenus=[{
             "buttons": [
                 dict(
