@@ -113,40 +113,61 @@ def generate_failure_analysis_tab(df):
     )
     owner_fail_bar_html = owner_fail_bar.to_html(full_html=False, include_plotlyjs=False)
 
-    best_lec = "Frontier"
     lec_failure_rates = df.groupby("Revised LEC")["Is Fail"].mean()
-    best_lec_rate = lec_failure_rates.get(best_lec, df["Is Fail"].mean())
-
     df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
     actual_monthly = df.groupby("Month").agg(
         Actual_Failures=("Is Fail", "sum"),
         Total_Orders=("Is Fail", "count")
     ).reset_index()
-    actual_monthly["Projected Failures"] = actual_monthly["Total_Orders"] * best_lec_rate
-    actual_monthly["Orders Saved"] = actual_monthly["Actual_Failures"] - actual_monthly["Projected Failures"]
 
     projection_fig = go.Figure()
-    projection_fig.add_trace(go.Scatter(
-        x=actual_monthly["Month"],
-        y=actual_monthly["Actual_Failures"],
-        mode="lines+markers",
-        name="Actual Failures"
-    ))
-    projection_fig.add_trace(go.Scatter(
-        x=actual_monthly["Month"],
-        y=actual_monthly["Projected Failures"],
-        mode="lines+markers",
-        name=f"Projected Failures (if LEC = {best_lec})"
-    ))
+    buttons = []
+    for i, (lec, lec_rate) in enumerate(lec_failure_rates.items()):
+        projected = actual_monthly["Total_Orders"] * lec_rate
+        visible = [True if j == 0 else False for j in range(len(lec_failure_rates)*2)]
+        projection_fig.add_trace(go.Scatter(
+            x=actual_monthly["Month"],
+            y=projected,
+            mode="lines+markers",
+            name=f"Projected Failures ({lec})",
+            visible=(i == 0)
+        ))
+        projection_fig.add_trace(go.Scatter(
+            x=actual_monthly["Month"],
+            y=actual_monthly["Actual_Failures"],
+            mode="lines+markers",
+            name="Actual Failures",
+            visible=(i == 0)
+        ))
+        total_saved = int(actual_monthly["Actual_Failures"].sum() - projected.sum())
+        new_rate = (projected.sum() / actual_monthly["Total_Orders"].sum()) * 100
+        old_rate = (actual_monthly["Actual_Failures"].sum() / actual_monthly["Total_Orders"].sum()) * 100
+        diff = old_rate - new_rate
+        buttons.append(dict(
+            label=lec,
+            method="update",
+            args=[
+                {"visible": [v if j//2 == i else False for j, v in enumerate([True]*len(lec_failure_rates)*2)]},
+                {"title": f"Projected vs. Actual Failures if All Orders Used {lec}<br>Total Orders Saved: {total_saved} | New Failure Rate: {new_rate:.2f}% | Difference: {diff:.2f}%"}
+            ]
+        ))
+
     projection_fig.update_layout(
-        title=f"Projected vs. Actual Failures if All Orders Used {best_lec}",
+        title=f"Projected vs. Actual Failures if All Orders Used {lec_failure_rates.index[0]}",
         yaxis_title="Number of Failures",
         xaxis_title="Month",
-        height=400
+        height=450,
+        updatemenus=[{
+            "buttons": buttons,
+            "direction": "down",
+            "showactive": True,
+            "x": 1,
+            "xanchor": "right",
+            "y": 1.15,
+            "yanchor": "top"
+        }]
     )
     projection_fig_html = projection_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    total_saved = int(actual_monthly["Orders Saved"].sum())
 
     return f"""
     <div id=\"failureTab\" class=\"main-tab\">
@@ -165,8 +186,7 @@ def generate_failure_analysis_tab(df):
       {owner_fail_bar_html}
 
       <hr>
-      <h3>Projected vs. Actual Failures if All Orders Used {best_lec}</h3>
-      <p>Total Orders Saved: <strong>{total_saved}</strong></p>
+      <h3>Projected vs. Actual Failures Based on LEC Selection</h3>
       {projection_fig_html}
     </div>
     """
