@@ -4,6 +4,8 @@ def generate_lec_tab(df):
 
     import hashlib
     from plotly.colors import qualitative
+    import plotly.express as px
+    import plotly.graph_objects as go
 
     def get_color_from_name(name, palette):
         h = int(hashlib.sha256(name.encode("utf-8")).hexdigest(), 16)
@@ -11,10 +13,11 @@ def generate_lec_tab(df):
 
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
 
     # === Step 1: Build LEC DataFrames for Total and Fail ===
     def prepare_lec_df(source_df, column_name="Revised LEC", label="Misc. LECs", min_pct=0.01):
-        lec_counts = source_df[column_name].fillna("Unknown").astype(str).value_counts()
+        lec_counts = source_df[column_name].value_counts()
         total = lec_counts.sum()
         lec_main = lec_counts[lec_counts / total >= min_pct]
         misc = lec_counts[lec_counts / total < min_pct].sum()
@@ -45,12 +48,12 @@ def generate_lec_tab(df):
     )
     lec_fail_fig.update_traces(rotation=90, direction="clockwise", sort=False)
 
-    # === Step 3: Collect All Unique LECs ===
+    # === Step 3: Collect all unique LECs and assign consistent colors ===
     all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
-    palette = qualitative.Alphabet  # ✅ more distinct colors
+    palette = qualitative.Alphabet
     lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
 
-    # === Step 4: Apply Colors ===
+    # === Step 4: Apply colors to the pies ===
     def apply_colors(fig, df):
         fig.update_traces(
             marker=dict(colors=[lec_color_map[lec] for lec in df["LEC"]])
@@ -60,7 +63,31 @@ def generate_lec_tab(df):
     apply_colors(lec_total_fig, lec_total_df)
     apply_colors(lec_fail_fig, lec_fail_df)
 
-    # === Step 5: Export HTML
+    # === Step 5: Create failure rate bar chart ===
+    fail_counts = df[df["Is Fail"]].groupby("Revised LEC").size()
+    total_counts = df.groupby("Revised LEC").size()
+    failure_rate = (fail_counts / total_counts).fillna(0) * 100
+    failure_rate = failure_rate[failure_rate.index.isin(all_lecs)]
+    failure_rate_df = failure_rate.reset_index()
+    failure_rate_df.columns = ["LEC", "Failure Rate"]
+    failure_rate_df = failure_rate_df.sort_values("Failure Rate", ascending=True)
+
+    bar_colors = [lec_color_map.get(lec, "#888888") for lec in failure_rate_df["LEC"]]
+    fail_bar_fig = go.Figure(go.Bar(
+        x=failure_rate_df["Failure Rate"],
+        y=failure_rate_df["LEC"],
+        orientation="h",
+        marker_color=bar_colors
+    ))
+    fail_bar_fig.update_layout(
+        title="LEC Failure Rate (%)",
+        height=600,
+        xaxis=dict(title="Failure Rate (%)", range=[0, 100]),
+        yaxis=dict(title="LEC")
+    )
+    lec_fail_bar_html = fail_bar_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Step 6: Combine HTML
     lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
     lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
@@ -69,5 +96,6 @@ def generate_lec_tab(df):
       <h2>LEC Insights</h2>
       <hr>{lec_total_html}
       <hr>{lec_fail_html}
+      <hr>{lec_fail_bar_html}
     </div>
     """
