@@ -5,7 +5,7 @@ def generate_lec_tab(df):
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    # ---- Total LEC Pie (≥1%) ----
+    # --- Total LEC Pie (≥1%) ---
     lec_counts = df["Revised LEC"].value_counts(dropna=False)
     total_count = lec_counts.sum()
     lec_filtered = lec_counts[lec_counts / total_count >= 0.01]
@@ -13,13 +13,8 @@ def generate_lec_tab(df):
     lec_final = pd.concat([lec_filtered, pd.Series({"Misc. LECs": misc_total})])
     lec_total_df = lec_final.reset_index()
     lec_total_df.columns = ["LEC", "Count"]
-    lec_total_pie = px.pie(
-        lec_total_df, names="LEC", values="Count", title="All Revised LEC Appearances (≥1%)"
-    )
-    lec_total_pie.update_layout(height=300)
-    lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
 
-    # ---- Fail LEC Pie (≥1% of failures) ----
+    # --- Fail LEC Pie (≥1%) ---
     fail_df = df[df["Is Fail"] == True]
     lec_fail_counts = fail_df["Revised LEC"].value_counts(dropna=False)
     total_fails = lec_fail_counts.sum()
@@ -28,8 +23,30 @@ def generate_lec_tab(df):
     lec_fail_final = pd.concat([lec_fail_filtered, pd.Series({"Misc. LECs": misc_fail})])
     lec_fail_df = lec_fail_final.reset_index()
     lec_fail_df.columns = ["LEC", "Count"]
+
+    # --- Assign consistent colors ---
+    all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
+    colors = plotly.colors.qualitative.Plotly
+    lec_color_map = {lec: colors[i % len(colors)] for i, lec in enumerate(sorted(all_lecs))}
+
+    # --- Plot Total Pie ---
+    lec_total_pie = px.pie(
+        lec_total_df,
+        names="LEC",
+        values="Count",
+        title="All Revised LEC Appearances (≥1%)",
+        color_discrete_map=lec_color_map
+    )
+    lec_total_pie.update_layout(height=300)
+    lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
+
+    # --- Plot Fail Pie ---
     lec_fail_pie = px.pie(
-        lec_fail_df, names="LEC", values="Count", title="Revised LEC Appearances on Failures (≥1%)"
+        lec_fail_df,
+        names="LEC",
+        values="Count",
+        title="Revised LEC Appearances on Failures (≥1%)",
+        color_discrete_map=lec_color_map
     )
     lec_fail_pie.update_layout(height=300)
     lec_fail_html = lec_fail_pie.to_html(full_html=False, include_plotlyjs=False)
