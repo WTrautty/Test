@@ -1,77 +1,30 @@
-        # === Step 6: Usage vs. Failure Rate Scatter ===
-    total_sum = total_counts.sum()
-    usage_rate = (total_counts / total_sum * 100).fillna(0)
-    scatter_df = pd.DataFrame({
-        "LEC": usage_rate.index,
-        "Usage Rate": (usage_rate.round()).astype(int),
-        "Failure Rate": (failure_rate.reindex(usage_rate.index).fillna(0).round()).astype(int),
-        "Total Count": total_counts.values
-    })
-    scatter_df = scatter_df[scatter_df["LEC"].isin(all_lecs)]
-
-    usage_mean = scatter_df["Usage Rate"].mean()
-    fail_mean = scatter_df["Failure Rate"].mean()
-
-    usage_scatter_fig = px.scatter(
-        scatter_df,
-        x="Usage Rate",
-        y="Failure Rate",
-        size="Total Count",
-        color="LEC",
-        color_discrete_map=lec_color_map,
-        hover_name="LEC",
-        hover_data={
-            "Usage Rate": True,
-            "Failure Rate": True,
-            "Total Count": True
-        },
-        title="Usage Rate vs. Failure Rate per LEC"
+annotations=[
+    dict(
+        x=(usage_mean + 25) / 2,
+        y=(fail_mean + 40) / 2,
+        text="High usage, High failure",
+        showarrow=False,
+        font=dict(size=12)
+    ),
+    dict(
+        x=(usage_mean) / 2,
+        y=(fail_mean + 40) / 2,
+        text="Low usage, High failure",
+        showarrow=False,
+        font=dict(size=12)
+    ),
+    dict(
+        x=(usage_mean) / 2,
+        y=(fail_mean) / 2,
+        text="Low usage, Low failure",
+        showarrow=False,
+        font=dict(size=12)
+    ),
+    dict(
+        x=(usage_mean + 25) / 2,
+        y=(fail_mean) / 2,
+        text="High usage, Low failure",
+        showarrow=False,
+        font=dict(size=12)
     )
-
-    # Format hover labels with % symbols
-    usage_scatter_fig.update_traces(
-        hovertemplate=(
-            "<b>%{hovertext}</b><br><br>" +
-            "Usage Rate: %{x}%<br>" +
-            "Failure Rate: %{y}%<br>" +
-            "Total Count: %{marker.size}<extra></extra>"
-        )
-    )
-
-    usage_scatter_fig.update_layout(
-        height=600,
-        xaxis=dict(title="Usage Rate (%)", range=[0, 25]),
-        yaxis=dict(title="Failure Rate (%)", range=[0, 40]),
-        shapes=[
-            dict(
-                type="line", x0=usage_mean, x1=usage_mean, y0=0, y1=40,
-                line=dict(color="gray", width=2, dash="dash")
-            ),
-            dict(
-                type="line", x0=0, x1=25, y0=fail_mean, y1=fail_mean,
-                line=dict(color="gray", width=2, dash="dash")
-            )
-        ],
-        annotations=[
-            dict(x=usage_mean * 1.5, y=fail_mean * 0.5, text="High usage, Low failure", showarrow=False),
-            dict(x=usage_mean * 0.5, y=fail_mean * 0.5, text="Low usage, Low failure", showarrow=False),
-            dict(x=usage_mean * 0.5, y=fail_mean * 1.5, text="Low usage, High failure", showarrow=False),
-            dict(x=usage_mean * 1.5, y=fail_mean * 1.5, text="High usage, High failure", showarrow=False),
-        ]
-    )
-
-    lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    # === Step 7: Export HTML
-    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
-    lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    return f"""
-    <div id="lecTab" class="main-tab">
-      <h2>LEC Insights</h2>
-      <hr>{lec_total_html}
-      <hr>{lec_fail_html}
-      <hr>{lec_fail_bar_html}
-      <hr>{lec_usage_scatter_html}
-    </div>
-    """
+]
