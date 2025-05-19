@@ -45,22 +45,22 @@ def generate_lec_tab(df):
     )
     lec_fail_fig.update_traces(rotation=90, direction="clockwise", sort=False)
 
-    # === Step 3: Collect all LECs used ===
+    # === Step 3: Collect All Unique LECs ===
     all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
-    palette = qualitative.Plotly
+    palette = qualitative.Alphabet  # ✅ more distinct colors
     lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
 
-    # === Step 4: Add color to charts using marker.colors ===
+    # === Step 4: Apply Colors ===
     def apply_colors(fig, df):
         fig.update_traces(
             marker=dict(colors=[lec_color_map[lec] for lec in df["LEC"]])
         )
-        fig.update_layout(height=300)
+        fig.update_layout(height=600)
 
     apply_colors(lec_total_fig, lec_total_df)
     apply_colors(lec_fail_fig, lec_fail_df)
 
-    # === Step 5: Generate HTML output ===
+    # === Step 5: Export HTML
     lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
     lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
