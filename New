@@ -1,3 +1,8 @@
-in process_args_into_dataframe
-    raise ValueError(err_msg)
-ValueError: Value of 'names' is not the name of a column in 'data_frame'. Expected one of ['Percentage', 'proportion'] but received: Closure Code
+pie_df = (
+    df['Closure Code 1']
+    .value_counts(normalize=True)
+    .mul(100)
+    .reset_index()
+    .rename(columns={'index': 'Closure Code', 'Closure Code 1': 'Percentage'})
+)
+pie = px.pie(pie_df, names='Closure Code', values='Percentage', ...)
