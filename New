@@ -1,4 +1,74 @@
-    fail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
-    fail_line = px.line(fail, x="Month", y="Fail %", title="Global Failure Rate per Month")
-    fail_line.update_layout(yaxis=dict(range=[0, 40]), height=300)
-    fail_html = fail_line.to_html(full_html=False, include_plotlyjs=True)
+def generate_failure_analysis_tab(df):
+    import pandas as pd
+    import numpy as np
+    from scipy.stats import chi2_contingency, pearsonr
+    import plotly.graph_objects as go
+
+    # === Validate Columns ===
+    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date"]
+    if not all(col in df.columns for col in required_cols):
+        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
+
+    # === Clean & Prepare Data ===
+    df = df.copy()
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
+    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df = df.dropna(subset=["Completed Date"])
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+
+    # === Cramér's V for Revised LEC ===
+    lec_contingency = pd.crosstab(df["Revised LEC"], df["Is Fail"])
+    lec_chi2, lec_p, _, _ = chi2_contingency(lec_contingency)
+    lec_n = lec_contingency.sum().sum()
+    lec_min_dim = min(lec_contingency.shape) - 1
+    lec_cramers_v = np.sqrt(lec_chi2 / (lec_n * lec_min_dim)) if lec_min_dim > 0 else 0
+
+    # === Cramér's V for Task Owner ===
+    owner_contingency = pd.crosstab(df["Task Owner"], df["Is Fail"])
+    owner_chi2, owner_p, _, _ = chi2_contingency(owner_contingency)
+    owner_n = owner_contingency.sum().sum()
+    owner_min_dim = min(owner_contingency.shape) - 1
+    owner_cramers_v = np.sqrt(owner_chi2 / (owner_n * owner_min_dim)) if owner_min_dim > 0 else 0
+
+    # === Pearson correlation between monthly order volume and failure rate ===
+    monthly_data = df.groupby("Month").agg(
+        Fail_Rate=("Is Fail", "mean"),
+        Order_Count=("Is Fail", "count")
+    ).reset_index()
+
+    if len(monthly_data["Order_Count"].unique()) > 1:
+        volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
+    else:
+        volume_corr, volume_p = 0, 1  # Avoid undefined correlation
+
+    # === Plot all 3 metrics as bars ===
+    fig = go.Figure(data=[
+        go.Bar(
+            x=["Revised LEC", "Task Owner", "Monthly Volume"],
+            y=[lec_cramers_v, owner_cramers_v, volume_corr],
+            text=[
+                f"Cramér's V = {lec_cramers_v:.3f}<br>p = {lec_p:.2e}",
+                f"Cramér's V = {owner_cramers_v:.3f}<br>p = {owner_p:.2e}",
+                f"Pearson r = {volume_corr:.3f}<br>p = {volume_p:.2e}"
+            ],
+            textposition="auto",
+            marker_color=["#3498db", "#f39c12", "#2ecc71"]
+        )
+    ])
+
+    fig.update_layout(
+        title="Failure Correlation Overview",
+        yaxis_title="Association Strength (0 to 1)",
+        yaxis=dict(range=[0, 1]),
+        height=450
+    )
+
+    return f"""
+    <div id="failureTab" class="main-tab">
+      <h2>Failure Analysis</h2>
+      <p>This chart shows the strength of statistical association between various factors and failure outcomes.</p>
+      {fig.to_html(full_html=False, include_plotlyjs=False)}
+    </div>
+    """
