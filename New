@@ -1,103 +1,5 @@
-def generate_lec_tab(df):
-    if "Revised LEC" not in df.columns:
-        return "<div id='lecTab' class='main-tab'><h2>'Revised LEC' column not found in data.</h2></div>"
-
-    import hashlib
-    from plotly.colors import qualitative
-    import plotly.express as px
-    import plotly.graph_objects as go
-
-    def get_color_from_name(name, palette):
-        h = int(hashlib.sha256(name.encode("utf-8")).hexdigest(), 16)
-        return palette[h % len(palette)]
-
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
-
-    # === Step 1: Build LEC DataFrames for Total and Fail ===
-    def prepare_lec_df(source_df, column_name="Revised LEC", label="Misc. LECs", min_pct=0.01):
-        lec_counts = source_df[column_name].value_counts()
-        total = lec_counts.sum()
-        lec_main = lec_counts[lec_counts / total >= min_pct]
-        misc = lec_counts[lec_counts / total < min_pct].sum()
-        final = pd.concat([lec_main, pd.Series({label: misc})])
-        result_df = final.reset_index()
-        result_df.columns = ["LEC", "Count"]
-        return result_df.sort_values("Count", ascending=False)
-
-    lec_total_df = prepare_lec_df(df)
-    lec_fail_df = prepare_lec_df(df[df["Is Fail"] == True])
-
-    # === Step 2: Create Pie Charts with NO COLOR ===
-    lec_total_fig = px.pie(
-        lec_total_df,
-        names="LEC",
-        values="Count",
-        title="All Revised LEC Appearances (≥1%)",
-        category_orders={"LEC": list(lec_total_df["LEC"])}
-    )
-    lec_total_fig.update_traces(rotation=90, direction="clockwise", sort=False)
-
-    lec_fail_fig = px.pie(
-        lec_fail_df,
-        names="LEC",
-        values="Count",
-        title="Revised LEC Appearances on Failures (≥1%)",
-        category_orders={"LEC": list(lec_fail_df["LEC"])}
-    )
-    lec_fail_fig.update_traces(rotation=90, direction="clockwise", sort=False)
-
-    # === Step 3: Color map for all LECs ===
-    all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
-    palette = qualitative.Alphabet
-    lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
-
-    # === Step 4: Apply Colors to Pie Charts ===
-    def apply_colors(fig, df):
-        fig.update_traces(
-            marker=dict(colors=[lec_color_map[lec] for lec in df["LEC"]])
-        )
-        fig.update_layout(height=600)
-
-    apply_colors(lec_total_fig, lec_total_df)
-    apply_colors(lec_fail_fig, lec_fail_df)
-
-    # === Step 5: Failure Rate Bar Chart ===
-    fail_counts = df[df["Is Fail"]].groupby("Revised LEC").size()
-    total_counts = df.groupby("Revised LEC").size()
-    failure_rate = (fail_counts / total_counts).fillna(0) * 100
-    failure_rate = failure_rate[failure_rate.index.isin(all_lecs)]
-    failure_rate_df = failure_rate.reset_index()
-    failure_rate_df.columns = ["LEC", "Failure Rate"]
-    failure_rate_df = failure_rate_df.sort_values("Failure Rate", ascending=True)
-
-    bar_colors = [lec_color_map.get(lec, "#888888") for lec in failure_rate_df["LEC"]]
-    fail_bar_fig = go.Figure(go.Bar(
-        x=failure_rate_df["Failure Rate"],
-        y=failure_rate_df["LEC"],
-        orientation="h",
-        marker_color=bar_colors
-    ))
-    fail_bar_fig.update_layout(
-        title="LEC Failure Rate (%)",
-        height=600,
-        xaxis=dict(title="Failure Rate (%)", range=[0, 100]),
-        yaxis=dict(title="LEC")
-    )
-    lec_fail_bar_html = fail_bar_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    # === Step 6: Usage vs. Failure Rate Scatter ===
-    total_sum = total_counts.sum()
-    usage_rate = (total_counts / total_sum * 100).fillna(0)
-    scatter_df = pd.DataFrame({
-        "LEC": usage_rate.index,
-        "Usage Rate": usage_rate.values,
-        "Failure Rate": failure_rate.reindex(usage_rate.index).fillna(0).values,
-        "Total Count": total_counts.values,
-        "Color": [lec_color_map.get(lec, "#888888") for lec in usage_rate.index]
-    })
-    scatter_df = scatter_df[scatter_df["LEC"].isin(all_lecs)]
+    usage_mean = scatter_df["Usage Rate"].mean()
+    fail_mean = scatter_df["Failure Rate"].mean()
 
     usage_scatter_fig = px.scatter(
         scatter_df,
@@ -109,19 +11,29 @@ def generate_lec_tab(df):
         hover_name="LEC",
         title="Usage Rate vs. Failure Rate per LEC"
     )
-    usage_scatter_fig.update_layout(height=600)
-    lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
 
-    # === Step 7: Export HTML
-    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
-    lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    return f"""
-    <div id="lecTab" class="main-tab">
-      <h2>LEC Insights</h2>
-      <hr>{lec_total_html}
-      <hr>{lec_fail_html}
-      <hr>{lec_fail_bar_html}
-      <hr>{lec_usage_scatter_html}
-    </div>
-    """
+    usage_scatter_fig.update_layout(
+        height=600,
+        shapes=[
+            # Vertical line at mean usage
+            dict(
+                type="line",
+                x0=usage_mean, x1=usage_mean,
+                y0=0, y1=100,
+                line=dict(color="gray", width=2, dash="dash")
+            ),
+            # Horizontal line at mean failure rate
+            dict(
+                type="line",
+                x0=0, x1=100,
+                y0=fail_mean, y1=fail_mean,
+                line=dict(color="gray", width=2, dash="dash")
+            )
+        ],
+        annotations=[
+            dict(x=usage_mean * 1.5, y=fail_mean * 0.5, text="High usage, Low failure", showarrow=False),
+            dict(x=usage_mean * 0.5, y=fail_mean * 0.5, text="Low usage, Low failure", showarrow=False),
+            dict(x=usage_mean * 0.5, y=fail_mean * 1.5, text="Low usage, High failure", showarrow=False),
+            dict(x=usage_mean * 1.5, y=fail_mean * 1.5, text="High usage, High failure", showarrow=False),
+        ]
+    )
