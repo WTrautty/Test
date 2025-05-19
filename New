@@ -1,5 +1,38 @@
-    df_output, wide_id_vars = process_args_into_dataframe(
-                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\plotly\express\_core.py", line 1330, in process_args_into_dataframe
-    raise ValueError(err_msg)
-ValueError: Value of 'names' is not the name of a column in 'data_frame'. Expected one of ['Percentage', 'proportion'] but received: Closure Code 1
+def generate_global_tab(df):
+    # Sort the dataframe by Month first to ensure chronological order
+    df = df.copy()
+    df['Month'] = pd.to_datetime(df['Month'].astype(str)).dt.to_period('M')
+    df = df.sort_values('Month')
+    df['Month'] = df['Month'].astype(str)
+
+    # For pie chart, handle NaN values and rename columns correctly
+    pie_df = (
+        df["Closure Code 1"]
+        .fillna("Unknown")
+        .value_counts(normalize=True)
+        .mul(100)
+        .reset_index()
+    )
+    pie_df.columns = ["proportion", "Percentage"]  # Changed column names to match what plotly expects
+    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
+    pie.update_layout(height=300)
+    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
+
+    closed = df.groupby("Month").size().reset_index(name="Closed Orders")
+    closed_line = px.line(closed, x="Month", y="Closed Orders", title="Global Closed Orders Per Month")
+    closed_line.update_layout(height=300)
+    closed_html = closed_line.to_html(full_html=False, include_plotlyjs=False)
+
+    fail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
+    fail_line = px.line(fail, x="Month", y="Fail %", title="Global Failure Rate per Month")
+    fail_line.update_layout(yaxis=dict(range=[0, 100]), height=300)
+    fail_html = fail_line.to_html(full_html=False, include_plotlyjs=False)
+
+    return f"""
+    <div id="globalTab" class="main-tab">
+      <h2>Global Statistics</h2>
+      <hr>{fail_html}
+      <hr>{pie_html}
+      <hr>{closed_html}
+    </div>
+    """
