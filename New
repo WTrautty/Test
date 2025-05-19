@@ -2,78 +2,67 @@ def generate_lec_tab(df):
     if "Revised LEC" not in df.columns:
         return "<div id='lecTab' class='main-tab'><h2>'Revised LEC' column not found in data.</h2></div>"
 
-    import hashlib  # for hashing LEC names
+    import hashlib
+    from plotly.colors import qualitative
 
     def get_color_from_name(name, palette):
-        """Hash the LEC name to a stable color from the palette."""
         h = int(hashlib.sha256(name.encode("utf-8")).hexdigest(), 16)
         return palette[h % len(palette)]
 
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    # --- Total LEC Pie (≥1%) ---
-    lec_counts = df["Revised LEC"].fillna("Unknown").astype(str).value_counts()
-    total_count = lec_counts.sum()
-    lec_filtered = lec_counts[lec_counts / total_count >= 0.01]
-    misc_total = lec_counts[lec_counts / total_count < 0.01].sum()
-    lec_final = pd.concat([lec_filtered, pd.Series({"Misc. LECs": misc_total})])
-    lec_total_df = lec_final.reset_index()
-    lec_total_df.columns = ["LEC", "Count"]
-    lec_total_df = lec_total_df.sort_values("Count", ascending=False)
+    # === Step 1: Build LEC DataFrames for Total and Fail ===
+    def prepare_lec_df(source_df, column_name="Revised LEC", label="Misc. LECs", min_pct=0.01):
+        lec_counts = source_df[column_name].fillna("Unknown").astype(str).value_counts()
+        total = lec_counts.sum()
+        lec_main = lec_counts[lec_counts / total >= min_pct]
+        misc = lec_counts[lec_counts / total < min_pct].sum()
+        final = pd.concat([lec_main, pd.Series({label: misc})])
+        result_df = final.reset_index()
+        result_df.columns = ["LEC", "Count"]
+        return result_df.sort_values("Count", ascending=False)
 
-    # --- Fail LEC Pie (≥1%) ---
-    fail_df = df[df["Is Fail"] == True]
-    lec_fail_counts = fail_df["Revised LEC"].fillna("Unknown").astype(str).value_counts()
-    total_fails = lec_fail_counts.sum()
-    lec_fail_filtered = lec_fail_counts[lec_fail_counts / total_fails >= 0.01]
-    misc_fail = lec_fail_counts[lec_fail_counts / total_fails < 0.01].sum()
-    lec_fail_final = pd.concat([lec_fail_filtered, pd.Series({"Misc. LECs": misc_fail})])
-    lec_fail_df = lec_fail_final.reset_index()
-    lec_fail_df.columns = ["LEC", "Count"]
-    lec_fail_df = lec_fail_df.sort_values("Count", ascending=False)
+    lec_total_df = prepare_lec_df(df)
+    lec_fail_df = prepare_lec_df(df[df["Is Fail"] == True])
 
-    # --- Combine for consistent ordering + color mapping ---
-    ordered_lecs = list(lec_total_df["LEC"]) + [lec for lec in lec_fail_df["LEC"] if lec not in lec_total_df["LEC"]]
-    from plotly.colors import qualitative
-    palette = qualitative.Plotly
-    lec_color_map = {lec: get_color_from_name(lec, palette) for lec in ordered_lecs}
-
-    # --- Total Pie Chart ---
-    lec_total_pie = px.pie(
+    # === Step 2: Create Pie Charts with NO COLOR ===
+    lec_total_fig = px.pie(
         lec_total_df,
         names="LEC",
         values="Count",
         title="All Revised LEC Appearances (≥1%)",
-        color_discrete_map=lec_color_map,
-        category_orders={"LEC": ordered_lecs}
+        category_orders={"LEC": list(lec_total_df["LEC"])}
     )
-    lec_total_pie.update_traces(
-        rotation=90,
-        direction="clockwise",
-        sort=False
-    )
-    lec_total_pie.update_layout(height=300)
+    lec_total_fig.update_traces(rotation=90, direction="clockwise", sort=False)
 
-    lec_total_html = lec_total_pie.to_html(full_html=False, include_plotlyjs=True)
-
-    # --- Fail Pie Chart ---
-    lec_fail_pie = px.pie(
+    lec_fail_fig = px.pie(
         lec_fail_df,
         names="LEC",
         values="Count",
         title="Revised LEC Appearances on Failures (≥1%)",
-        color_discrete_map=lec_color_map,
-        category_orders={"LEC": ordered_lecs}
+        category_orders={"LEC": list(lec_fail_df["LEC"])}
     )
-    lec_fail_pie.update_traces(
-        rotation=90,
-        direction="clockwise",
-        sort=False
-    )
-    lec_fail_pie.update_layout(height=300)
+    lec_fail_fig.update_traces(rotation=90, direction="clockwise", sort=False)
 
-    lec_fail_html = lec_fail_pie.to_html(full_html=False, include_plotlyjs=False)
+    # === Step 3: Collect all LECs used ===
+    all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
+    palette = qualitative.Plotly
+    lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
+
+    # === Step 4: Add color to charts using marker.colors ===
+    def apply_colors(fig, df):
+        fig.update_traces(
+            marker=dict(colors=[lec_color_map[lec] for lec in df["LEC"]])
+        )
+        fig.update_layout(height=300)
+
+    apply_colors(lec_total_fig, lec_total_df)
+    apply_colors(lec_fail_fig, lec_fail_df)
+
+    # === Step 5: Generate HTML output ===
+    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
+    lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
     return f"""
     <div id="lecTab" class="main-tab">
