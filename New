@@ -1,181 +1,77 @@
-html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Closure Code Dashboard</title>
-  <script src="plotly-latest.min.js"></script> <!-- Local Plotly JS -->
-  <style>
-    * {{
-      box-sizing: border-box;
-    }}
+        # === Step 6: Usage vs. Failure Rate Scatter ===
+    total_sum = total_counts.sum()
+    usage_rate = (total_counts / total_sum * 100).fillna(0)
+    scatter_df = pd.DataFrame({
+        "LEC": usage_rate.index,
+        "Usage Rate": (usage_rate.round()).astype(int),
+        "Failure Rate": (failure_rate.reindex(usage_rate.index).fillna(0).round()).astype(int),
+        "Total Count": total_counts.values
+    })
+    scatter_df = scatter_df[scatter_df["LEC"].isin(all_lecs)]
 
-    body {{
-      font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      background-color: #f4f6f9;
-      color: #333;
-      display: flex;
-    }}
+    usage_mean = scatter_df["Usage Rate"].mean()
+    fail_mean = scatter_df["Failure Rate"].mean()
 
-    /* === SIDEBAR === */
-    .sidebar {{
-      width: 220px;
-      background: #2f3542;
-      color: #fff;
-      height: 100vh;
-      padding-top: 30px;
-      position: fixed;
-      left: 0;
-      top: 0;
-      display: flex;
-      flex-direction: column;
-    }}
+    usage_scatter_fig = px.scatter(
+        scatter_df,
+        x="Usage Rate",
+        y="Failure Rate",
+        size="Total Count",
+        color="LEC",
+        color_discrete_map=lec_color_map,
+        hover_name="LEC",
+        hover_data={
+            "Usage Rate": True,
+            "Failure Rate": True,
+            "Total Count": True
+        },
+        title="Usage Rate vs. Failure Rate per LEC"
+    )
 
-    .sidebar h2 {{
-      text-align: center;
-      font-size: 20px;
-      margin-bottom: 30px;
-    }}
+    # Format hover labels with % symbols
+    usage_scatter_fig.update_traces(
+        hovertemplate=(
+            "<b>%{hovertext}</b><br><br>" +
+            "Usage Rate: %{x}%<br>" +
+            "Failure Rate: %{y}%<br>" +
+            "Total Count: %{marker.size}<extra></extra>"
+        )
+    )
 
-    .sidebar button {{
-      padding: 15px 20px;
-      background: none;
-      border: none;
-      text-align: left;
-      color: white;
-      font-weight: 500;
-      font-size: 15px;
-      width: 100%;
-      transition: background 0.2s ease;
-      cursor: pointer;
-    }}
+    usage_scatter_fig.update_layout(
+        height=600,
+        xaxis=dict(title="Usage Rate (%)", range=[0, 25]),
+        yaxis=dict(title="Failure Rate (%)", range=[0, 40]),
+        shapes=[
+            dict(
+                type="line", x0=usage_mean, x1=usage_mean, y0=0, y1=40,
+                line=dict(color="gray", width=2, dash="dash")
+            ),
+            dict(
+                type="line", x0=0, x1=25, y0=fail_mean, y1=fail_mean,
+                line=dict(color="gray", width=2, dash="dash")
+            )
+        ],
+        annotations=[
+            dict(x=usage_mean * 1.5, y=fail_mean * 0.5, text="High usage, Low failure", showarrow=False),
+            dict(x=usage_mean * 0.5, y=fail_mean * 0.5, text="Low usage, Low failure", showarrow=False),
+            dict(x=usage_mean * 0.5, y=fail_mean * 1.5, text="Low usage, High failure", showarrow=False),
+            dict(x=usage_mean * 1.5, y=fail_mean * 1.5, text="High usage, High failure", showarrow=False),
+        ]
+    )
 
-    .sidebar button:hover {{
-      background: #57606f;
-    }}
+    lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
 
-    .sidebar button.active {{
-      background: #1e90ff;
-    }}
+    # === Step 7: Export HTML
+    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
+    lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
-    /* === MAIN CONTENT === */
-    .main-content {{
-      margin-left: 220px;
-      padding: 30px;
-      flex: 1;
-    }}
-
-    h1 {{
-      font-size: 28px;
-      font-weight: 600;
-      margin-bottom: 20px;
-    }}
-
-    .main-tab {{
-      display: none;
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
-      margin-bottom: 40px;
-    }}
-
-    .tab-buttons-wrapper {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 20px;
-    }}
-
-    .tablink {{
-      padding: 10px 18px;
-      border: none;
-      font-weight: bold;
-      background: #f1f1f1;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.3s ease;
-    }}
-
-    .tablink:hover {{
-      background: #ddd;
-    }}
-
-    .tablink.active {{
-      background: #38ef7d;
-      color: white;
-    }}
-
-    .tabcontent {{
-      display: none;
-    }}
-
-    @media (max-width: 768px) {{
-      .sidebar {{
-        width: 100%;
-        height: auto;
-        flex-direction: row;
-        justify-content: space-around;
-        position: relative;
-      }}
-
-      .main-content {{
-        margin-left: 0;
-        padding: 20px;
-      }}
-    }}
-  </style>
-
-  <script>
-    function switchMainTab(evt, tabId) {{
-      var tabs = document.querySelectorAll('.main-tab');
-      tabs.forEach(tab => tab.style.display = 'none');
-      document.getElementById(tabId).style.display = 'block';
-
-      var buttons = document.querySelectorAll('.sidebar button');
-      buttons.forEach(btn => btn.classList.remove('active'));
-      evt.currentTarget.classList.add('active');
-
-      window.dispatchEvent(new Event('resize'));
-    }}
-
-    function openTab(evt, tabId) {{
-      var tabs = document.querySelectorAll('.tabcontent');
-      tabs.forEach(tab => tab.style.display = 'none');
-
-      var buttons = document.querySelectorAll('.tablink');
-      buttons.forEach(btn => btn.classList.remove('active'));
-
-      document.getElementById(tabId).style.display = 'block';
-      evt.currentTarget.classList.add('active');
-
-      window.dispatchEvent(new Event('resize'));
-    }}
-
-    window.onload = function () {{
-      document.getElementById('globalTab').style.display = 'block';
-      document.querySelector('.sidebar button').classList.add('active');
-    }};
-  </script>
-</head>
-
-<body>
-  <div class="sidebar">
-    <h2>Dashboard</h2>
-    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
-    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
-    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
-    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
-  </div>
-
-  <div class="main-content">
-    <h1>Closure Code Dashboard</h1>
-    {generate_global_tab(df)}
-    {generate_individual_tab(df)}
-    {generate_scheduling_tab()}
-    {generate_lec_tab(df)}
-  </div>
-</body>
-</html>
-"""
+    return f"""
+    <div id="lecTab" class="main-tab">
+      <h2>LEC Insights</h2>
+      <hr>{lec_total_html}
+      <hr>{lec_fail_html}
+      <hr>{lec_fail_bar_html}
+      <hr>{lec_usage_scatter_html}
+    </div>
+    """
