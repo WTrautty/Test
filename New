@@ -1,576 +1,89 @@
+<style>
+  body { 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    background: #eef2f7; 
+    margin: 0; 
+    padding: 30px; 
+    color: #333;
+  }
 
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import calendar
-import os
-from datetime import datetime
-import plotly.colors
-import hashlib
+  h1 {
+    text-align: center;
+    font-size: 32px;
+    color: #222;
+    margin-bottom: 40px;
+  }
 
-# === Configuration ===
-EXCEL_PATH = r"C:\\\Downloads\data (5).xlsx"
-EXPORT_HTML = r"C:\\\OneDrive - \ Delivery - Scripting Archive\Dashboards.html"
-TAB_MIN_ENTRIES = 100
-TOP_PERFORMER = "Davis, Walter (Walter)"
-TOP_LABEL = "Top Performer"
-ADDITIONAL_EXCEL = r"C:\Users\\Desktop\\-07-25\Auditing Script\Outlook_Calendars.xlsx"
+  h2 {
+    color: #444;
+    margin-top: 0;
+    font-size: 24px;
+  }
 
+  .maintablink, .tablink { 
+    margin: 6px;
+    padding: 10px 20px;
+    cursor: pointer;
+    border: none;
+    font-weight: bold;
+    font-size: 14px;
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    color: white;
+    border-radius: 8px;
+    transition: background 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
 
-def validate_columns(df, required_cols, file_name):
-    missing = [col for col in required_cols if col not in df.columns]
-    if missing:
-        raise ValueError(f"Missing columns {missing} in {file_name}")
+  .maintablink:hover, .tablink:hover {
+    background: linear-gradient(to right, #5a0eb5, #1e63d8);
+  }
 
-def generate_global_tab(df):
-    # Sort the dataframe by Month first to ensure chronological order
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df['Month'] = pd.to_datetime(df['Month'].astype(str)).dt.to_period('M')
-    df = df.sort_values('Month')
-    df['Month'] = df['Month'].astype(str)
-    
+  .active { 
+    background: linear-gradient(to right, #11998e, #38ef7d) !important;
+    color: white;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+  }
 
-    # For pie chart, handle NaN values and rename columns correctly
-    pie_df = (
-        df["Closure Code 1"]
-        .fillna("Unknown")
-        .value_counts(normalize=True)
-        .mul(100)
-        .reset_index()
-    )
-    pie_df.columns = ["proportion", "Percentage"]  # Changed column names to match what plotly expects
-    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
-    pie.update_layout(height=300)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
+  .main-tab { 
+    display: none; 
+    padding: 25px; 
+    background: white; 
+    border-radius: 16px; 
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1); 
+    margin-top: 30px;
+  }
 
-    closed = df.groupby("Month").size().reset_index(name="Closed Orders")
-    closed_line = px.line(closed, x="Month", y="Closed Orders", title="Global Closed Orders Per Month")
-    closed_line.update_layout(height=300)
-    closed_html = closed_line.to_html(full_html=False, include_plotlyjs=False)
+  .tabcontent { 
+    display: none; 
+    margin-top: 20px; 
+  }
 
-    fail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
-    fail_line = px.line(fail, x="Month", y="Fail %", title="Global Failure Rate per Month")
-    fail_line.update_layout(yaxis=dict(range=[0, 40]), height=300)
-    fail_html = fail_line.to_html(full_html=False, include_plotlyjs=True)
+  .tab-buttons-wrapper { 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 10px;
+    margin-bottom: 25px;
+  }
 
-    return f"""
-    <div id="globalTab" class="main-tab">
-      <h2>Global Statistics</h2>
-      <hr>{fail_html}
-      <hr>{pie_html}
-      <hr>{closed_html}
-    </div>
-    """
+  hr { 
+    border: 0; 
+    height: 2px; 
+    background: #ccc; 
+    margin: 30px 0; 
+  }
 
-def generate_individual_tab(df):
-    owner_counts = df["Task Owner"].value_counts()
-    valid = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
-    if not valid:
-        return "<div id='individualTab' class='main-tab'><h2>No Individual Reports Available</h2></div>"
+  @media (max-width: 768px) {
+    .maintablink, .tablink {
+      padding: 8px 14px;
+      font-size: 13px;
+    }
 
-    # Prepare top performer dataframe
-    top_df = df[df["Task Owner"] == TOP_PERFORMER].copy()
-    top_df["Is Fail"] = top_df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    top_df["Month"] = top_df["Completed Date"].dt.to_period("M").astype(str)
+    h1 {
+      font-size: 26px;
+    }
 
-    # ✅ Correct global average: average tasks per technician per month
-    monthly_per_owner = df.groupby(["Month", "Task Owner"]).size().reset_index(name="Count")
-    global_avg = monthly_per_owner.groupby("Month")["Count"].mean().reset_index(name="Average")
-
-    # Top performer monthly and failure stats
-    top_monthly = top_df.groupby("Month").size().reset_index(name="Completed")
-    tfail = top_df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Top Fail %")
-
-    buttons = []
-    contents = []
-    for i, owner in enumerate(valid):
-        div_id = f"tab{i}"
-        badge = " *Top Performer" if owner == TOP_PERFORMER else ""
-        owner_df = df[df["Task Owner"] == owner].copy()
-        owner_df["Is Fail"] = owner_df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-        owner_df["Month"] = owner_df["Completed Date"].dt.to_period("M").astype(str)
-
-        # Pie chart: closure code distribution
-        op = owner_df["Closure Code 1"].value_counts(normalize=True).mul(100)
-        tp = top_df["Closure Code 1"].value_counts(normalize=True).mul(100)
-        codes = sorted(set(op.index).union(tp.index))
-        op = op.reindex(codes, fill_value=0)
-        tp = tp.reindex(codes, fill_value=0)
-        pie_df = pd.DataFrame({"Closure Code 1": codes, "Owner %": op.values})
-        pie = px.pie(pie_df, names="Closure Code 1", values="Owner %", title=f"{owner}'s Closure Code Distribution")
-        pie.update_layout(height=300)
-        pie_html = pie.to_html(full_html=False, include_plotlyjs=(i == 0))
-
-        # Bar chart: delta from top performer
-        diff = (op - tp).reset_index()
-        diff.columns = ["Closure Code 1", "Delta"]
-        diff = diff.sort_values("Delta")
-        colors = [
-            ("green" if d >= 0 else "crimson") if "successful" in c.lower()
-            else ("green" if d < 0 else "crimson") if "fail" in c.lower()
-            else "blue"
-            for c, d in zip(diff["Closure Code 1"], diff["Delta"])
-        ]
-        bar = go.Figure(
-            go.Bar(y=diff["Closure Code 1"], x=diff["Delta"], orientation="h", marker_color=colors)
-        )
-        bar.update_layout(
-            title=f"{owner} vs {TOP_LABEL} – Closure Code Δ", xaxis=dict(range=[-20, 20]), height=300
-        )
-        bar_html = bar.to_html(full_html=False, include_plotlyjs=False)
-
-        # Line chart: monthly completed tasks
-        own_monthly = owner_df.groupby("Month").size().reset_index(name="Completed")
-        line = go.Figure()
-        line.add_trace(go.Scatter(x=own_monthly["Month"], y=own_monthly["Completed"], name=owner))
-        line.add_trace(
-            go.Scatter(
-                x=top_monthly["Month"],
-                y=top_monthly["Completed"],
-                name=TOP_LABEL,
-                line=dict(dash="dash"),
-            )
-        )
-        line.add_trace(
-            go.Scatter(
-                x=global_avg["Month"],
-                y=global_avg["Average"],
-                name="Global Avg",
-                line=dict(dash="dot"),
-            )
-        )
-        line.update_layout(title=f"{owner} – Monthly Completed Tasks", height=300)
-        line_html = line.to_html(full_html=False, include_plotlyjs=False)
-
-        # Line chart: fail rate comparison
-        ofail = owner_df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
-        gfail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Global Fail %")
-        ff = ofail.merge(tfail, on="Month", how="outer").merge(gfail, on="Month", how="outer")
-        fail_fig = go.Figure()
-        fail_fig.add_trace(go.Scatter(x=ff["Month"], y=ff["Fail %"], name=owner))
-        fail_fig.add_trace(
-            go.Scatter(x=ff["Month"], y=ff["Top Fail %"], name=TOP_LABEL, line=dict(dash="dash"))
-        )
-        fail_fig.add_trace(
-            go.Scatter(x=ff["Month"], y=ff["Global Fail %"], name="Global Avg", line=dict(dash="dot"))
-        )
-        fail_fig.update_layout(title=f"{owner} – % Fail Rate", yaxis=dict(range=[0, 100]), height=300)
-        fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
-
-        # Assemble buttons and tabs
-        buttons.append(
-            f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>'
-        )
-        contents.append(
-            f"""
-            <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'};">
-              {pie_html}
-              <hr>{bar_html}
-              <hr>{line_html}
-              <hr>{fail_html}
-            </div>
-            """
-        )
-
-    return f"""
-    <div id="individualTab" class="main-tab">
-      <h2>Individual Reports</h2>
-      <div class="tab-buttons-wrapper">{''.join(buttons)}</div>
-      {''.join(contents)}
-    </div>
-    """
-
-def generate_scheduling_tab():
-    try:
-        xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine="openpyxl")
-    except Exception:
-        return "<div id='schedulingTab' class='main-tab'><h2>Error Loading Scheduling Data</h2></div>"
-
-    records = []
-    for name, sheet in xls.items():
-        if "End" not in sheet.columns:
-            continue
-        try:
-            validate_columns(sheet, ["End"], f"Sheet {name}")
-        except ValueError:
-            continue
-        s = sheet.dropna(subset=["End"]).copy()
-        s["End"] = pd.to_datetime(s["End"], errors="coerce")
-        s = s.dropna(subset=["End"])
-        s["Month"] = s["End"].dt.to_period("M").astype(str)
-        counts = s.groupby("Month").size().reset_index(name="Count")
-        counts["Tab"] = name
-        records.append(counts)
-
-    if not records:
-        return "<div id='schedulingTab' class='main-tab'><h2>No Scheduling Data Available</h2></div>"
-
-    sched = pd.concat(records, ignore_index=True)
-    avg_tab_fig = px.bar(
-        sched.groupby("Tab")["Count"].mean().reset_index(),
-        x="Tab",
-        y="Count",
-        title="Avg Rows per Tab per Month",
-    )
-    avg_tab_fig.update_layout(height=300)
-
-    # Prep base figure
-    total_monthly_fig = go.Figure()
-
-    # Add total line
-    total_df = sched.groupby("Month")["Count"].sum().reset_index(name="Total Rows")
-    total_monthly_fig.add_trace(
-        go.Scatter(x=total_df["Month"], y=total_df["Total Rows"], name="Total", line=dict(width=3))
-    )
-
-    # Add each individual tab line
-    for tab, group in sched.groupby("Tab"):
-        monthly = group.groupby("Month")["Count"].sum().reset_index()
-        total_monthly_fig.add_trace(
-            go.Scatter(x=monthly["Month"], y=monthly["Count"], name=tab, line=dict(dash="dot"))
-        )
-
-    total_monthly_fig.update_layout(
-        title="Total Rows Across All Tabs and Per Calendar",
-        height=300
-)
-
-    workday_data = []
-    for month_str, grp in sched.groupby("Month"):
-        total = grp["Count"].sum()
-        try:
-            year, mon = map(int, month_str.split("-"))
-            start_date = pd.Timestamp(f"{year}-{mon:02d}-01")
-            end_date = start_date + pd.offsets.MonthEnd(1)
-            workdays = pd.date_range(start=start_date, end=end_date, freq="B").size
-            workday_data.append({"Month": month_str, "Avg Per Workday": total / workdays})
-        except ValueError:
-            continue
-
-    workday_df = pd.DataFrame(workday_data)
-    workday_fig = px.bar(
-        workday_df, x="Month", y="Avg Per Workday", title="Average Rows per Workday"
-    )
-    workday_fig.update_layout(height=600)
-
-    return f"""
-    <div id="schedulingTab" class="main-tab">
-      <h2>Scheduling Dashboard</h2>
-      <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
-      <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
-      <hr>{workday_fig.to_html(full_html=False, include_plotlyjs=False)}
-    </div>
-    """
-
-
-def generate_lec_tab(df):
-    if "Revised LEC" not in df.columns:
-        return "<div id='lecTab' class='main-tab'><h2>'Revised LEC' column not found in data.</h2></div>"
-
-    import hashlib
-    from plotly.colors import qualitative
-    import plotly.express as px
-    import plotly.graph_objects as go
-
-    def get_color_from_name(name, palette):
-        h = int(hashlib.sha256(name.encode("utf-8")).hexdigest(), 16)
-        return palette[h % len(palette)]
-
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
-
-    # === Step 1: Build LEC DataFrames for Total and Fail ===
-    def prepare_lec_df(source_df, column_name="Revised LEC", label="Misc. LECs", min_pct=0.01):
-        lec_counts = source_df[column_name].value_counts()
-        total = lec_counts.sum()
-        lec_main = lec_counts[lec_counts / total >= min_pct]
-        misc = lec_counts[lec_counts / total < min_pct].sum()
-        final = pd.concat([lec_main, pd.Series({label: misc})])
-        result_df = final.reset_index()
-        result_df.columns = ["LEC", "Count"]
-        return result_df.sort_values("Count", ascending=False)
-
-    lec_total_df = prepare_lec_df(df)
-    lec_fail_df = prepare_lec_df(df[df["Is Fail"] == True])
-
-    # === Step 2: Create Pie Charts with NO COLOR ===
-    lec_total_fig = px.pie(
-        lec_total_df,
-        names="LEC",
-        values="Count",
-        title="All Revised LEC Appearances (≥1%)",
-        category_orders={"LEC": list(lec_total_df["LEC"])}
-    )
-    lec_total_fig.update_traces(rotation=90, direction="clockwise", sort=False)
-
-    lec_fail_fig = px.pie(
-        lec_fail_df,
-        names="LEC",
-        values="Count",
-        title="Revised LEC Appearances on Failures (≥1%)",
-        category_orders={"LEC": list(lec_fail_df["LEC"])}
-    )
-    lec_fail_fig.update_traces(rotation=90, direction="clockwise", sort=False)
-
-    # === Step 3: Color map for all LECs ===
-    all_lecs = set(lec_total_df["LEC"]).union(set(lec_fail_df["LEC"]))
-    palette = qualitative.Alphabet
-    lec_color_map = {lec: get_color_from_name(lec, palette) for lec in all_lecs}
-
-    # === Step 4: Apply Colors to Pie Charts ===
-    def apply_colors(fig, df):
-        fig.update_traces(
-            marker=dict(colors=[lec_color_map[lec] for lec in df["LEC"]])
-        )
-        fig.update_layout(height=600)
-
-    apply_colors(lec_total_fig, lec_total_df)
-    apply_colors(lec_fail_fig, lec_fail_df)
-
-    # === Step 5: Failure Rate Bar Chart ===
-    fail_counts = df[df["Is Fail"]].groupby("Revised LEC").size()
-    total_counts = df.groupby("Revised LEC").size()
-    failure_rate = (fail_counts / total_counts).fillna(0) * 100
-    failure_rate = failure_rate[failure_rate.index.isin(all_lecs)]
-    failure_rate_df = failure_rate.reset_index()
-    failure_rate_df.columns = ["LEC", "Failure Rate"]
-    failure_rate_df = failure_rate_df.sort_values("Failure Rate", ascending=True)
-
-    bar_colors = [lec_color_map.get(lec, "#888888") for lec in failure_rate_df["LEC"]]
-    fail_bar_fig = go.Figure(go.Bar(
-        x=failure_rate_df["Failure Rate"],
-        y=failure_rate_df["LEC"],
-        orientation="h",
-        marker_color=bar_colors
-    ))
-    fail_bar_fig.update_layout(
-        title="LEC Failure Rate (%)",
-        height=600,
-        xaxis=dict(title="Failure Rate (%)", range=[0, 100]),
-        yaxis=dict(title="LEC")
-    )
-    lec_fail_bar_html = fail_bar_fig.to_html(full_html=False, include_plotlyjs=False)
-
-        # === Step 6: Usage vs. Failure Rate Scatter ===
-    total_sum = total_counts.sum()
-    usage_rate = (total_counts / total_sum * 100).fillna(0)
-    scatter_df = pd.DataFrame({
-        "LEC": usage_rate.index,
-        "Usage Rate": (usage_rate.round()).astype(int),
-        "Failure Rate": (failure_rate.reindex(usage_rate.index).fillna(0).round()).astype(int),
-        "Total Count": total_counts.values
-    })
-    scatter_df = scatter_df[scatter_df["LEC"].isin(all_lecs)]
-
-    usage_mean = scatter_df["Usage Rate"].mean()
-    fail_mean = scatter_df["Failure Rate"].mean()
-
-    usage_scatter_fig = px.scatter(
-        scatter_df,
-        x="Usage Rate",
-        y="Failure Rate",
-        size="Total Count",
-        color="LEC",
-        color_discrete_map=lec_color_map,
-        hover_name="LEC",
-        hover_data={
-            "Usage Rate": True,
-            "Failure Rate": True,
-            "Total Count": True
-        },
-        title="Usage Rate vs. Failure Rate per LEC"
-    )
-
-    # Format hover labels with % symbols
-    usage_scatter_fig.update_traces(
-        hovertemplate=(
-            "<b>%{hovertext}</b><br><br>" +
-            "Usage Rate: %{x}%<br>" +
-            "Failure Rate: %{y}%<br>" +
-            "Total Count: %{marker.size}<extra></extra>"
-        )
-    )
-
-    usage_scatter_fig.update_layout(
-        height=600,
-        xaxis=dict(title="Usage Rate (%)", range=[0, 25]),
-        yaxis=dict(title="Failure Rate (%)", range=[0, 40]),
-        shapes=[
-            dict(
-                type="line", x0=usage_mean, x1=usage_mean, y0=0, y1=40,
-                line=dict(color="gray", width=2, dash="dash")
-            ),
-            dict(
-                type="line", x0=0, x1=25, y0=fail_mean, y1=fail_mean,
-                line=dict(color="gray", width=2, dash="dash")
-            )
-        ],
-        annotations=[
-            dict(x=usage_mean * 1.5, y=fail_mean * 0.5, text="High usage, Low failure", showarrow=False),
-            dict(x=usage_mean * 0.5, y=fail_mean * 0.5, text="Low usage, Low failure", showarrow=False),
-            dict(x=usage_mean * 0.5, y=fail_mean * 1.5, text="Low usage, High failure", showarrow=False),
-            dict(x=usage_mean * 1.5, y=fail_mean * 1.5, text="High usage, High failure", showarrow=False),
-        ]
-    )
-
-    lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    # === Step 7: Export HTML
-    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
-    lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    return f"""
-    <div id="lecTab" class="main-tab">
-      <h2>LEC Insights</h2>
-      <hr>{lec_total_html}
-      <hr>{lec_fail_html}
-      <hr>{lec_fail_bar_html}
-      <hr>{lec_usage_scatter_html}
-    </div>
-    """
-
-def main():
-    try:
-        df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
-    except Exception:
-        raise
-
-    required_cols = ["Task Owner", "Closure Code 1", "Completed Date"]
-    validate_columns(df, required_cols, EXCEL_PATH)
-    df = df.dropna(subset=required_cols)
-    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-    df = df.dropna(subset=["Completed Date"])
-    df["Month"] = df["Completed Date"].dt.to_period("M")
-    df = df.sort_values("Month")
-    df["Month"] = df["Month"].astype(str)
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Closure Code Dashboard</title>
-      <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-      <script>
-        function switchMainTab(evt, tabId) {{
-          var tabs = document.querySelectorAll('.main-tab');
-          tabs.forEach(function(tab) {{
-            tab.style.display = 'none';
-          }});
-          var buttons = document.querySelectorAll('.maintablink');
-          buttons.forEach(function(button) {{
-            button.classList.remove('active');
-          }});
-          document.getElementById(tabId).style.display = 'block';
-          evt.currentTarget.classList.add('active');
-          window.dispatchEvent(new Event('resize'));
-        }}
-
-        function openTab(evt, tabId) {{
-          var tabs = document.querySelectorAll('.tabcontent');
-          tabs.forEach(function(tab) {{
-            tab.style.display = 'none';
-          }});
-          var buttons = document.querySelectorAll('.tablink');
-          buttons.forEach(function(button) {{
-            button.classList.remove('active');
-          }});
-          document.getElementById(tabId).style.display = 'block';
-          evt.currentTarget.classList.add('active');
-          window.dispatchEvent(new Event('resize'));
-        }}
-
-        // Set initial active tab
-        window.onload = function() {{
-          document.getElementById('globalTab').style.display = 'block';
-          document.querySelector('.maintablink').classList.add('active');
-        }};
-      </script>
-      <style>
-        body {{ 
-          font-family: Arial, sans-serif; 
-          background: #f9f9f9; 
-          margin: 0; 
-          padding: 20px; 
-        }}
-        .maintablink, .tablink {{ 
-          margin: 4px; 
-          padding: 8px 16px; 
-          cursor: pointer; 
-          border: none;
-          background: #f1f1f1;
-          border-radius: 4px; 
-        }}
-        .maintablink:hover, .tablink:hover {{
-          background: #ddd;
-        }}
-        .active {{ 
-          background: #4CAF50 !important;
-          color: white;
-        }}
-        .main-tab {{ 
-          display: none; 
-          padding: 20px; 
-          background: #fff; 
-          border-radius: 8px; 
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-          margin-top: 20px;
-        }}
-        .tabcontent {{ 
-          display: none; 
-          margin-top: 20px; 
-        }}
-        hr {{ 
-          border: 0; 
-          height: 1px; 
-          background: #ddd; 
-          margin: 20px 0; 
-        }}
-        .tab-buttons-wrapper {{ 
-          display: flex; 
-          flex-wrap: wrap; 
-          gap: 8px;
-          margin-bottom: 20px;
-        }}
-        h1 {{
-          color: #333;
-          margin-bottom: 30px;
-        }}
-        h2 {{
-          color: #444;
-          margin-top: 0;
-        }}
-        @media (max-width: 600px) {{
-          .main-tab {{ 
-            padding: 10px; 
-          }}
-          .maintablink, .tablink {{ 
-            padding: 6px 12px; 
-            font-size: 14px; 
-          }}
-        }}
-      </style>
-    </head>
-    <body>
-      <h1>Closure Code Dashboard</h1>
-      <div>
-        <button class="maintablink" onclick="switchMainTab(event, 'globalTab')">Global</button>
-        <button class="maintablink" onclick="switchMainTab(event, 'individualTab')">Individual</button>
-        <button class="maintablink" onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
-        <button class="maintablink" onclick="switchMainTab(event, 'lecTab')">LEC</button>
-      </div>
-      {generate_global_tab(df)}
-      {generate_individual_tab(df)}
-      {generate_scheduling_tab()}
-      {generate_lec_tab(df)}
-    </body>
-    </html>
-    """
-
-    with open(EXPORT_HTML, "w", encoding="utf-8") as f:
-        f.write(html)
-
-if __name__ == "__main__":
-    main()
+    h2 {
+      font-size: 20px;
+    }
+  }
+</style>
