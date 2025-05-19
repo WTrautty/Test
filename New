@@ -1,1 +1,9 @@
-df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+print("\n[DEBUG] Global Data Sample:")
+print(df.head())
+
+print("\n[DEBUG] Unique Months in Data:")
+print(df['Month'].unique())
+
+print("\n[DEBUG] Fail Rate Calculation:")
+fail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
+print(fail)
