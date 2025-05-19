@@ -32,7 +32,7 @@ def generate_failure_analysis_tab(df):
     owner_min_dim = min(owner_contingency.shape) - 1
     owner_cramers_v = np.sqrt(owner_chi2 / (owner_n * owner_min_dim)) if owner_min_dim > 0 else 0
 
-    # === Pearson Correlation: Monthly Volume vs. Failure Rate ===
+    # === Pearson correlation between monthly order volume and failure rate ===
     monthly_data = df.groupby("Month").agg(
         Fail_Rate=("Is Fail", "mean"),
         Order_Count=("Is Fail", "count")
@@ -41,7 +41,7 @@ def generate_failure_analysis_tab(df):
     if len(monthly_data["Order_Count"].unique()) > 1:
         volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
     else:
-        volume_corr, volume_p = 0, 1  # Not enough variation
+        volume_corr, volume_p = 0, 1  # Avoid undefined correlation
 
     volume_annotation = (
         f"Pearson r = {volume_corr:.3f}<br>p = {volume_p:.2e}<br><i>(Weak & Not Significant)</i>"
@@ -49,7 +49,7 @@ def generate_failure_analysis_tab(df):
         f"Pearson r = {volume_corr:.3f}<br>p = {volume_p:.2e}"
     )
 
-    # === Render Bar Chart ===
+    # === Bar: Correlation Summary ===
     fig = go.Figure(data=[
         go.Bar(
             x=["Revised LEC", "Task Owner", "Monthly Volume"],
@@ -63,7 +63,6 @@ def generate_failure_analysis_tab(df):
             marker_color=["#3498db", "#f39c12", "#2ecc71"]
         )
     ])
-
     fig.update_layout(
         title="Failure Correlation Overview",
         yaxis_title="Association Strength (0 to 1)",
@@ -71,11 +70,64 @@ def generate_failure_analysis_tab(df):
         height=450
     )
 
+    # === Line Chart: Monthly Failure Rate and Volume ===
+    monthly_line = go.Figure()
+    monthly_line.add_trace(go.Scatter(
+        x=monthly_data["Month"],
+        y=(monthly_data["Fail_Rate"] * 100),
+        name="Failure Rate (%)",
+        mode="lines+markers",
+        yaxis="y1"
+    ))
+    monthly_line.add_trace(go.Scatter(
+        x=monthly_data["Month"],
+        y=monthly_data["Order_Count"],
+        name="Order Volume",
+        mode="lines+markers",
+        yaxis="y2"
+    ))
+    monthly_line.update_layout(
+        title="Monthly Failure Rate (%) and Order Volume",
+        yaxis=dict(title="Failure Rate (%)", range=[0, 100]),
+        yaxis2=dict(title="Order Volume", overlaying="y", side="right"),
+        xaxis=dict(title="Month"),
+        legend=dict(x=0.01, y=0.99),
+        height=400
+    )
+    monthly_line_html = monthly_line.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Bar: Task Owner Failure Rates ===
+    owner_failure_rate = df.groupby("Task Owner")["Is Fail"].mean().sort_values(ascending=True) * 100
+    owner_fail_bar = go.Figure(go.Bar(
+        x=owner_failure_rate.values,
+        y=owner_failure_rate.index,
+        orientation="h",
+        marker_color="#e74c3c",
+        text=[f"{v:.1f}%" for v in owner_failure_rate.values],
+        textposition="auto"
+    ))
+    owner_fail_bar.update_layout(
+        title="Overall Failure Rate per Task Owner",
+        xaxis_title="Failure Rate (%)",
+        height=500
+    )
+    owner_fail_bar_html = owner_fail_bar.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Full HTML Return ===
     return f"""
     <div id="failureTab" class="main-tab">
       <h2>Failure Analysis</h2>
       <p>This chart shows the strength of statistical association between various factors and failure outcomes.<br>
       <small><i>Only Revised LEC showed a moderate, statistically significant correlation with failure rate.</i></small></p>
+
       {fig.to_html(full_html=False, include_plotlyjs=False)}
+
+      <hr>
+      <h3>Monthly Failure Rate and Order Volume</h3>
+      {monthly_line_html}
+
+      <hr>
+      <h3>Failure Rate by Task Owner</h3>
+      {owner_fail_bar_html}
     </div>
     """
