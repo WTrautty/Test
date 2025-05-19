@@ -14,6 +14,9 @@ def generate_lec_tab(df):
     lec_total_df = lec_final.reset_index()
     lec_total_df.columns = ["LEC", "Count"]
 
+    print("\n[DEBUG] Total LECs for Pie Chart:")
+    print(lec_total_df)
+
     # --- Fail LEC Pie (≥1%) ---
     fail_df = df[df["Is Fail"] == True]
     lec_fail_counts = fail_df["Revised LEC"].fillna("Unknown").astype(str).value_counts()
@@ -24,10 +27,17 @@ def generate_lec_tab(df):
     lec_fail_df = lec_fail_final.reset_index()
     lec_fail_df.columns = ["LEC", "Count"]
 
+    print("\n[DEBUG] Fail LECs for Pie Chart:")
+    print(lec_fail_df)
+
     # --- Assign consistent colors across both charts ---
     all_lecs = set(map(str, lec_total_df["LEC"])).union(map(str, lec_fail_df["LEC"]))
     colors = plotly.colors.qualitative.Plotly
     lec_color_map = {lec: colors[i % len(colors)] for i, lec in enumerate(sorted(all_lecs))}
+
+    print("\n[DEBUG] Color Map Assigned to LECs:")
+    for lec, color in lec_color_map.items():
+        print(f"  {lec}: {color}")
 
     # --- Total LEC Pie ---
     lec_total_pie = px.pie(
