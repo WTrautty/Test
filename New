@@ -1,3 +1,9 @@
+import pandas as pd
+import numpy as np
+from scipy.stats import chi2_contingency, spearmanr
+import plotly.graph_objects as go
+import plotly.express as px
+
 def generate_failure_analysis_tab(df):
     required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date", "PID"]
     if not all(col in df.columns for col in required_cols):
@@ -126,4 +132,44 @@ def generate_failure_analysis_tab(df):
     </ul>
     Significance adjusted with Bonferroni correction (α = {alpha:.3f}).<br>
     <b>Higher bars indicate stronger associations</b>, not causality.</p>
+    """
+
+    # === Correlation: Unique Task Owners vs. Failure Rate ===
+    summary = (
+        df.groupby("Month")
+          .agg(
+              Unique_Owners=("Task Owner", pd.Series.nunique),
+              Failure_Rate=("Is Fail", "mean")
+          )
+          .reset_index()
+    )
+    summary["Failure_Rate"] = (summary["Failure_Rate"] * 100).round(1)
+
+    if len(summary) >= 3:
+        corr, pval = spearmanr(summary["Unique_Owners"], summary["Failure_Rate"])
+        p_display = f"{pval:.3f}" if pval >= 0.001 else f"{pval:.1e}"
+        annotation = f"Spearman r = {corr:.3f}, p = {p_display}"
+
+        scatter_fig = px.scatter(
+            summary,
+            x="Unique_Owners",
+            y="Failure_Rate",
+            text="Month",
+            trendline="ols",
+            title=f"Failure Rate vs. Unique Task Owners per Month<br><sup>{annotation}</sup>"
+        )
+        scatter_fig.update_traces(marker=dict(size=10), textposition="top center")
+        scatter_fig.update_layout(height=500, xaxis_title="Unique Task Owners", yaxis_title="Failure Rate (%)")
+        scatter_html = scatter_fig.to_html(full_html=False, include_plotlyjs=False)
+    else:
+        scatter_html = "<p><i>Not enough months of data to compute correlation.</i></p>"
+
+    return f"""
+    <div id="failureTab" class="main-tab">
+        <h2>Failure Analysis</h2>
+        {assoc_fig.to_html(full_html=False, include_plotlyjs=True)}
+        {assoc_desc}
+        <h3>Failure Rate vs. Unique Task Owners per Month</h3>
+        {scatter_html}
+    </div>
     """
