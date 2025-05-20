@@ -9,7 +9,6 @@ def generate_failure_analysis_tab(df):
     if not all(col in df.columns for col in required_cols):
         return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
 
-    # Clean and transform core data
     df = df.copy()
     df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
     df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
@@ -66,9 +65,10 @@ def generate_failure_analysis_tab(df):
         return f"{strength} association ({significance})"
 
     def add_assoc(label, value, p, method):
+        p_display = f"{p:.3f}" if p >= 0.001 else f"{p:.1e}"
         assoc_x.append(label)
         assoc_y.append(value)
-        assoc_text.append(f"{method} = {value:.3f}<br>p = {p:.3f}<br>({annotate(value, p)})")
+        assoc_text.append(f"{method} = {value:.3f}<br>p = {p_display}<br>({annotate(value, p)})")
         p_values.append(p)
 
     # === Apply associations ===
@@ -83,7 +83,7 @@ def generate_failure_analysis_tab(df):
         "Complex or Simple": "cat",
         "PC/PM": "cat",
         "Days to Close": "num",
-        "Month": "num"
+        "Month": "cat"  # <-- Now using Cramér’s V instead of Spearman
     }
 
     for col, kind in targets.items():
@@ -91,13 +91,8 @@ def generate_failure_analysis_tab(df):
             continue
         if kind == "cat":
             val, p = cramers_v(df[col].fillna("Unknown"), df["Is Fail"])
-            add_assoc(col, val, p, "Cramér's V")
-            num_tests += 1
-        elif col == "Month":
-            monthly = df.groupby("Month").agg(Fail_Rate=("Is Fail", "mean"), Count=("PID", "count")).reset_index()
-            if len(monthly) >= 3:
-                val, p = spearman_corr(monthly["Count"], monthly["Fail_Rate"])
-                add_assoc("Monthly Volume", val, p, "Spearman r")
+            if val is not None:
+                add_assoc(col, val, p, "Cramér's V")
                 num_tests += 1
         else:
             val, p = spearman_corr(df[col], df["Is Fail"])
