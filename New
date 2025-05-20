@@ -1,13 +1,12 @@
 def generate_global_tab(df):
-    # Sort the dataframe by Month first to ensure chronological order
+    import plotly.graph_objects as go
+    import plotly.express as px
+
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df['Month'] = pd.to_datetime(df['Month'].astype(str)).dt.to_period('M')
-    df = df.sort_values('Month')
-    df['Month'] = df['Month'].astype(str)
-    
+    df["Month"] = pd.to_datetime(df["Month"].astype(str)).dt.to_period("M").astype(str)
 
-    # For pie chart, handle NaN values and rename columns correctly
+    # === Pie Chart of Closure Code Distribution ===
     pie_df = (
         df["Closure Code 1"]
         .fillna("Unknown")
@@ -15,26 +14,63 @@ def generate_global_tab(df):
         .mul(100)
         .reset_index()
     )
-    pie_df.columns = ["proportion", "Percentage"]  # Changed column names to match what plotly expects
+    pie_df.columns = ["proportion", "Percentage"]
     pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
     pie.update_layout(height=450)
     pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
 
-    closed = df.groupby("Month").size().reset_index(name="Closed Orders")
-    closed_line = px.line(closed, x="Month", y="Closed Orders", title="Global Closed Orders Per Month")
-    closed_line.update_layout(height=300)
-    closed_html = closed_line.to_html(full_html=False, include_plotlyjs=False)
+    # === Combined Chart of Orders, Failure Rate, and % Failures ===
+    monthly_stats = df.groupby("Month").agg(
+        Closed_Orders=("Is Fail", "count"),
+        Failures=("Is Fail", "sum")
+    ).reset_index()
+    monthly_stats["Failure Rate (%)"] = (monthly_stats["Failures"] / monthly_stats["Closed_Orders"]) * 100
 
-    fail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
-    fail_line = px.line(fail, x="Month", y="Fail %", title="Global Failure Rate per Month")
-    fail_line.update_layout(yaxis=dict(range=[0, 40]), height=300)
-    fail_html = fail_line.to_html(full_html=False, include_plotlyjs=True)
+    combo_fig = go.Figure()
+
+    # Bar: % of Orders That Failed
+    combo_fig.add_trace(go.Bar(
+        x=monthly_stats["Month"],
+        y=monthly_stats["Failure Rate (%)"],
+        name="% Orders Failed",
+        marker_color="crimson",
+        yaxis="y1"
+    ))
+
+    # Line: Total Orders Closed
+    combo_fig.add_trace(go.Scatter(
+        x=monthly_stats["Month"],
+        y=monthly_stats["Closed_Orders"],
+        name="Closed Orders",
+        mode="lines+markers",
+        marker_color="blue",
+        yaxis="y2"
+    ))
+
+    combo_fig.update_layout(
+        title="Monthly Failure % and Order Volume",
+        height=500,
+        barmode='group',
+        yaxis=dict(
+            title="% Orders Failed",
+            range=[0, max(40, monthly_stats["Failure Rate (%)"].max() + 10)],
+            side='left'
+        ),
+        yaxis2=dict(
+            title="Closed Orders",
+            overlaying="y",
+            side="right"
+        ),
+        xaxis=dict(title="Month"),
+        legend=dict(x=1, y=1, xanchor='right', yanchor='top')
+    )
+
+    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
 
     return f"""
     <div id="globalTab" class="main-tab">
       <h2>Global Statistics</h2>
-      <hr>{fail_html}
+      <hr>{combo_html}
       <hr>{pie_html}
-      <hr>{closed_html}
     </div>
     """
