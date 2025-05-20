@@ -11,7 +11,6 @@ def generate_frat_tab(frat_df):
     frat_df = frat_df[frat_df['Days to Close'] >= 0]
     frat_df['Month'] = frat_df['Completed Date'].dt.to_period('M').astype(str)
 
-    # Static list of top task owners
     top_owners = [
         "Mclean, Jordan (Jordan)",
         "Lang, Nicholas (Nicholas)",
@@ -39,10 +38,10 @@ def generate_frat_tab(frat_df):
         )
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
-    def create_line_chart(data, label):
+    def create_line_chart(label):
         fig = go.Figure()
 
-        # Global total
+        # Global
         global_monthly = frat_df.groupby('Month').size().reset_index(name='Closed')
         fig.add_trace(go.Scatter(
             x=global_monthly['Month'],
@@ -55,13 +54,12 @@ def generate_frat_tab(frat_df):
         for owner in top_owners:
             sub = frat_df[frat_df['Task Owner'] == owner]
             sub_monthly = sub.groupby('Month').size().reset_index(name='Closed')
-            if not sub_monthly.empty:
-                fig.add_trace(go.Scatter(
-                    x=sub_monthly['Month'],
-                    y=sub_monthly['Closed'],
-                    mode='lines+markers',
-                    name=owner
-                ))
+            fig.add_trace(go.Scatter(
+                x=sub_monthly['Month'],
+                y=sub_monthly['Closed'],
+                mode='lines+markers',
+                name=owner
+            ))
 
         fig.update_layout(
             title=f"Tasks Closed per Month – {label}",
@@ -71,21 +69,25 @@ def generate_frat_tab(frat_df):
         )
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
-    # Global Tab
+    # Global
     global_bar = create_bar_chart(frat_df, 'Global')
-    global_line = create_line_chart(frat_df, 'Global')
+    global_line = create_line_chart('Global')
 
     buttons = [f'<button class="tablink" onclick="openTab(event, \'frat_tab_global\')">Global</button>']
     contents = [f'<div id="frat_tab_global" class="tabcontent" style="display:block">{global_bar}<hr>{global_line}</div>']
 
-    # Top Task Owner Tabs
+    # Each owner
     for i, owner in enumerate(top_owners):
         owner_df = frat_df[frat_df['Task Owner'] == owner]
-        owner_bar = create_bar_chart(owner_df, owner)
-        owner_line = create_line_chart(owner_df, owner)
+        if owner_df.empty:
+            owner_bar_html = "<p>No data available.</p>"
+        else:
+            owner_bar_html = create_bar_chart(owner_df, owner)
+
+        line_html = create_line_chart(owner)
         div_id = f"frat_tab_{i}"
         buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-        contents.append(f'<div id="{div_id}" class="tabcontent" style="display:none">{owner_bar}<hr>{owner_line}</div>')
+        contents.append(f'<div id="{div_id}" class="tabcontent" style="display:none">{owner_bar_html}<hr>{line_html}</div>')
 
     return f"""
     <div id='fratTab' class='main-tab'>
