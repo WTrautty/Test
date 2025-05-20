@@ -1,3 +1,2 @@
-print("[DEBUG] FRAT Task Owner value counts:\n", frat_df['Task Owner'].value_counts())
-top_owners = frat_df['Task Owner'].value_counts().nlargest(3).index.tolist()
-print("[DEBUG] Top 3 Task Owners from FRAT:", top_owners)
+if __name__ == "__main__":
+    main()
