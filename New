@@ -1,63 +1,182 @@
-def generate_frat_tab(frat_df):
+def main():
     import pandas as pd
-    import plotly.graph_objects as go
-    import plotly.express as px
 
-    frat_df = frat_df.copy()
-    frat_df['Create Date'] = pd.to_datetime(frat_df['Create Date'], errors='coerce')
-    frat_df['Completed Date'] = pd.to_datetime(frat_df['Completed Date'], errors='coerce')
-    frat_df = frat_df.dropna(subset=['Create Date', 'Completed Date', 'Task Owner'])
+    try:
+        df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
+    except Exception:
+        raise
 
-    frat_df['Days to Close'] = (frat_df['Completed Date'] - frat_df['Create Date']).dt.days
-    frat_df = frat_df[frat_df['Days to Close'] >= 0]
-    frat_df['Month'] = frat_df['Completed Date'].dt.to_period('M').astype(str)
+    try:
+        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
 
-    # Static top owners
-    top_owners = [
-        "Mclean, Jordan (Jordan)",
-        "Lang, Nicholas (Nicholas)",
-        "Gray, Christopher (Chris)"
-    ]
+    validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], EXCEL_PATH)
+    df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df = df.dropna(subset=["Completed Date"])
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    def create_bar_chart(data, owner_label):
-        monthly_stats = data.groupby('Month').agg(
-            Avg_Close=('Days to Close', 'mean'),
-            Median_Close=('Days to Close', 'median'),
-            P90_Close=('Days to Close', lambda x: x.quantile(0.9))
-        ).reset_index()
+    frat_tab_html = generate_frat_tab(frat_df)
 
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Avg_Close'], name='Mean'))
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Median_Close'], name='Median'))
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['P90_Close'], name='90th Percentile'))
+    html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Closure Code Dashboard</title>
+  <script src="plotly-latest.min.js"></script>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+      margin: 0;
+      background-color: #f4f6f9;
+      display: flex;
+      color: #333;
+    }}
+    .sidebar {{
+      width: 220px;
+      background: #2f3542;
+      color: #fff;
+      height: 100vh;
+      position: fixed;
+      top: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      padding-top: 30px;
+    }}
+    .sidebar h2 {{
+      text-align: center;
+      font-size: 20px;
+      margin-bottom: 30px;
+    }}
+    .sidebar button {{
+      padding: 15px 20px;
+      border: none;
+      background: none;
+      color: white;
+      text-align: left;
+      width: 100%;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }}
+    .sidebar button:hover {{
+      background: #57606f;
+    }}
+    .sidebar button.active {{
+      background: #1e90ff;
+    }}
+    .main-content {{
+      margin-left: 220px;
+      padding: 30px;
+      flex: 1;
+    }}
+    .main-tab {{
+      display: none;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      margin-bottom: 40px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    }}
+    .tab-buttons-wrapper {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }}
+    .tablink {{
+      padding: 10px 18px;
+      border: none;
+      background: #f1f1f1;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.3s ease;
+    }}
+    .tablink:hover {{
+      background: #ddd;
+    }}
+    .tablink.active {{
+      background: #38ef7d;
+      color: white;
+    }}
+    .tabcontent {{
+      display: none;
+    }}
+    @media (max-width: 768px) {{
+      .sidebar {{
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        justify-content: space-around;
+        position: relative;
+      }}
+      .main-content {{
+        margin-left: 0;
+        padding: 20px;
+      }}
+    }}
+  </style>
+  <script>
+    function switchMainTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.main-tab');
+      tabs.forEach(tab => tab.style.display = 'none');
+      document.getElementById(tabId).style.display = 'block';
 
-        fig.update_layout(
-            barmode='group',
-            title=f"Days to Close (Mean/Median/P90) - {owner_label}",
-            height=400,
-            xaxis_title='Month',
-            yaxis_title='Days'
-        )
-        return fig.to_html(full_html=False, include_plotlyjs=False)
+      var buttons = document.querySelectorAll('.sidebar button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
 
-    global_chart = create_bar_chart(frat_df, 'Global')
+      window.dispatchEvent(new Event('resize'));
+    }}
 
-    buttons = [f'<button class="tablink" onclick="openTab(event, \'frat_tab_global\')">Global</button>']
-    contents = [f'<div id="frat_tab_global" class="tabcontent" style="display:block">{global_chart}</div>']
+    function openTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.tabcontent');
+      tabs.forEach(tab => tab.style.display = 'none');
+      document.getElementById(tabId).style.display = 'block';
 
-    for i, owner in enumerate(top_owners):
-        owner_df = frat_df[frat_df['Task Owner'] == owner]
-        chart_html = create_bar_chart(owner_df, owner)
-        div_id = f"frat_tab_{i}"
-        buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
-        contents.append(f'<div id="{div_id}" class="tabcontent" style="display:none">{chart_html}</div>')
+      var buttons = document.querySelectorAll('.tablink');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
 
-    return f"""
-    <div id='fratTab' class='main-tab'>
-      <h2>FRAT Task Closure Analysis</h2>
-      <div class='tab-buttons-wrapper'>
-        {''.join(buttons)}
-      </div>
-      {''.join(contents)}
-    </div>
-    """
+      window.dispatchEvent(new Event('resize'));
+    }}
+
+    window.onload = function () {{
+      document.getElementById('globalTab').style.display = 'block';
+      document.querySelector('.sidebar button').classList.add('active');
+    }};
+  </script>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>Dashboard</h2>
+    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
+    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
+    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
+    <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
+    <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
+  </div>
+  <div class="main-content">
+    <h1>Closure Code Dashboard</h1>
+    {generate_global_tab(df)}
+    {generate_individual_tab(df)}
+    {generate_scheduling_tab()}
+    {generate_lec_tab(df)}
+    {generate_failure_analysis_tab(df)}
+    {frat_tab_html}
+  </div>
+</body>
+</html>
+"""
+
+    with open(EXPORT_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+if __name__ == "__main__":
+    main()
