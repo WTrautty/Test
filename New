@@ -1,4 +1,8 @@
 def generate_scheduling_tab():
+    import pandas as pd
+    import plotly.graph_objects as go
+    import plotly.express as px
+
     try:
         xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine="openpyxl")
     except Exception:
@@ -34,7 +38,7 @@ def generate_scheduling_tab():
     )
     avg_tab_fig.update_layout(height=300)
 
-    # === Chart 2: Total per calendar line chart ===
+    # === Chart 2: Total rows across all tabs ===
     total_monthly_fig = go.Figure()
     total_df = all_data.groupby("Month").size().reset_index(name="Total Rows")
     total_monthly_fig.add_trace(go.Scatter(
@@ -74,26 +78,22 @@ def generate_scheduling_tab():
     sched_dropdown_fig = go.Figure()
     visibility = []
     for i, (schedulers, values) in enumerate(summary.items()):
-        time_to_schedule = [450 / v if v != 0 else None for v in values]  # in minutes
+        time_to_schedule = [450 / v if v else None for v in values]  # 450 minutes per 7.5 hr day
 
         sched_dropdown_fig.add_trace(go.Bar(
             x=months,
             y=values,
-            name=f"{schedulers} Scheduler{'s' if schedulers > 1 else ''}",
-            visible=(i == 0),
-            #text=[f"{v:.1f} rows/day<br>{t:.0f} min/row" if v else "N/A" for v, t in zip(values, time_to_schedule)],
-            #textposition="auto",
-            hovertemplate=
-                "Month: %{x}<br>" +
-                "Rows per Workday: %{y:.1f}<br>" +
-                "Time per Row: %{customdata:.0f} min<extra></extra>"
+            name=f"{schedulers}",
+            visible=(i == 0),  # Default to 1 scheduler
+            customdata=[[t] for t in time_to_schedule],
+            hovertemplate="Month: %{x}<br>Rows/Workday: %{y:.1f}<br>Min/Row: %{customdata[0]:.0f}<extra></extra>"
         ))
         visibility_row = [False] * len(summary)
         visibility_row[i] = True
         visibility.append(visibility_row)
 
     sched_dropdown_fig.update_layout(
-        title="Adjusted Avg Rows per Scheduler per Workday (With Vacation)",
+        title="Adjusted Rows per Scheduler per Workday (with Vacation Time)",
         height=600,
         updatemenus=[{
             "buttons": [
@@ -102,7 +102,7 @@ def generate_scheduling_tab():
                     "method": "update",
                     "args": [
                         {"visible": visibility[i]},
-                        {"title": f"Adjusted Avg Rows per Scheduler per Workday – {n} Scheduler{'s' if n > 1 else ''}"}
+                        {"title": f"Adjusted Rows per Scheduler – {n} Scheduler{'s' if n > 1 else ''}"}
                     ]
                 } for i, n in enumerate(summary.keys())
             ],
@@ -115,12 +115,18 @@ def generate_scheduling_tab():
         }]
     )
 
-    # === Export full tab HTML ===
+    explanation = """
+    <p><i>This chart shows how many rows (appointments) each scheduler must handle per workday.<br>
+    The calculation adjusts for a 7.5-hour workday and assumes each scheduler uses 36 vacation days per year,
+    spread evenly across months. Hover over the bars to see the estimated time each task takes.</i></p>
+    """
+
     return f"""
     <div id="schedulingTab" class="main-tab">
       <h2>Scheduling Dashboard</h2>
       <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
       <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
       <hr>{sched_dropdown_fig.to_html(full_html=False, include_plotlyjs=False)}
+      {explanation}
     </div>
     """
