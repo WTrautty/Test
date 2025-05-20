@@ -83,7 +83,7 @@ def generate_failure_analysis_tab(df):
         "Complex or Simple": "cat",
         "PC/PM": "cat",
         "Days to Close": "num",
-        "Month": "cat"  # <-- Now using Cramér’s V instead of Spearman
+        "Month": "cat"
     }
 
     for col, kind in targets.items():
@@ -91,9 +91,8 @@ def generate_failure_analysis_tab(df):
             continue
         if kind == "cat":
             val, p = cramers_v(df[col].fillna("Unknown"), df["Is Fail"])
-            if val is not None:
-                add_assoc(col, val, p, "Cramér's V")
-                num_tests += 1
+            add_assoc(col, val, p, "Cramér's V")
+            num_tests += 1
         else:
             val, p = spearman_corr(df[col], df["Is Fail"])
             add_assoc(col, val, p, "Spearman r")
@@ -108,7 +107,7 @@ def generate_failure_analysis_tab(df):
         for text, p in zip(assoc_text, p_values)
     ]
 
-    # === Plotting ===
+    # === Association Bar Chart ===
     assoc_fig = go.Figure(data=[
         go.Bar(
             x=assoc_x,
@@ -135,10 +134,35 @@ def generate_failure_analysis_tab(df):
     <b>Higher bars indicate stronger associations</b>, not causality.</p>
     """
 
+    # === Heatmap by State ===
+    if "State" in df.columns:
+        state_summary = (
+            df.groupby("State")
+              .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
+              .reset_index()
+        )
+        state_summary["Failure_Rate"] = (state_summary["Failure_Rate"] * 100).round(1)
+
+        heatmap_fig = px.choropleth(
+            state_summary,
+            locations="State",
+            locationmode="USA-states",
+            scope="usa",
+            color="Failure_Rate",
+            hover_data={"State": True, "Failure_Rate": True, "Total_Tasks": True},
+            color_continuous_scale="Reds",
+            title="Failure Rate by State"
+        )
+        heatmap_html = heatmap_fig.to_html(full_html=False, include_plotlyjs=False)
+    else:
+        heatmap_html = "<p><i>State column not available.</i></p>"
+
     return f"""
     <div id="failureTab" class="main-tab">
         <h2>Failure Analysis</h2>
         {assoc_fig.to_html(full_html=False, include_plotlyjs=True)}
         {assoc_desc}
+        <h3>Failure Rate by State</h3>
+        {heatmap_html}
     </div>
     """
