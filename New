@@ -26,19 +26,7 @@ def generate_global_tab(df):
     pie.update_layout(height=450)
     pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
 
-    # === Line Chart: Closed Orders per Month ===
-    closed = df.groupby("Month").size().reset_index(name="Closed Orders")
-    closed_line = px.line(closed, x="Month", y="Closed Orders", title="Global Closed Orders Per Month")
-    closed_line.update_layout(height=300)
-    closed_html = closed_line.to_html(full_html=False, include_plotlyjs=False)
-
-    # === Line Chart: Failure Rate per Month ===
-    fail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
-    fail_line = px.line(fail, x="Month", y="Fail %", title="Global Failure Rate per Month")
-    fail_line.update_layout(yaxis=dict(range=[0, 40]), height=300)
-    fail_html = fail_line.to_html(full_html=False, include_plotlyjs=False)
-
-    # === Combo Chart: Orders Closed, Failures, and % Failed ===
+    # === Combo Chart: Closed Orders, Failures, and % Failed ===
     monthly_stats = df.groupby("Month").agg(
         Closed_Orders=("Is Fail", "count"),
         Failures=("Is Fail", "sum")
@@ -81,7 +69,7 @@ def generate_global_tab(df):
     combo_fig.update_layout(
         title="Closed Orders, Failures, and Failure Rate per Month",
         barmode="group",
-        height=400,
+        height=450,
         xaxis=dict(title="Month"),
         yaxis=dict(title="", showticklabels=False),
         yaxis2=dict(
@@ -102,6 +90,5 @@ def generate_global_tab(df):
       <h2>Global Statistics</h2>
       <hr>{combo_html}
       <hr>{pie_html}
-      <hr>{closed_html}
     </div>
     """
