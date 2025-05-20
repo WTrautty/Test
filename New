@@ -1,97 +1,24 @@
-def generate_global_tab(df):
-    import pandas as pd
-    import plotly.express as px
-    import plotly.graph_objects as go
-
-    print("[DEBUG] Starting generate_global_tab")
-
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df["Month"] = pd.to_datetime(df["Month"].astype(str)).dt.to_period("M").astype(str)
-    df = df.sort_values("Month")
-
-    print("[DEBUG] Unique Months in DataFrame:", df["Month"].unique())
-
-    # === Pie Chart: Closure Code Distribution ===
-    pie_df = (
-        df["Closure Code 1"]
-        .fillna("Unknown")
-        .value_counts(normalize=True)
-        .mul(100)
-        .reset_index()
-    )
-    pie_df.columns = ["proportion", "Percentage"]
-    print("[DEBUG] Pie Chart Categories:\n", pie_df)
-    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
-    pie.update_layout(height=450)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
-
-    # === Combo Chart: Closed Orders, Failures, and % Failed ===
-    monthly_stats = df.groupby("Month").agg(
-        Closed_Orders=("Is Fail", "count"),
-        Failures=("Is Fail", "sum")
-    ).reset_index()
-    monthly_stats["Failure Rate (%)"] = (monthly_stats["Failures"] / monthly_stats["Closed_Orders"]) * 100
-    print("[DEBUG] Monthly Aggregated Stats:\n", monthly_stats)
-
-    combo_fig = go.Figure()
-
-    # Line: Total closed orders
-    combo_fig.add_trace(go.Scatter(
-        x=monthly_stats["Month"],
-        y=monthly_stats["Closed_Orders"],
-        name="Closed Orders",
-        mode="lines+markers",
-        yaxis="y1"
-    ))
-
-    # Line: Total failures
-    combo_fig.add_trace(go.Scatter(
-        x=monthly_stats["Month"],
-        y=monthly_stats["Failures"],
-        name="Failures",
-        mode="lines+markers",
-        yaxis="y1"
-    ))
-
-    # Bar: % failure
-    combo_fig.add_trace(go.Bar(
-        x=monthly_stats["Month"],
-        y=monthly_stats["Failure Rate (%)"],
-        name="% Failed",
-        yaxis="y2",
-        opacity=0.6,
-        marker_color="#e74c3c",
-        hovertemplate="Month: %{x}<br>Failure Rate: %{y:.1f}%<extra></extra>"
-    ))
-
-    combo_fig.update_layout(
-        title="Closed Orders, Failures, and Failure Rate per Month",
-        barmode="overlay",
-        height=450,
-        xaxis=dict(title="Month"),
-        yaxis=dict(
-            title="Order Count",
-            showticklabels=True
-        ),
-        yaxis2=dict(
-            title="Failure Rate (%)",
-            overlaying="y",
-            side="right",
-            range=[0, 100],
-            showticklabels=True
-        ),
-        legend=dict(x=1, y=1, xanchor='right', yanchor='top'),
-        margin=dict(t=50, b=50)
-    )
-    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    print("[DEBUG] Finished generate_global_tab")
-
-    return f"""
-    <div id="globalTab" class="main-tab">
-      <h2>Global Statistics</h2>
-      <hr>{combo_html}
-      <hr>{pie_html}
-    </div>
-    """
+combo_fig.update_layout(
+    title="Closed Orders, Failures, and Failure Rate per Month",
+    barmode="overlay",
+    height=450,
+    xaxis=dict(
+        title="Month",
+        showgrid=False  # Hide vertical grid lines
+    ),
+    yaxis=dict(
+        title="Order Count",
+        showticklabels=True,
+        showgrid=False  # Hide horizontal grid lines (left axis)
+    ),
+    yaxis2=dict(
+        title="Failure Rate (%)",
+        overlaying="y",
+        side="right",
+        range=[0, 100],
+        showticklabels=True,
+        showgrid=False  # Hides horizontal grid lines (redundant for overlay, but explicit)
+    ),
+    legend=dict(x=1, y=1, xanchor='right', yanchor='top'),
+    margin=dict(t=50, b=50)
+)
