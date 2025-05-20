@@ -1,18 +1,217 @@
-x_labels = ["Revised LEC", "Task Owner", "Monthly Volume"]
-y_values = [lec_cramers_v, owner_cramers_v, volume_corr]
-hover_texts = [
-    f"Cramér's V = {lec_cramers_v:.3f}<br>p = {lec_p:.2e}{annotate_strength(lec_cramers_v)}",
-    f"Cramér's V = {owner_cramers_v:.3f}<br>p = {owner_p:.2e}{annotate_strength(owner_cramers_v)}",
-    f"Pearson r = {volume_corr:.3f}<br>p = {volume_p:.2e}{annotate_strength(volume_corr)}"
-]
+def generate_failure_analysis_tab(df):
+    import pandas as pd
+    import numpy as np
+    from scipy.stats import chi2_contingency, pearsonr
+    import plotly.graph_objects as go
 
-fig = go.Figure()
-fig.add_trace(go.Bar(
-    x=x_labels,
-    y=y_values,
-    customdata=hover_texts,
-    hovertemplate="%{customdata}<extra></extra>",
-    text=[f"{v:.3f}" for v in y_values],
-    textposition="auto",
-    marker_color=["#3498db", "#f39c12", "#2ecc71"]
-))
+    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date"]
+    if not all(col in df.columns for col in required_cols):
+        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
+
+    df = df.copy()
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
+    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df = df.dropna(subset=["Completed Date"])
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+
+    # === Cramér’s V & Pearson Correlation ===
+    lec_contingency = pd.crosstab(df["Revised LEC"], df["Is Fail"])
+    lec_chi2, lec_p, _, _ = chi2_contingency(lec_contingency)
+    lec_n = lec_contingency.sum().sum()
+    lec_min_dim = min(lec_contingency.shape) - 1
+    lec_cramers_v = np.sqrt(lec_chi2 / (lec_n * lec_min_dim)) if lec_min_dim > 0 else 0
+
+    owner_contingency = pd.crosstab(df["Task Owner"], df["Is Fail"])
+    owner_chi2, owner_p, _, _ = chi2_contingency(owner_contingency)
+    owner_n = owner_contingency.sum().sum()
+    owner_min_dim = min(owner_contingency.shape) - 1
+    owner_cramers_v = np.sqrt(owner_chi2 / (owner_n * owner_min_dim)) if owner_min_dim > 0 else 0
+
+    monthly_data = df.groupby("Month").agg(
+        Fail_Rate=("Is Fail", "mean"),
+        Order_Count=("Is Fail", "count")
+    ).reset_index()
+
+    if len(monthly_data["Order_Count"].unique()) > 1:
+        volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
+    else:
+        volume_corr, volume_p = 0, 1
+
+    def annotate_strength(value):
+        if value >= 0.3:
+            return "(Moderate association)"
+        elif value >= 0.1:
+            return "(Weak association)"
+        else:
+            return "(Negligible association)"
+
+    # === Bar Chart (No tooltips)
+    bar_fig = go.Figure(go.Bar(
+        x=["Revised LEC", "Task Owner", "Monthly Volume"],
+        y=[lec_cramers_v, owner_cramers_v, volume_corr],
+        text=[f"{lec_cramers_v:.3f}", f"{owner_cramers_v:.3f}", f"{volume_corr:.3f}"],
+        textposition="auto",
+        marker_color=["#3498db", "#f39c12", "#2ecc71"]
+    ))
+    bar_fig.update_layout(
+        title="Failure Correlation Overview",
+        yaxis_title="Association Strength",
+        yaxis=dict(range=[-0.1, 0.4]),
+        height=450
+    )
+    bar_html = bar_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    bar_description_html = f"""
+    <div style="margin-top: 15px; padding: 10px; background: #f9f9f9; border-left: 5px solid #2f3542;">
+      <strong>Revised LEC:</strong> Cramér's V = {lec_cramers_v:.3f}, p = {lec_p:.2e} <i>{annotate_strength(lec_cramers_v)}</i><br>
+      <strong>Task Owner:</strong> Cramér's V = {owner_cramers_v:.3f}, p = {owner_p:.2e} <i>{annotate_strength(owner_cramers_v)}</i><br>
+      <strong>Monthly Volume:</strong> Pearson r = {volume_corr:.3f}, p = {volume_p:.2e} <i>{annotate_strength(volume_corr)}</i>
+    </div>
+    """
+
+    # === Monthly Failure Rate and Volume Line Chart
+    monthly_line = go.Figure()
+    monthly_line.add_trace(go.Scatter(
+        x=monthly_data["Month"],
+        y=(monthly_data["Fail_Rate"] * 100),
+        name="Failure Rate (%)",
+        mode="lines+markers",
+        yaxis="y1"
+    ))
+    monthly_line.add_trace(go.Scatter(
+        x=monthly_data["Month"],
+        y=monthly_data["Order_Count"],
+        name="Order Volume",
+        mode="lines+markers",
+        yaxis="y2"
+    ))
+    monthly_line.update_layout(
+        title="Monthly Failure Rate (%) and Order Volume",
+        yaxis=dict(title="Failure Rate (%)", range=[0, 100]),
+        yaxis2=dict(title="Order Volume", overlaying="y", side="right"),
+        xaxis=dict(title="Month"),
+        legend=dict(x=1, y=1, xanchor='right', yanchor='top'),
+        height=400
+    )
+    monthly_line_html = monthly_line.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Owner Failure Rate Bar
+    owner_failure_rate = df.groupby("Task Owner")["Is Fail"].mean().sort_values(ascending=True) * 100
+    owner_fail_bar = go.Figure(go.Bar(
+        x=owner_failure_rate.values,
+        y=owner_failure_rate.index,
+        orientation="h",
+        marker_color="#e74c3c",
+        text=[f"{v:.1f}%" for v in owner_failure_rate.values],
+        textposition="auto"
+    ))
+    owner_fail_bar.update_layout(
+        title="Overall Failure Rate per Task Owner",
+        xaxis_title="Failure Rate (%)",
+        height=500
+    )
+    owner_fail_bar_html = owner_fail_bar.to_html(full_html=False, include_plotlyjs=False)
+
+    # === Projection Chart
+    lec_failure_rates = df.groupby("Revised LEC")["Is Fail"].mean()
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+    actual_monthly = df.groupby("Month").agg(
+        Actual_Failures=("Is Fail", "sum"),
+        Total_Orders=("Is Fail", "count")
+    ).reset_index()
+
+    projection_fig = go.Figure()
+    buttons = []
+    visibility_matrix = []
+    annotations = []
+    titles = []
+
+    for i, (lec, lec_rate) in enumerate(lec_failure_rates.items()):
+        projected = actual_monthly["Total_Orders"] * lec_rate
+        projection_fig.add_trace(go.Scatter(
+            x=actual_monthly["Month"],
+            y=projected,
+            mode="lines+markers",
+            name=f"Projected Failures ({lec})",
+            visible=(i == 0)
+        ))
+        projection_fig.add_trace(go.Scatter(
+            x=actual_monthly["Month"],
+            y=actual_monthly["Actual_Failures"],
+            mode="lines+markers",
+            name="Actual Failures",
+            visible=(i == 0)
+        ))
+        visibility_row = [False] * (len(lec_failure_rates) * 2)
+        visibility_row[i * 2] = True
+        visibility_row[i * 2 + 1] = True
+        visibility_matrix.append(visibility_row)
+
+        total_saved = int(actual_monthly["Actual_Failures"].sum() - projected.sum())
+        new_rate = (projected.sum() / actual_monthly["Total_Orders"].sum()) * 100
+        old_rate = (actual_monthly["Actual_Failures"].sum() / actual_monthly["Total_Orders"].sum()) * 100
+        diff = old_rate - new_rate
+        annotation_text = f"<b>Total Saved:</b> {total_saved}<br><b>New Rate:</b> {new_rate:.2f}%<br><b>Difference:</b> {diff:.2f}%"
+        annotations.append(dict(
+            text=annotation_text,
+            x=1.05,
+            y=0.5,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            align="left",
+            font=dict(size=12)
+        ))
+        titles.append(f"Projected vs. Actual Failures if All Orders Used {lec}")
+
+    projection_fig.update_layout(
+        title=titles[0],
+        yaxis_title="Number of Failures",
+        xaxis_title="Month",
+        height=450,
+        annotations=[annotations[0]],
+        updatemenus=[{
+            "buttons": [
+                dict(
+                    label=lec,
+                    method="update",
+                    args=[
+                        {"visible": visibility_matrix[i]},
+                        {"title": titles[i], "annotations": [annotations[i]]}
+                    ]
+                ) for i, lec in enumerate(lec_failure_rates.index)
+            ],
+            "direction": "down",
+            "showactive": True,
+            "x": 1,
+            "xanchor": "right",
+            "y": 1.15,
+            "yanchor": "top"
+        }]
+    )
+    projection_fig_html = projection_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    return f"""
+    <div id="failureTab" class="main-tab">
+      <h2>Failure Analysis</h2>
+      <p>This chart shows the strength of statistical association between various factors and failure outcomes.<br>
+      <small><i>Only Revised LEC showed a moderate, statistically significant correlation with failure rate.</i></small></p>
+
+      {bar_html}
+      {bar_description_html}
+
+      <hr>
+      <h3>Monthly Failure Rate and Order Volume</h3>
+      {monthly_line_html}
+
+      <hr>
+      <h3>Failure Rate by Task Owner</h3>
+      {owner_fail_bar_html}
+
+      <hr>
+      <h3>Projected vs. Actual Failures Based on LEC Selection</h3>
+      {projection_fig_html}
+    </div>
+    """
