@@ -1,24 +1,28 @@
-    # === Row Bar Chart: Failure Rate by PC/PM ===
+    # === Row Bar Chart: Failure Rate by PC/PM (min 3 tasks) ===
     if "PC/PM" in df.columns:
         pcpm_summary = (
             df.groupby("PC/PM")
               .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
               .reset_index()
-              .sort_values(by="Failure_Rate", ascending=True)
         )
+        pcpm_summary = pcpm_summary[pcpm_summary["Total_Tasks"] > 2]
         pcpm_summary["Failure_Rate"] = (pcpm_summary["Failure_Rate"] * 100).round(1)
+        pcpm_summary = pcpm_summary.sort_values(by="Failure_Rate", ascending=True)
 
-        pcpm_bar = px.bar(
-            pcpm_summary,
-            x="Failure_Rate",
-            y="PC/PM",
-            orientation="h",
-            color="Failure_Rate",
-            color_continuous_scale="Reds",
-            hover_data={"PC/PM": True, "Failure_Rate": True, "Total_Tasks": True},
-            title="Failure Rate by PC/PM (%)"
-        )
-        pcpm_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="PC/PM")
-        pcpm_bar_html = pcpm_bar.to_html(full_html=False, include_plotlyjs=False)
+        if not pcpm_summary.empty:
+            pcpm_bar = px.bar(
+                pcpm_summary,
+                x="Failure_Rate",
+                y="PC/PM",
+                orientation="h",
+                color="Failure_Rate",
+                color_continuous_scale="Reds",
+                hover_data={"PC/PM": True, "Failure_Rate": True, "Total_Tasks": True},
+                title="Failure Rate by PC/PM (%)"
+            )
+            pcpm_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="PC/PM")
+            pcpm_bar_html = pcpm_bar.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            pcpm_bar_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
     else:
         pcpm_bar_html = "<p><i>PC/PM column not available.</i></p>"
