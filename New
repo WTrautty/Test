@@ -1,22 +1,82 @@
-sched_dropdown_fig.update_layout(
-    title="Adjusted Rows per Scheduler per Workday (with Vacation Time)",
-    height=600,
-    updatemenus=[{
-        "buttons": [
-            {
-                "label": f"{n} Scheduler{'s' if n > 1 else ''}",
-                "method": "update",
-                "args": [
-                    {"visible": visibility[i]},
-                    {"title": {"text": f"Adjusted Rows per Scheduler per Workday – {n} Scheduler{'s' if n > 1 else ''}"}}
-                ]
-            } for i, n in enumerate(summary.keys())
-        ],
-        "direction": "down",
-        "showactive": True,
-        "x": 1,
-        "xanchor": "right",
-        "y": 1.15,
-        "yanchor": "top"
-    }]
-)
+def generate_failure_analysis_tab(df):
+    import pandas as pd
+    import numpy as np
+    from scipy.stats import chi2_contingency, pearsonr
+    import plotly.graph_objects as go
+
+    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date"]
+    if not all(col in df.columns for col in required_cols):
+        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
+
+    df = df.copy()
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
+    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df["Create Date"] = pd.to_datetime(df["Create Date"], errors="coerce")
+    df["Days to Close"] = (df["Completed Date"] - df["Create Date"]).dt.days
+    df = df.dropna(subset=["Completed Date", "Create Date"])
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+
+    # === Association Strengths ===
+    lec_contingency = pd.crosstab(df["Revised LEC"], df["Is Fail"])
+    lec_chi2, lec_p, _, _ = chi2_contingency(lec_contingency)
+    lec_n = lec_contingency.sum().sum()
+    lec_min_dim = min(lec_contingency.shape) - 1
+    lec_cramers_v = np.sqrt(lec_chi2 / (lec_n * lec_min_dim)) if lec_min_dim > 0 else 0
+
+    owner_contingency = pd.crosstab(df["Task Owner"], df["Is Fail"])
+    owner_chi2, owner_p, _, _ = chi2_contingency(owner_contingency)
+    owner_n = owner_contingency.sum().sum()
+    owner_min_dim = min(owner_contingency.shape) - 1
+    owner_cramers_v = np.sqrt(owner_chi2 / (owner_n * owner_min_dim)) if owner_min_dim > 0 else 0
+
+    monthly_data = df.groupby("Month").agg(
+        Fail_Rate=("Is Fail", "mean"),
+        Order_Count=("Is Fail", "count")
+    ).reset_index()
+
+    if len(monthly_data["Order_Count"].unique()) > 1:
+        volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
+    else:
+        volume_corr, volume_p = 0, 1
+
+    if df["Days to Close"].nunique() > 1:
+        time_corr, time_p = pearsonr(df["Days to Close"], df["Is Fail"])
+    else:
+        time_corr, time_p = 0, 1
+
+    def annotate_strength(value):
+        if value >= 0.3:
+            return "Moderate association"
+        elif value >= 0.1:
+            return "Weak association"
+        else:
+            return "Negligible association"
+
+    assoc_fig = go.Figure(data=[
+        go.Bar(
+            x=["Revised LEC", "Task Owner", "Monthly Volume", "Time to Close"],
+            y=[lec_cramers_v, owner_cramers_v, volume_corr, time_corr],
+            text=[
+                f"Cramér's V = {lec_cramers_v:.3f}<br>({annotate_strength(lec_cramers_v)})",
+                f"Cramér's V = {owner_cramers_v:.3f}<br>({annotate_strength(owner_cramers_v)})",
+                f"Pearson r = {volume_corr:.3f}<br>({annotate_strength(volume_corr)})",
+                f"Pearson r = {time_corr:.3f}<br>({annotate_strength(time_corr)})"
+            ],
+            textposition="auto",
+            marker_color=["#3498db", "#f39c12", "#2ecc71", "#9b59b6"]
+        )
+    ])
+    assoc_fig.update_layout(
+        title="What Affects Failure Rates?",
+        yaxis_title="Association Strength",
+        yaxis=dict(range=[-0.1, 0.5]),
+        height=450
+    )
+
+    assoc_desc = """
+    <p><b>Revised LEC</b> has the strongest link with failure rates, meaning who you choose may matter.<br>
+    <b>Task Owner</b> has a small effect on failures, which suggests some people do slightly better.<br>
+    <b>Monthly Volume</b> and <b>Time to Close</b> show little to no meaningful link with failures.</p>
+    """
