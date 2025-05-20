@@ -2,11 +2,15 @@ def generate_global_tab(df):
     import plotly.graph_objects as go
     import plotly.express as px
 
+    print("[DEBUG] Starting generate_global_tab")
+
     df = df.copy()
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df["Month"] = pd.to_datetime(df["Month"].astype(str)).dt.to_period("M").astype(str)
+    df["Month"] = pd.to_datetime(df["Month"].astype(str), errors='coerce').dt.to_period("M").astype(str)
 
-    # === Pie Chart of Closure Code Distribution ===
+    print("[DEBUG] Unique Months in DataFrame:", df["Month"].unique())
+
+    # === Pie Chart Debug ===
     pie_df = (
         df["Closure Code 1"]
         .fillna("Unknown")
@@ -15,20 +19,29 @@ def generate_global_tab(df):
         .reset_index()
     )
     pie_df.columns = ["proportion", "Percentage"]
+    print("[DEBUG] Pie Chart Categories:\n", pie_df.head())
+
     pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
     pie.update_layout(height=450)
     pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
 
-    # === Combined Chart of Orders, Failure Rate, and % Failures ===
+    # === Monthly Aggregates ===
     monthly_stats = df.groupby("Month").agg(
         Closed_Orders=("Is Fail", "count"),
         Failures=("Is Fail", "sum")
     ).reset_index()
     monthly_stats["Failure Rate (%)"] = (monthly_stats["Failures"] / monthly_stats["Closed_Orders"]) * 100
 
+    print("[DEBUG] Monthly Aggregated Stats:\n", monthly_stats)
+
+    # Edge case: empty chart
+    if monthly_stats.empty:
+        print("[ERROR] No data found for monthly_stats.")
+        return "<div id='globalTab' class='main-tab'><h2>No Data Available for Global Statistics</h2></div>"
+
+    # === Combined Figure ===
     combo_fig = go.Figure()
 
-    # Bar: % of Orders That Failed
     combo_fig.add_trace(go.Bar(
         x=monthly_stats["Month"],
         y=monthly_stats["Failure Rate (%)"],
@@ -37,7 +50,6 @@ def generate_global_tab(df):
         yaxis="y1"
     ))
 
-    # Line: Total Orders Closed
     combo_fig.add_trace(go.Scatter(
         x=monthly_stats["Month"],
         y=monthly_stats["Closed_Orders"],
@@ -66,6 +78,8 @@ def generate_global_tab(df):
     )
 
     combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
+
+    print("[DEBUG] Finished generate_global_tab")
 
     return f"""
     <div id="globalTab" class="main-tab">
