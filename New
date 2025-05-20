@@ -62,21 +62,24 @@ def generate_global_tab(df):
         yaxis="y2",
         opacity=0.6,
         marker_color="#e74c3c",
-        hovertemplate="Month: %{x}<br>Failure Rate: %{y:.1f}%<extra></extra>",
-        text=None
+        hovertemplate="Month: %{x}<br>Failure Rate: %{y:.1f}%<extra></extra>"
     ))
 
     combo_fig.update_layout(
         title="Closed Orders, Failures, and Failure Rate per Month",
-        barmode="group",
+        barmode="overlay",
         height=450,
         xaxis=dict(title="Month"),
-        yaxis=dict(title="", showticklabels=False),
+        yaxis=dict(
+            title="Order Count",
+            showticklabels=True
+        ),
         yaxis2=dict(
-            title="",
+            title="Failure Rate (%)",
             overlaying="y",
             side="right",
-            showticklabels=False
+            range=[0, 100],
+            showticklabels=True
         ),
         legend=dict(x=1, y=1, xanchor='right', yanchor='top'),
         margin=dict(t=50, b=50)
