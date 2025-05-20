@@ -1,28 +1,52 @@
-    # === Row Bar Chart: Failure Rate by PC/PM (min 3 tasks) ===
+    # === Dual Axis Bar Chart: Task Count & Failure Rate per PC/PM (min 3 tasks) ===
     if "PC/PM" in df.columns:
-        pcpm_summary = (
+        pcpm_summary_dual = (
             df.groupby("PC/PM")
               .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
               .reset_index()
         )
-        pcpm_summary = pcpm_summary[pcpm_summary["Total_Tasks"] > 2]
-        pcpm_summary["Failure_Rate"] = (pcpm_summary["Failure_Rate"] * 100).round(1)
-        pcpm_summary = pcpm_summary.sort_values(by="Failure_Rate", ascending=True)
+        pcpm_summary_dual = pcpm_summary_dual[pcpm_summary_dual["Total_Tasks"] > 2]
+        pcpm_summary_dual["Failure_Rate"] = (pcpm_summary_dual["Failure_Rate"] * 100).round(1)
+        pcpm_summary_dual = pcpm_summary_dual.sort_values(by="Total_Tasks", ascending=False)
 
-        if not pcpm_summary.empty:
-            pcpm_bar = px.bar(
-                pcpm_summary,
-                x="Failure_Rate",
-                y="PC/PM",
-                orientation="h",
-                color="Failure_Rate",
-                color_continuous_scale="Reds",
-                hover_data={"PC/PM": True, "Failure_Rate": True, "Total_Tasks": True},
-                title="Failure Rate by PC/PM (%)"
+        if not pcpm_summary_dual.empty:
+            dual_fig = go.Figure()
+
+            # Bar: Total Tasks
+            dual_fig.add_trace(go.Bar(
+                x=pcpm_summary_dual["PC/PM"],
+                y=pcpm_summary_dual["Total_Tasks"],
+                name="Total Tasks",
+                yaxis="y1",
+                marker_color="lightskyblue"
+            ))
+
+            # Line: Failure Rate (%)
+            dual_fig.add_trace(go.Scatter(
+                x=pcpm_summary_dual["PC/PM"],
+                y=pcpm_summary_dual["Failure_Rate"],
+                name="Failure Rate (%)",
+                yaxis="y2",
+                mode="lines+markers",
+                marker=dict(color="crimson")
+            ))
+
+            dual_fig.update_layout(
+                title="Orders Completed vs. Failure Rate per PC/PM",
+                xaxis=dict(title="PC/PM"),
+                yaxis=dict(title="Total Tasks", side="left"),
+                yaxis2=dict(
+                    title="Failure Rate (%)",
+                    overlaying="y",
+                    side="right",
+                    range=[0, 100]
+                ),
+                legend=dict(x=0.01, y=0.99),
+                height=600
             )
-            pcpm_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="PC/PM")
-            pcpm_bar_html = pcpm_bar.to_html(full_html=False, include_plotlyjs=False)
+
+            dual_axis_html = dual_fig.to_html(full_html=False, include_plotlyjs=False)
         else:
-            pcpm_bar_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
+            dual_axis_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
     else:
-        pcpm_bar_html = "<p><i>PC/PM column not available.</i></p>"
+        dual_axis_html = "<p><i>PC/PM column not available.</i></p>"
