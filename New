@@ -1,56 +1,38 @@
-    # === First Name Split: Failure Rate per Individual from PC/PM ===
-    import re
-    def extract_first_names(pcpm_val):
-        if pd.isna(pcpm_val):
-            return []
-        names = re.split(r"[\/,&]+", str(pcpm_val))  # Split on / , & or other delimiters
-        firsts = []
-        for name in names:
-            name = name.strip()
-            if not name:
-                continue
-            if "," in name:  # e.g. "Smith, John"
-                parts = name.split(",")
-                if len(parts) > 1:
-                    firsts.append(parts[1].strip().split()[0])
-            else:
-                firsts.append(name.split()[0])
-        return firsts
+    # === Line Chart: Monthly Failure Rate by First Name ===
+    if "PC/PM" in df.columns and "Completed Date" in df.columns:
+        temp_df = df[["PC/PM", "Is Fail", "Completed Date"]].copy()
+        temp_df["Month"] = pd.to_datetime(temp_df["Completed Date"]).dt.to_period("M").astype(str)
 
-    if "PC/PM" in df.columns:
-        first_name_rows = []
-        for _, row in df.iterrows():
-            firsts = extract_first_names(row["PC/PM"])
-            for first in firsts:
-                first_name_rows.append({"First": first, "Is Fail": row["Is Fail"]})
+        name_records = []
+        for _, row in temp_df.iterrows():
+            names = extract_first_names(row["PC/PM"])
+            for name in names:
+                name_records.append({"First": name, "Month": row["Month"], "Is Fail": row["Is Fail"]})
 
-        first_df = pd.DataFrame(first_name_rows)
-        if not first_df.empty:
-            summary = (
-                first_df.groupby("First")
+        name_month_df = pd.DataFrame(name_records)
+        if not name_month_df.empty:
+            grouped = (
+                name_month_df.groupby(["First", "Month"])
                     .agg(Failure_Rate=("Is Fail", "mean"), Count=("Is Fail", "count"))
                     .reset_index()
             )
-            summary = summary[summary["Count"] > 2]
-            summary["Failure_Rate"] = (summary["Failure_Rate"] * 100).round(1)
-            summary = summary.sort_values(by="Failure_Rate", ascending=False)
+            grouped = grouped[grouped["Count"] > 2]
+            grouped["Failure_Rate"] = (grouped["Failure_Rate"] * 100).round(1)
 
-            if not summary.empty:
-                first_bar = px.bar(
-                    summary,
-                    x="Failure_Rate",
-                    y="First",
-                    orientation="h",
-                    color="Failure_Rate",
-                    color_continuous_scale="Reds",
-                    hover_data={"First": True, "Failure_Rate": True, "Count": True},
-                    title="Failure Rate by First Name (from PC/PM)"
+            if not grouped.empty:
+                line_fig = px.line(
+                    grouped,
+                    x="Month",
+                    y="Failure_Rate",
+                    color="First",
+                    markers=True,
+                    title="Monthly Failure Rate by Individual First Name"
                 )
-                first_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="First Name")
-                first_name_html = first_bar.to_html(full_html=False, include_plotlyjs=False)
+                line_fig.update_layout(height=600, yaxis_title="Failure Rate (%)")
+                name_time_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
             else:
-                first_name_html = "<p><i>No individuals with >2 tasks to show.</i></p>"
+                name_time_html = "<p><i>No sufficient monthly data to chart.</i></p>"
         else:
-            first_name_html = "<p><i>No valid PC/PM names parsed.</i></p>"
+            name_time_html = "<p><i>No valid PC/PM names or dates.</i></p>"
     else:
-        first_name_html = "<p><i>PC/PM column not found.</i></p>"
+        name_time_html = "<p><i>PC/PM or Completed Date column missing.</i></p>"
