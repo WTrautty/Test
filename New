@@ -1,44 +1,129 @@
-import pandas as pd
-import plotly.express as px
-from scipy.stats import spearmanr
-
-def correlation_unique_owners_vs_failrate(df):
-    if "Completed Date" not in df.columns or "Task Owner" not in df.columns or "Closure Code 1" not in df.columns:
-        return "<div><h3>Missing required columns.</h3></div>"
+def generate_failure_analysis_tab(df):
+    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date", "PID"]
+    if not all(col in df.columns for col in required_cols):
+        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
 
     df = df.copy()
-    df["Month"] = pd.to_datetime(df["Completed Date"]).dt.to_period("M").astype(str)
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
+    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df["Create Date"] = pd.to_datetime(df["Create Date"], errors="coerce")
+    df["Days to Close"] = (df["Completed Date"] - df["Create Date"]).dt.days
+    df = df.dropna(subset=["Completed Date", "Create Date"])
+    if df.empty:
+        return "<div id='failureTab' class='main-tab'><h2>No valid data after date processing.</h2></div>"
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
 
-    # Group by month
-    summary = (
-        df.groupby("Month")
-          .agg(
-              Unique_Owners=("Task Owner", pd.Series.nunique),
-              Failure_Rate=("Is Fail", "mean")
-          )
-          .reset_index()
+    # === Merge with SITE_INFO ===
+    try:
+        site_info = pd.read_excel(SITE_INFO_PATH, sheet_name="USDA Master", engine='openpyxl')
+        site_info = site_info.rename(columns={
+            "Lumen Ckt ID": "PID",
+            "Site Type (Ex lg, lg, med, small)": "Site Type",
+            "Complex or Simple EXD?": "Complex or Simple",
+        })
+        site_info_cols = ["PID", "Time Zone", "MA", "State", "Site Type", "Phase", "Complex or Simple", "PC/PM"]
+        site_info = site_info[[col for col in site_info_cols if col in site_info.columns]]
+        merge_stats = df.merge(site_info, on="PID", how="left", indicator=True)
+        unmatched = (merge_stats["_merge"] == "left_only").mean()
+        if unmatched > 0.5:
+            return f"<div id='failureTab' class='main-tab'><h2>Warning: {unmatched*100:.1f}% of PIDs unmatched in SITE_INFO merge.</h2></div>"
+        df = merge_stats.drop(columns=["_merge"])
+    except Exception as e:
+        return f"<div id='failureTab' class='main-tab'><h2>Error loading SITE_INFO: {e}</h2></div>"
+
+    # === Association Calculation ===
+    assoc_x, assoc_y, assoc_text, p_values = [], [], [], []
+    num_tests = 0
+
+    def cramers_v(x, y):
+        contingency = pd.crosstab(x, y)
+        if contingency.shape[0] < 2 or contingency.shape[1] < 2:
+            return 0, 1.0
+        chi2, p, _, _ = chi2_contingency(contingency)
+        n = contingency.sum().sum()
+        r, k = contingency.shape
+        return (np.sqrt(chi2 / (n * (min(k, r) - 1))), p)
+
+    def spearman_corr(x, y):
+        try:
+            corr, p = spearmanr(x, y)
+            return abs(corr), p
+        except:
+            return 0, 1.0
+
+    def annotate(value, pval, alpha=0.05):
+        strength = ("Moderate" if value >= 0.3 else "Weak" if value >= 0.1 else "Negligible")
+        significance = "significant" if pval < alpha else "not significant"
+        return f"{strength} association ({significance})"
+
+    def add_assoc(label, value, p, method):
+        p_display = f"{p:.3f}" if p >= 0.001 else f"{p:.1e}"
+        assoc_x.append(label)
+        assoc_y.append(value)
+        assoc_text.append(f"{method} = {value:.3f}<br>p = {p_display}<br>({annotate(value, p)})")
+        p_values.append(p)
+
+    # === Apply associations ===
+    targets = {
+        "Revised LEC": "cat",
+        "Task Owner": "cat",
+        "Time Zone": "cat",
+        "MA": "cat",
+        "State": "cat",
+        "Site Type": "cat",
+        "Phase": "cat",
+        "Complex or Simple": "cat",
+        "PC/PM": "cat",
+        "Days to Close": "num",
+        "Month": "cat"
+    }
+
+    for col, kind in targets.items():
+        if col not in df.columns or df[col].nunique() <= 1:
+            continue
+        if kind == "cat":
+            val, p = cramers_v(df[col].fillna("Unknown"), df["Is Fail"])
+            add_assoc(col, val, p, "Cramér's V")
+            num_tests += 1
+        else:
+            val, p = spearman_corr(df[col], df["Is Fail"])
+            add_assoc(col, val, p, "Spearman r")
+            num_tests += 1
+
+    # === Bonferroni Correction ===
+    alpha = 0.05 / max(num_tests, 1)
+    assoc_text = [
+        text.replace("(Moderate association)", f"(Moderate association, {'significant' if p < alpha else 'not significant'})")
+             .replace("(Weak association)", f"(Weak association, {'significant' if p < alpha else 'not significant'})")
+             .replace("(Negligible association)", f"(Negligible association, {'significant' if p < alpha else 'not significant'})")
+        for text, p in zip(assoc_text, p_values)
+    ]
+
+    # === Association Bar Chart ===
+    assoc_fig = go.Figure(data=[
+        go.Bar(
+            x=assoc_x,
+            y=assoc_y,
+            text=assoc_text,
+            textposition="auto",
+            marker_color=px.colors.qualitative.Pastel
+        )
+    ])
+    assoc_fig.update_layout(
+        title="Factors Associated with Failures",
+        yaxis_title="Association Strength",
+        yaxis=dict(range=[-0.05, 0.6]),
+        height=500
     )
-    summary["Failure_Rate"] = (summary["Failure_Rate"] * 100).round(1)
 
-    if len(summary) < 3:
-        return "<div><h3>Not enough data to compute correlation.</h3></div>"
-
-    # Spearman correlation
-    corr, pval = spearmanr(summary["Unique_Owners"], summary["Failure_Rate"])
-    p_display = f"{pval:.3f}" if pval >= 0.001 else f"{pval:.1e}"
-    annotation = f"Spearman r = {corr:.3f}, p = {p_display}"
-
-    # Plot
-    fig = px.scatter(
-        summary,
-        x="Unique_Owners",
-        y="Failure_Rate",
-        text="Month",
-        trendline="ols",
-        title=f"Failure Rate vs. Number of Unique Task Owners per Month<br><sup>{annotation}</sup>"
-    )
-    fig.update_traces(marker=dict(size=10), textposition="top center")
-    fig.update_layout(height=500, xaxis_title="Unique Task Owners", yaxis_title="Failure Rate (%)")
-
-    return fig.to_html(full_html=False, include_plotlyjs=True)
+    assoc_desc = f"""
+    <p>This chart analyzes correlations between failure outcomes and related factors using:<br>
+    <ul>
+        <li><b>Cramér's V</b> for categorical variables</li>
+        <li><b>Spearman r</b> for numerical trends</li>
+    </ul>
+    Significance adjusted with Bonferroni correction (α = {alpha:.3f}).<br>
+    <b>Higher bars indicate stronger associations</b>, not causality.</p>
+    """
