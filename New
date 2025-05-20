@@ -1,38 +1,29 @@
-    # === Line Chart: Monthly Failure Rate by First Name ===
-    if "PC/PM" in df.columns and "Completed Date" in df.columns:
-        temp_df = df[["PC/PM", "Is Fail", "Completed Date"]].copy()
-        temp_df["Month"] = pd.to_datetime(temp_df["Completed Date"]).dt.to_period("M").astype(str)
+    # === Line Chart: Monthly Failure Rate by Task Owner ===
+    if "Task Owner" in df.columns and "Completed Date" in df.columns:
+        owner_df = df[["Task Owner", "Is Fail", "Completed Date"]].copy()
+        owner_df["Month"] = pd.to_datetime(owner_df["Completed Date"]).dt.to_period("M").astype(str)
 
-        name_records = []
-        for _, row in temp_df.iterrows():
-            names = extract_first_names(row["PC/PM"])
-            for name in names:
-                name_records.append({"First": name, "Month": row["Month"], "Is Fail": row["Is Fail"]})
+        grouped_owner = (
+            owner_df.groupby(["Task Owner", "Month"])
+                .agg(Failure_Rate=("Is Fail", "mean"), Count=("Is Fail", "count"))
+                .reset_index()
+        )
+        grouped_owner = grouped_owner[grouped_owner["Count"] > 2]
+        grouped_owner["Failure_Rate"] = (grouped_owner["Failure_Rate"] * 100).round(1)
 
-        name_month_df = pd.DataFrame(name_records)
-        if not name_month_df.empty:
-            grouped = (
-                name_month_df.groupby(["First", "Month"])
-                    .agg(Failure_Rate=("Is Fail", "mean"), Count=("Is Fail", "count"))
-                    .reset_index()
+        if not grouped_owner.empty:
+            owner_line_fig = px.line(
+                grouped_owner,
+                x="Month",
+                y="Failure_Rate",
+                color="Task Owner",
+                markers=True,
+                hover_data={"Task Owner": True, "Failure_Rate": True, "Count": True},
+                title="Monthly Failure Rate by Task Owner"
             )
-            grouped = grouped[grouped["Count"] > 2]
-            grouped["Failure_Rate"] = (grouped["Failure_Rate"] * 100).round(1)
-
-            if not grouped.empty:
-                line_fig = px.line(
-                    grouped,
-                    x="Month",
-                    y="Failure_Rate",
-                    color="First",
-                    markers=True,
-                    title="Monthly Failure Rate by Individual First Name"
-                )
-                line_fig.update_layout(height=600, yaxis_title="Failure Rate (%)")
-                name_time_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
-            else:
-                name_time_html = "<p><i>No sufficient monthly data to chart.</i></p>"
+            owner_line_fig.update_layout(height=600, yaxis_title="Failure Rate (%)")
+            task_owner_time_html = owner_line_fig.to_html(full_html=False, include_plotlyjs=False)
         else:
-            name_time_html = "<p><i>No valid PC/PM names or dates.</i></p>"
+            task_owner_time_html = "<p><i>No sufficient monthly data to chart.</i></p>"
     else:
-        name_time_html = "<p><i>PC/PM or Completed Date column missing.</i></p>"
+        task_owner_time_html = "<p><i>Task Owner or Completed Date column missing.</i></p>"
