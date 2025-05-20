@@ -1,87 +1,88 @@
 def generate_failure_analysis_tab(df):
     import pandas as pd
     import numpy as np
-    from scipy.stats import chi2_contingency
     import plotly.graph_objects as go
+    from scipy.stats import chi2_contingency
 
-    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date"]
-    if not all(col in df.columns for col in required_cols):
-        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
+    SITE_INFO_PATH = r"C:\Path\To\SITE_INFO.xlsx"  # Update to your actual path
+    SITE_SHEET = "MAIN"
+    required_main_cols = ["LID", "Closure Code 1", "Completed Date", "Create Date"]
+    required_site_cols = ["LCK", "Time Zone", "MA", "State", "ST EXLG", "Vendor", "Complex or Simple", "PC/PM"]
 
+    # === Validate main dataset ===
+    if not all(col in df.columns for col in required_main_cols):
+        return "<div id='failureTab' class='main-tab'><h2>Main dataset missing required columns.</h2></div>"
+
+    # === Read site info ===
+    try:
+        site_info_df = pd.read_excel(SITE_INFO_PATH, sheet_name=SITE_SHEET, engine="openpyxl")
+        print("[DEBUG] SITE_INFO columns:", site_info_df.columns.tolist())
+    except Exception as e:
+        return f"<div id='failureTab' class='main-tab'><h2>Failed to load SITE_INFO: {e}</h2></div>"
+
+    if not all(col in site_info_df.columns for col in required_site_cols):
+        return "<div id='failureTab' class='main-tab'><h2>SITE_INFO missing required columns.</h2></div>"
+
+    # === Preprocess main df ===
     df = df.copy()
-    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
-    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
     df["Closure Code 1"] = df["Closure Code 1"].fillna("Unknown").astype(str)
     df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
     df["Create Date"] = pd.to_datetime(df["Create Date"], errors="coerce")
-    df["Days to Close"] = (df["Completed Date"] - df["Create Date"]).dt.days
-    df = df.dropna(subset=["Completed Date", "Create Date"])
+    df = df.dropna(subset=["Completed Date", "Create Date", "LID"])
     df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+    df["LID"] = df["LID"].astype(str)
 
-    # === Helper for Cramér's V ===
-    def cramers_v(confusion_matrix):
-        chi2, _, _, _ = chi2_contingency(confusion_matrix)
-        n = confusion_matrix.sum().sum()
-        min_dim = min(confusion_matrix.shape) - 1
-        return np.sqrt(chi2 / (n * min_dim)) if min_dim > 0 else 0
+    # === Preprocess site_info_df ===
+    site_info_df = site_info_df[required_site_cols].copy()
+    site_info_df["LCK"] = site_info_df["LCK"].astype(str)
 
-    # === Multicategory Association Strengths ===
-    lec_matrix = pd.crosstab(df["Revised LEC"], df["Closure Code 1"])
-    lec_cramers_v = cramers_v(lec_matrix)
+    # === Merge datasets ===
+    merged = df.merge(site_info_df, how="left", left_on="LID", right_on="LCK")
 
-    owner_matrix = pd.crosstab(df["Task Owner"], df["Closure Code 1"])
-    owner_cramers_v = cramers_v(owner_matrix)
+    # === Run multi-category Cramér's V tests ===
+    categorical_vars = ["Time Zone", "MA", "State", "ST EXLG", "Vendor", "Complex or Simple", "PC/PM"]
+    cramer_results = []
 
-    if df["Days to Close"].nunique() > 1:
-        df_dummies = pd.get_dummies(df["Closure Code 1"])
-        corr_matrix = df_dummies.corrwith(df["Days to Close"])
-        time_corr = corr_matrix.abs().max()
-    else:
-        time_corr = 0
+    for var in categorical_vars:
+        if var not in merged.columns:
+            continue
+        contingency = pd.crosstab(merged[var].fillna("Unknown"), merged["Closure Code 1"])
+        if contingency.shape[0] < 2 or contingency.shape[1] < 2:
+            continue
+        chi2, p, _, _ = chi2_contingency(contingency)
+        n = contingency.sum().sum()
+        min_dim = min(contingency.shape) - 1
+        cramers_v = np.sqrt(chi2 / (n * min_dim)) if min_dim > 0 else 0
+        cramer_results.append((var, cramers_v, p))
 
-    # === Strength Interpretation ===
-    def annotate_strength(value):
-        if value >= 0.3:
-            return "Moderate association"
-        elif value >= 0.1:
-            return "Weak association"
+    if not cramer_results:
+        return "<div id='failureTab' class='main-tab'><h2>No valid correlations found with SITE_INFO data.</h2></div>"
+
+    # === Sort and visualize results ===
+    cramer_results.sort(key=lambda x: x[1], reverse=True)
+
+    fig = go.Figure()
+    for var, v, p in cramer_results:
+        if v >= 0.3:
+            strength = "Moderate"
+        elif v >= 0.1:
+            strength = "Weak"
         else:
-            return "Negligible association"
+            strength = "Negligible"
+        hovertext = f"{var}<br>Cramér's V = {v:.3f}<br>p = {p:.2e}<br><i>{strength} association</i>"
+        fig.add_trace(go.Bar(x=[var], y=[v], text=hovertext, textposition="auto"))
 
-    # === Plotly Bar Chart ===
-    assoc_fig = go.Figure(data=[
-        go.Bar(
-            x=["Revised LEC", "Task Owner", "Time to Close"],
-            y=[lec_cramers_v, owner_cramers_v, time_corr],
-            text=[
-                f"Cramér's V = {lec_cramers_v:.3f}<br>({annotate_strength(lec_cramers_v)})",
-                f"Cramér's V = {owner_cramers_v:.3f}<br>({annotate_strength(owner_cramers_v)})",
-                f"Max Pearson r = {time_corr:.3f}<br>({annotate_strength(time_corr)})"
-            ],
-            textposition="auto",
-            marker_color=["#3498db", "#f39c12", "#9b59b6"]
-        )
-    ])
-    assoc_fig.update_layout(
-        title="Multicategory Association with Closure Code",
-        yaxis_title="Association Strength",
-        yaxis=dict(range=[-0.1, 0.5]),
-        height=450
+    fig.update_layout(
+        title="Correlation Between Closure Code and Site Metadata (Cramér's V)",
+        yaxis_title="Cramér's V (0–1)",
+        yaxis=dict(range=[0, 1]),
+        height=500
     )
-
-    assoc_desc = """
-    <p>This chart measures how strongly each factor is associated with all closure outcomes (not just fail/success):</p>
-    <ul>
-      <li><b>Revised LEC</b> – who handled the task – shows how provider choice influences closure outcomes.</li>
-      <li><b>Task Owner</b> – some individuals may be linked to certain outcomes more often.</li>
-      <li><b>Time to Close</b> – longer or shorter tasks may trend toward specific closure codes.</li>
-    </ul>
-    """
 
     return f"""
     <div id="failureTab" class="main-tab">
-      <h2>Multicategory Failure Analysis</h2>
-      {assoc_fig.to_html(full_html=False, include_plotlyjs=False)}
-      {assoc_desc}
+      <h2>Failure Analysis</h2>
+      <p>This chart shows how strongly site metadata categories relate to different closure codes using Cramér's V.</p>
+      {fig.to_html(full_html=False, include_plotlyjs=False)}
     </div>
     """
