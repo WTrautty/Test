@@ -1,61 +1,45 @@
 def generate_failure_analysis_tab(df):
     import pandas as pd
     import numpy as np
-    from scipy.stats import chi2_contingency, pearsonr
+    from scipy.stats import chi2_contingency
     import plotly.graph_objects as go
-    import plotly.express as px
 
-    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date", "LID"]
+    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date"]
     if not all(col in df.columns for col in required_cols):
         return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
 
     df = df.copy()
     df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
     df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
+    df["Closure Code 1"] = df["Closure Code 1"].fillna("Unknown").astype(str)
     df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
     df["Create Date"] = pd.to_datetime(df["Create Date"], errors="coerce")
     df["Days to Close"] = (df["Completed Date"] - df["Create Date"]).dt.days
     df = df.dropna(subset=["Completed Date", "Create Date"])
     df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
 
-    # === Merge with SITE_INFO ===
-    try:
-        site_info = pd.read_excel(SITE_INFO_PATH, engine='openpyxl')
-        site_info = site_info[["LCK", "Time Zone", "MA", "State", "ST EXLG", "Vendor", "Complex or Simple", "PC/PM"]]
-        site_info = site_info.rename(columns={"LCK": "LID"})
-        df = df.merge(site_info, on="LID", how="left")
-    except Exception as e:
-        return f"<div id='failureTab' class='main-tab'><h2>Error loading SITE_INFO: {e}</h2></div>"
+    # === Helper for Cramér's V ===
+    def cramers_v(confusion_matrix):
+        chi2, _, _, _ = chi2_contingency(confusion_matrix)
+        n = confusion_matrix.sum().sum()
+        min_dim = min(confusion_matrix.shape) - 1
+        return np.sqrt(chi2 / (n * min_dim)) if min_dim > 0 else 0
 
-    # === Association Strengths ===
-    lec_contingency = pd.crosstab(df["Revised LEC"], df["Is Fail"])
-    lec_chi2, lec_p, _, _ = chi2_contingency(lec_contingency)
-    lec_n = lec_contingency.sum().sum()
-    lec_min_dim = min(lec_contingency.shape) - 1
-    lec_cramers_v = np.sqrt(lec_chi2 / (lec_n * lec_min_dim)) if lec_min_dim > 0 else 0
+    # === Multicategory Association Strengths ===
+    lec_matrix = pd.crosstab(df["Revised LEC"], df["Closure Code 1"])
+    lec_cramers_v = cramers_v(lec_matrix)
 
-    owner_contingency = pd.crosstab(df["Task Owner"], df["Is Fail"])
-    owner_chi2, owner_p, _, _ = chi2_contingency(owner_contingency)
-    owner_n = owner_contingency.sum().sum()
-    owner_min_dim = min(owner_contingency.shape) - 1
-    owner_cramers_v = np.sqrt(owner_chi2 / (owner_n * owner_min_dim)) if owner_min_dim > 0 else 0
-
-    monthly_data = df.groupby("Month").agg(
-        Fail_Rate=("Is Fail", "mean"),
-        Order_Count=("Is Fail", "count")
-    ).reset_index()
-
-    if len(monthly_data["Order_Count"].unique()) > 1:
-        volume_corr, volume_p = pearsonr(monthly_data["Order_Count"], monthly_data["Fail_Rate"])
-    else:
-        volume_corr, volume_p = 0, 1
+    owner_matrix = pd.crosstab(df["Task Owner"], df["Closure Code 1"])
+    owner_cramers_v = cramers_v(owner_matrix)
 
     if df["Days to Close"].nunique() > 1:
-        time_corr, time_p = pearsonr(df["Days to Close"], df["Is Fail"])
+        df_dummies = pd.get_dummies(df["Closure Code 1"])
+        corr_matrix = df_dummies.corrwith(df["Days to Close"])
+        time_corr = corr_matrix.abs().max()
     else:
-        time_corr, time_p = 0, 1
+        time_corr = 0
 
+    # === Strength Interpretation ===
     def annotate_strength(value):
         if value >= 0.3:
             return "Moderate association"
@@ -64,57 +48,40 @@ def generate_failure_analysis_tab(df):
         else:
             return "Negligible association"
 
-    assoc_x = ["Revised LEC", "Task Owner", "Monthly Volume", "Time to Close"]
-    assoc_y = [lec_cramers_v, owner_cramers_v, volume_corr, time_corr]
-    assoc_text = [
-        f"Cramér's V = {lec_cramers_v:.3f}<br>({annotate_strength(lec_cramers_v)})",
-        f"Cramér's V = {owner_cramers_v:.3f}<br>({annotate_strength(owner_cramers_v)})",
-        f"Pearson r = {volume_corr:.3f}<br>({annotate_strength(volume_corr)})",
-        f"Pearson r = {time_corr:.3f}<br>({annotate_strength(time_corr)})"
-    ]
-
-    # === Add Cramér’s V for SITE_INFO variables ===
-    extra_cols = ["Time Zone", "MA", "State", "ST EXLG", "Vendor", "Complex or Simple", "PC/PM"]
-    for col in extra_cols:
-        if col in df.columns and df[col].nunique() > 1:
-            contingency = pd.crosstab(df[col].fillna("Unknown"), df["Is Fail"])
-            chi2, _, _, _ = chi2_contingency(contingency)
-            n = contingency.sum().sum()
-            k = min(contingency.shape) - 1
-            cramers_v = np.sqrt(chi2 / (n * k)) if k > 0 else 0
-            assoc_x.append(col)
-            assoc_y.append(cramers_v)
-            assoc_text.append(f"Cramér's V = {cramers_v:.3f}<br>({annotate_strength(cramers_v)})")
-
+    # === Plotly Bar Chart ===
     assoc_fig = go.Figure(data=[
         go.Bar(
-            x=assoc_x,
-            y=assoc_y,
-            text=assoc_text,
+            x=["Revised LEC", "Task Owner", "Time to Close"],
+            y=[lec_cramers_v, owner_cramers_v, time_corr],
+            text=[
+                f"Cramér's V = {lec_cramers_v:.3f}<br>({annotate_strength(lec_cramers_v)})",
+                f"Cramér's V = {owner_cramers_v:.3f}<br>({annotate_strength(owner_cramers_v)})",
+                f"Max Pearson r = {time_corr:.3f}<br>({annotate_strength(time_corr)})"
+            ],
             textposition="auto",
-            marker_color=px.colors.qualitative.Pastel
+            marker_color=["#3498db", "#f39c12", "#9b59b6"]
         )
     ])
     assoc_fig.update_layout(
-        title="What Affects Failure Rates?",
+        title="Multicategory Association with Closure Code",
         yaxis_title="Association Strength",
         yaxis=dict(range=[-0.1, 0.5]),
-        height=500
+        height=450
     )
 
     assoc_desc = """
-    <p>This chart shows which factors are most associated with task failures.<br>
-    <b>Stronger values mean stronger statistical relationships</b>, but do not prove cause.<br>
+    <p>This chart measures how strongly each factor is associated with all closure outcomes (not just fail/success):</p>
     <ul>
-      <li><b>Revised LEC</b> had the strongest link to failures.</li>
-      <li><b>Task Owner</b>, <b>Time to Close</b>, and other site details had weaker or negligible effects.</li>
-    </ul></p>
+      <li><b>Revised LEC</b> – who handled the task – shows how provider choice influences closure outcomes.</li>
+      <li><b>Task Owner</b> – some individuals may be linked to certain outcomes more often.</li>
+      <li><b>Time to Close</b> – longer or shorter tasks may trend toward specific closure codes.</li>
+    </ul>
     """
 
     return f"""
     <div id="failureTab" class="main-tab">
-      <h2>Failure Analysis</h2>
-      {assoc_fig.to_html(full_html=False, include_plotlyjs=True)}
+      <h2>Multicategory Failure Analysis</h2>
+      {assoc_fig.to_html(full_html=False, include_plotlyjs=False)}
       {assoc_desc}
     </div>
     """
