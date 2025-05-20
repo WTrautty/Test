@@ -1,4 +1,8 @@
-def generate_scheduling_tab():
+def generate_scheduling_tab_with_dropdown():
+    import pandas as pd
+    import plotly.graph_objects as go
+    import plotly.express as px
+
     try:
         xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine="openpyxl")
     except Exception:
@@ -24,58 +28,61 @@ def generate_scheduling_tab():
         return "<div id='schedulingTab' class='main-tab'><h2>No Scheduling Data Available</h2></div>"
 
     sched = pd.concat(records, ignore_index=True)
-    avg_tab_fig = px.bar(
-        sched.groupby("Tab")["Count"].mean().reset_index(),
-        x="Tab",
-        y="Count",
-        title="Avg Rows per Tab per Month",
+    sched = sched[sched["Tab"] != "XYZXYZ"]
+
+    months = sorted(sched["Month"].unique())
+    summary = {}
+    for schedulers in [1, 2, 3, 4, 5]:
+        rows = []
+        vac_days = 36 * schedulers
+        vac_per_month = vac_days / schedulers / len(months)
+        for month in months:
+            month_df = sched[sched["Month"] == month]
+            total = month_df["Count"].sum()
+            year, mon = map(int, month.split("-"))
+            start = pd.Timestamp(f"{year}-{mon:02d}-01")
+            end = start + pd.offsets.MonthEnd(1)
+            workdays = pd.date_range(start=start, end=end, freq="B").size
+            adj_days = max(workdays - vac_per_month, 1)
+            rows.append(total / (adj_days * schedulers))
+        summary[schedulers] = rows
+
+    traces = []
+    visibility = []
+    for schedulers, values in summary.items():
+        visible = [False] * len(summary)
+        visible[schedulers - 1] = True
+        trace = go.Bar(x=months, y=values, name=f"{schedulers} Schedulers", visible=(schedulers == 2))
+        traces.append(trace)
+        visibility.append(visible)
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        title="Adjusted Avg Rows per Scheduler per Workday (With Vacation)",
+        height=600,
+        updatemenus=[{
+            "buttons": [
+                {
+                    "label": f"{n} Scheduler{'s' if n > 1 else ''}",
+                    "method": "update",
+                    "args": [
+                        {"visible": vis},
+                        {"title": f"Adjusted Avg Rows per Scheduler per Workday – {n} Scheduler{'s' if n > 1 else ''}"}
+                    ]
+                } for n, vis in zip(summary.keys(), visibility)
+            ],
+            "direction": "down",
+            "showactive": True,
+            "x": 1,
+            "xanchor": "right",
+            "y": 1.1,
+            "yanchor": "top"
+        }]
     )
-    avg_tab_fig.update_layout(height=300)
-
-    # Prep base figure
-    total_monthly_fig = go.Figure()
-
-    # Add total line
-    total_df = sched.groupby("Month")["Count"].sum().reset_index(name="Total Rows")
-    total_monthly_fig.add_trace(
-        go.Scatter(x=total_df["Month"], y=total_df["Total Rows"], name="Total", line=dict(width=3))
-    )
-
-    # Add each individual tab line
-    for tab, group in sched.groupby("Tab"):
-        monthly = group.groupby("Month")["Count"].sum().reset_index()
-        total_monthly_fig.add_trace(
-            go.Scatter(x=monthly["Month"], y=monthly["Count"], name=tab, line=dict(dash="dot"))
-        )
-
-    total_monthly_fig.update_layout(
-        title="Total Rows Across All Tabs and Per Calendar",
-        height=300
-)
-
-    workday_data = []
-    for month_str, grp in sched.groupby("Month"):
-        total = grp["Count"].sum()
-        try:
-            year, mon = map(int, month_str.split("-"))
-            start_date = pd.Timestamp(f"{year}-{mon:02d}-01")
-            end_date = start_date + pd.offsets.MonthEnd(1)
-            workdays = pd.date_range(start=start_date, end=end_date, freq="B").size
-            workday_data.append({"Month": month_str, "Avg Per Workday": total / workdays})
-        except ValueError:
-            continue
-
-    workday_df = pd.DataFrame(workday_data)
-    workday_fig = px.bar(
-        workday_df, x="Month", y="Avg Per Workday", title="Average Rows per Workday"
-    )
-    workday_fig.update_layout(height=600)
 
     return f"""
     <div id="schedulingTab" class="main-tab">
       <h2>Scheduling Dashboard</h2>
-      <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
-      <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
-      <hr>{workday_fig.to_html(full_html=False, include_plotlyjs=False)}
+      <hr>{fig.to_html(full_html=False, include_plotlyjs=True)}
     </div>
     """
