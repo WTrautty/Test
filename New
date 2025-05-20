@@ -1,96 +1,81 @@
-def generate_global_tab(df):
-    import pandas as pd
-    import plotly.express as px
-    import plotly.graph_objects as go
+def generate_scheduling_tab():
+    try:
+        xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine="openpyxl")
+    except Exception:
+        return "<div id='schedulingTab' class='main-tab'><h2>Error Loading Scheduling Data</h2></div>"
 
-    print("[DEBUG] Starting generate_global_tab")
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df['Month'] = pd.to_datetime(df['Month'].astype(str)).dt.to_period('M')
-    df = df.sort_values('Month')
-    df['Month'] = df['Month'].astype(str)
+    records = []
+    for name, sheet in xls.items():
+        if "End" not in sheet.columns:
+            continue
+        try:
+            validate_columns(sheet, ["End"], f"Sheet {name}")
+        except ValueError:
+            continue
+        s = sheet.dropna(subset=["End"]).copy()
+        s["End"] = pd.to_datetime(s["End"], errors="coerce")
+        s = s.dropna(subset=["End"])
+        s["Month"] = s["End"].dt.to_period("M").astype(str)
+        counts = s.groupby("Month").size().reset_index(name="Count")
+        counts["Tab"] = name
+        records.append(counts)
 
-    print("[DEBUG] Unique Months in DataFrame:", df['Month'].unique())
+    if not records:
+        return "<div id='schedulingTab' class='main-tab'><h2>No Scheduling Data Available</h2></div>"
 
-    # === Pie Chart for Closure Code Distribution ===
-    pie_df = (
-        df["Closure Code 1"]
-        .fillna("Unknown")
-        .value_counts(normalize=True)
-        .mul(100)
-        .reset_index()
+    sched = pd.concat(records, ignore_index=True)
+    avg_tab_fig = px.bar(
+        sched.groupby("Tab")["Count"].mean().reset_index(),
+        x="Tab",
+        y="Count",
+        title="Avg Rows per Tab per Month",
     )
-    pie_df.columns = ["proportion", "Percentage"]
-    print("[DEBUG] Pie Chart Categories:\n", pie_df)
+    avg_tab_fig.update_layout(height=300)
 
-    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
-    pie.update_layout(height=450)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
+    # Prep base figure
+    total_monthly_fig = go.Figure()
 
-    # === Aggregated Stats ===
-    stats = df.groupby("Month").agg(
-        Closed_Orders=("Is Fail", "count"),
-        Failures=("Is Fail", "sum")
-    ).reset_index()
-    stats["Failure Rate (%)"] = (stats["Failures"] / stats["Closed_Orders"]) * 100
-    print("[DEBUG] Monthly Aggregated Stats:\n", stats)
-
-    # === Combo Chart ===
-    combo_fig = go.Figure()
-    combo_fig.add_trace(go.Scatter(
-        x=stats["Month"],
-        y=stats["Closed_Orders"],
-        mode="lines+markers",
-        name="Closed Orders",
-        yaxis="y"
-    ))
-    combo_fig.add_trace(go.Scatter(
-        x=stats["Month"],
-        y=stats["Failures"],
-        mode="lines+markers",
-        name="Failed Orders",
-        yaxis="y"
-    ))
-    combo_fig.add_trace(go.Bar(
-        x=stats["Month"],
-        y=stats["Failure Rate (%)"],
-        name="Failure Rate (%)",
-        yaxis="y2",
-        opacity=0.6,
-        marker_color="crimson",
-        hovertemplate="%{y:.2f}% failure rate<br>Month: %{x}<extra></extra>"
-    ))
-
-    combo_fig.update_layout(
-        title="Closed Orders, Failures, and Failure Rate per Month",
-        barmode="overlay",
-        height=450,
-        xaxis=dict(
-            title="Month",
-            showgrid=False
-        ),
-        yaxis=dict(
-            title="Order Count",
-            showgrid=False
-        ),
-        yaxis2=dict(
-            title="Failure Rate (%)",
-            overlaying="y",
-            side="right",
-            range=[0, 100],
-            showgrid=False
-        ),
-        legend=dict(x=1, y=1, xanchor='right', yanchor='top'),
-        margin=dict(t=50, b=50)
+    # Add total line
+    total_df = sched.groupby("Month")["Count"].sum().reset_index(name="Total Rows")
+    total_monthly_fig.add_trace(
+        go.Scatter(x=total_df["Month"], y=total_df["Total Rows"], name="Total", line=dict(width=3))
     )
 
-    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
-    print("[DEBUG] Finished generate_global_tab")
+    # Add each individual tab line
+    for tab, group in sched.groupby("Tab"):
+        monthly = group.groupby("Month")["Count"].sum().reset_index()
+        total_monthly_fig.add_trace(
+            go.Scatter(x=monthly["Month"], y=monthly["Count"], name=tab, line=dict(dash="dot"))
+        )
+
+    total_monthly_fig.update_layout(
+        title="Total Rows Across All Tabs and Per Calendar",
+        height=300
+)
+
+    workday_data = []
+    for month_str, grp in sched.groupby("Month"):
+        total = grp["Count"].sum()
+        try:
+            year, mon = map(int, month_str.split("-"))
+            start_date = pd.Timestamp(f"{year}-{mon:02d}-01")
+            end_date = start_date + pd.offsets.MonthEnd(1)
+            workdays = pd.date_range(start=start_date, end=end_date, freq="B").size
+            workday_data.append({"Month": month_str, "Avg Per Workday": total / workdays})
+        except ValueError:
+            continue
+
+    workday_df = pd.DataFrame(workday_data)
+    workday_fig = px.bar(
+        workday_df, x="Month", y="Avg Per Workday", title="Average Rows per Workday"
+    )
+    workday_fig.update_layout(height=600)
 
     return f"""
-    <div id="globalTab" class="main-tab">
-      <h2>Global Statistics</h2>
-      <hr>{combo_html}
-      <hr>{pie_html}
+    <div id="schedulingTab" class="main-tab">
+      <h2>Scheduling Dashboard</h2>
+      <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
+      <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
+      <hr>{workday_fig.to_html(full_html=False, include_plotlyjs=False)}
     </div>
     """
