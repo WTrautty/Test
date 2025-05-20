@@ -92,17 +92,16 @@ def generate_frat_tab(frat_df):
         )
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
-    comparison_chart_html = create_mean_comparison_chart()
-
     # === Global Tab ===
     global_bar = create_bar_chart(frat_df, 'Global')
     global_line = create_line_chart('Global')
+    global_comparison = create_mean_comparison_chart()
 
     buttons = [f'<button class="tablink" onclick="openTab(event, \'frat_tab_global\')">Global</button>']
     contents = [f'''
         <div id="frat_tab_global" class="tabcontent" style="display:block">
           {global_bar}
-          <hr>{comparison_chart_html}
+          <hr>{global_comparison}
           <hr>{global_line}
         </div>''']
 
@@ -115,12 +114,14 @@ def generate_frat_tab(frat_df):
             bar_html = create_bar_chart(owner_df, owner)
 
         line_html = create_line_chart(owner)
+        comparison_html = create_mean_comparison_chart()
+
         div_id = f"frat_tab_{i}"
         buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
         contents.append(f'''
         <div id="{div_id}" class="tabcontent" style="display:none">
           {bar_html}
-          <hr>{comparison_chart_html}
+          <hr>{comparison_html}
           <hr>{line_html}
         </div>''')
 
