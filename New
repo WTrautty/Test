@@ -18,26 +18,13 @@ def generate_frat_tab(frat_df):
     # Extract month from Completed Date
     frat_df['Month'] = frat_df['Completed Date'].dt.to_period('M').astype(str)
 
-    # Determine top 3 Task Owners from frat_df ONLY
+    # Determine top 3 Task Owners
     top_owners = frat_df['Task Owner'].value_counts().nlargest(3).index.tolist()
 
     def create_bar_chart(data, owner_label):
-        monthly_stats = data.groupby('Month').agg(
-            Avg_Close=('Days to Close', 'mean'),
-            Median_Close=('Days to Close', 'median'),
-            P90_Close=('Days to Close', lambda x: x.quantile(0.9))
-        ).reset_index()
-        fig = go.Figure()
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Avg_Close'], name='Average'))
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Median_Close'], name='Median'))
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['P90_Close'], name='90th Percentile'))
-        fig.update_layout(
-            barmode='group',
-            title=f"Days to Close (Avg/Median/P90) - {owner_label}",
-            height=400,
-            xaxis_title='Month',
-            yaxis_title='Days'
-        )
+        monthly = data.groupby('Month')['Days to Close'].mean().reset_index()
+        fig = px.bar(monthly, x='Month', y='Days to Close', title=f"Average Days to Close - {owner_label}")
+        fig.update_layout(height=350)
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
     global_chart = create_bar_chart(frat_df, 'Global')
@@ -72,11 +59,6 @@ def main():
     except Exception:
         raise
 
-    try:
-        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
-    except Exception as e:
-        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
-
     required_cols = ["Task Owner", "Closure Code 1", "Completed Date"]
     validate_columns(df, required_cols, EXCEL_PATH)
     df = df.dropna(subset=required_cols)
@@ -87,69 +69,180 @@ def main():
     df["Month"] = df["Month"].astype(str)
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    frat_tab_html = generate_frat_tab(frat_df)
-
     html = f"""
 <!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-  <meta charset=\"UTF-8\" />
+  <meta charset="UTF-8" />
   <title>Closure Code Dashboard</title>
-  <script src=\"plotly-latest.min.js\"></script>
+  <script src="plotly-latest.min.js"></script> <!-- Local Plotly JS -->
   <style>
-    * {{ box-sizing: border-box; }}
-    body {{ font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f4f6f9; color: #333; display: flex; }}
-    .sidebar {{ width: 220px; background: #2f3542; color: #fff; height: 100vh; padding-top: 30px; position: fixed; left: 0; top: 0; display: flex; flex-direction: column; }}
-    .sidebar h2 {{ text-align: center; font-size: 20px; margin-bottom: 30px; }}
-    .sidebar button {{ padding: 15px 20px; background: none; border: none; text-align: left; color: white; font-weight: 500; font-size: 15px; width: 100%; transition: background 0.2s ease; cursor: pointer; }}
-    .sidebar button:hover {{ background: #57606f; }}
-    .sidebar button.active {{ background: #1e90ff; }}
-    .main-content {{ margin-left: 220px; padding: 30px; flex: 1; }}
-    h1 {{ font-size: 28px; font-weight: 600; margin-bottom: 20px; }}
-    .main-tab {{ display: none; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06); margin-bottom: 40px; }}
-    .tab-buttons-wrapper {{ display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }}
-    .tablink {{ padding: 10px 18px; border: none; font-weight: bold; background: #f1f1f1; border-radius: 8px; cursor: pointer; transition: background 0.3s ease; }}
-    .tablink:hover {{ background: #ddd; }}
-    .tablink.active {{ background: #38ef7d; color: white; }}
-    .tabcontent {{ display: none; }}
-    @media (max-width: 768px) {{ .sidebar {{ width: 100%; height: auto; flex-direction: row; justify-content: space-around; position: relative; }} .main-content {{ margin-left: 0; padding: 20px; }} }}
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      background-color: #f4f6f9;
+      color: #333;
+      display: flex;
+    }}
+
+    /* === SIDEBAR === */
+    .sidebar {{
+      width: 220px;
+      background: #2f3542;
+      color: #fff;
+      height: 100vh;
+      padding-top: 30px;
+      position: fixed;
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+    }}
+
+    .sidebar h2 {{
+      text-align: center;
+      font-size: 20px;
+      margin-bottom: 30px;
+    }}
+
+    .sidebar button {{
+      padding: 15px 20px;
+      background: none;
+      border: none;
+      text-align: left;
+      color: white;
+      font-weight: 500;
+      font-size: 15px;
+      width: 100%;
+      transition: background 0.2s ease;
+      cursor: pointer;
+    }}
+
+    .sidebar button:hover {{
+      background: #57606f;
+    }}
+
+    .sidebar button.active {{
+      background: #1e90ff;
+    }}
+
+    /* === MAIN CONTENT === */
+    .main-content {{
+      margin-left: 220px;
+      padding: 30px;
+      flex: 1;
+    }}
+
+    h1 {{
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }}
+
+    .main-tab {{
+      display: none;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+      margin-bottom: 40px;
+    }}
+
+    .tab-buttons-wrapper {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }}
+
+    .tablink {{
+      padding: 10px 18px;
+      border: none;
+      font-weight: bold;
+      background: #f1f1f1;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }}
+
+    .tablink:hover {{
+      background: #ddd;
+    }}
+
+    .tablink.active {{
+      background: #38ef7d;
+      color: white;
+    }}
+
+    .tabcontent {{
+      display: none;
+    }}
+
+    @media (max-width: 768px) {{
+      .sidebar {{
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        justify-content: space-around;
+        position: relative;
+      }}
+
+      .main-content {{
+        margin-left: 0;
+        padding: 20px;
+      }}
+    }}
   </style>
+
   <script>
     function switchMainTab(evt, tabId) {{
       var tabs = document.querySelectorAll('.main-tab');
       tabs.forEach(tab => tab.style.display = 'none');
       document.getElementById(tabId).style.display = 'block';
+
       var buttons = document.querySelectorAll('.sidebar button');
       buttons.forEach(btn => btn.classList.remove('active'));
       evt.currentTarget.classList.add('active');
+
       window.dispatchEvent(new Event('resize'));
     }}
+
     function openTab(evt, tabId) {{
       var tabs = document.querySelectorAll('.tabcontent');
       tabs.forEach(tab => tab.style.display = 'none');
+
       var buttons = document.querySelectorAll('.tablink');
       buttons.forEach(btn => btn.classList.remove('active'));
+
       document.getElementById(tabId).style.display = 'block';
       evt.currentTarget.classList.add('active');
+
       window.dispatchEvent(new Event('resize'));
     }}
+
     window.onload = function () {{
       document.getElementById('globalTab').style.display = 'block';
       document.querySelector('.sidebar button').classList.add('active');
-    }}
+    }};
   </script>
 </head>
+
 <body>
-  <div class=\"sidebar\">
+  <div class="sidebar">
     <h2>Dashboard</h2>
-    <button onclick=\"switchMainTab(event, 'globalTab')\">Global</button>
-    <button onclick=\"switchMainTab(event, 'individualTab')\">Individual</button>
-    <button onclick=\"switchMainTab(event, 'schedulingTab')\">Scheduling</button>
-    <button onclick=\"switchMainTab(event, 'lecTab')\">LEC</button>
-    <button onclick=\"switchMainTab(event, 'failureTab')\">Failure Analysis</button>
-    <button onclick=\"switchMainTab(event, 'fratTab')\">FRAT</button>
+    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
+    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
+    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
+    <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
+    <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
   </div>
-  <div class=\"main-content\">
+
+  <div class="main-content">
     <h1>Closure Code Dashboard</h1>
     {generate_global_tab(df)}
     {generate_individual_tab(df)}
@@ -164,3 +257,6 @@ def main():
 
     with open(EXPORT_HTML, "w", encoding="utf-8") as f:
         f.write(html)
+
+if __name__ == "__main__":
+    main()
