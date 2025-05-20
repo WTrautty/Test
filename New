@@ -1,52 +1,56 @@
-    # === Dual Axis Bar Chart: Task Count & Failure Rate per PC/PM (min 3 tasks) ===
+    # === First Name Split: Failure Rate per Individual from PC/PM ===
+    import re
+    def extract_first_names(pcpm_val):
+        if pd.isna(pcpm_val):
+            return []
+        names = re.split(r"[\/,&]+", str(pcpm_val))  # Split on / , & or other delimiters
+        firsts = []
+        for name in names:
+            name = name.strip()
+            if not name:
+                continue
+            if "," in name:  # e.g. "Smith, John"
+                parts = name.split(",")
+                if len(parts) > 1:
+                    firsts.append(parts[1].strip().split()[0])
+            else:
+                firsts.append(name.split()[0])
+        return firsts
+
     if "PC/PM" in df.columns:
-        pcpm_summary_dual = (
-            df.groupby("PC/PM")
-              .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
-              .reset_index()
-        )
-        pcpm_summary_dual = pcpm_summary_dual[pcpm_summary_dual["Total_Tasks"] > 2]
-        pcpm_summary_dual["Failure_Rate"] = (pcpm_summary_dual["Failure_Rate"] * 100).round(1)
-        pcpm_summary_dual = pcpm_summary_dual.sort_values(by="Total_Tasks", ascending=False)
+        first_name_rows = []
+        for _, row in df.iterrows():
+            firsts = extract_first_names(row["PC/PM"])
+            for first in firsts:
+                first_name_rows.append({"First": first, "Is Fail": row["Is Fail"]})
 
-        if not pcpm_summary_dual.empty:
-            dual_fig = go.Figure()
-
-            # Bar: Total Tasks
-            dual_fig.add_trace(go.Bar(
-                x=pcpm_summary_dual["PC/PM"],
-                y=pcpm_summary_dual["Total_Tasks"],
-                name="Total Tasks",
-                yaxis="y1",
-                marker_color="lightskyblue"
-            ))
-
-            # Line: Failure Rate (%)
-            dual_fig.add_trace(go.Scatter(
-                x=pcpm_summary_dual["PC/PM"],
-                y=pcpm_summary_dual["Failure_Rate"],
-                name="Failure Rate (%)",
-                yaxis="y2",
-                mode="lines+markers",
-                marker=dict(color="crimson")
-            ))
-
-            dual_fig.update_layout(
-                title="Orders Completed vs. Failure Rate per PC/PM",
-                xaxis=dict(title="PC/PM"),
-                yaxis=dict(title="Total Tasks", side="left"),
-                yaxis2=dict(
-                    title="Failure Rate (%)",
-                    overlaying="y",
-                    side="right",
-                    range=[0, 100]
-                ),
-                legend=dict(x=0.01, y=0.99),
-                height=600
+        first_df = pd.DataFrame(first_name_rows)
+        if not first_df.empty:
+            summary = (
+                first_df.groupby("First")
+                    .agg(Failure_Rate=("Is Fail", "mean"), Count=("Is Fail", "count"))
+                    .reset_index()
             )
+            summary = summary[summary["Count"] > 2]
+            summary["Failure_Rate"] = (summary["Failure_Rate"] * 100).round(1)
+            summary = summary.sort_values(by="Failure_Rate", ascending=False)
 
-            dual_axis_html = dual_fig.to_html(full_html=False, include_plotlyjs=False)
+            if not summary.empty:
+                first_bar = px.bar(
+                    summary,
+                    x="Failure_Rate",
+                    y="First",
+                    orientation="h",
+                    color="Failure_Rate",
+                    color_continuous_scale="Reds",
+                    hover_data={"First": True, "Failure_Rate": True, "Count": True},
+                    title="Failure Rate by First Name (from PC/PM)"
+                )
+                first_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="First Name")
+                first_name_html = first_bar.to_html(full_html=False, include_plotlyjs=False)
+            else:
+                first_name_html = "<p><i>No individuals with >2 tasks to show.</i></p>"
         else:
-            dual_axis_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
+            first_name_html = "<p><i>No valid PC/PM names parsed.</i></p>"
     else:
-        dual_axis_html = "<p><i>PC/PM column not available.</i></p>"
+        first_name_html = "<p><i>PC/PM column not found.</i></p>"
