@@ -18,13 +18,26 @@ def generate_frat_tab(frat_df):
     # Extract month from Completed Date
     frat_df['Month'] = frat_df['Completed Date'].dt.to_period('M').astype(str)
 
-    # Determine top 3 Task Owners
+    # Determine top 3 Task Owners from frat_df ONLY
     top_owners = frat_df['Task Owner'].value_counts().nlargest(3).index.tolist()
 
     def create_bar_chart(data, owner_label):
-        monthly = data.groupby('Month')['Days to Close'].mean().reset_index()
-        fig = px.bar(monthly, x='Month', y='Days to Close', title=f"Average Days to Close - {owner_label}")
-        fig.update_layout(height=350)
+        monthly_stats = data.groupby('Month').agg(
+            Avg_Close=('Days to Close', 'mean'),
+            Median_Close=('Days to Close', 'median'),
+            P90_Close=('Days to Close', lambda x: x.quantile(0.9))
+        ).reset_index()
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Avg_Close'], name='Average'))
+        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Median_Close'], name='Median'))
+        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['P90_Close'], name='90th Percentile'))
+        fig.update_layout(
+            barmode='group',
+            title=f"Days to Close (Avg/Median/P90) - {owner_label}",
+            height=400,
+            xaxis_title='Month',
+            yaxis_title='Days'
+        )
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
     global_chart = create_bar_chart(frat_df, 'Global')
@@ -59,6 +72,11 @@ def main():
     except Exception:
         raise
 
+    try:
+        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
+
     required_cols = ["Task Owner", "Closure Code 1", "Completed Date"]
     validate_columns(df, required_cols, EXCEL_PATH)
     df = df.dropna(subset=required_cols)
@@ -69,13 +87,15 @@ def main():
     df["Month"] = df["Month"].astype(str)
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
+    frat_tab_html = generate_frat_tab(frat_df)
+
     html = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset=\"UTF-8\" />
   <title>Closure Code Dashboard</title>
-  <script src="plotly-latest.min.js"></script> <!-- Local Plotly JS -->
+  <script src=\"plotly-latest.min.js\"></script> <!-- Local Plotly JS -->
   <style>
     * {{
       box-sizing: border-box;
@@ -89,7 +109,6 @@ def main():
       display: flex;
     }}
 
-    /* === SIDEBAR === */
     .sidebar {{
       width: 220px;
       background: #2f3542;
@@ -130,7 +149,6 @@ def main():
       background: #1e90ff;
     }}
 
-    /* === MAIN CONTENT === */
     .main-content {{
       margin-left: 220px;
       padding: 30px;
@@ -227,10 +245,9 @@ def main():
     window.onload = function () {{
       document.getElementById('globalTab').style.display = 'block';
       document.querySelector('.sidebar button').classList.add('active');
-    }};
+    }}
   </script>
 </head>
-
 <body>
   <div class="sidebar">
     <h2>Dashboard</h2>
@@ -241,7 +258,6 @@ def main():
     <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
     <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
   </div>
-
   <div class="main-content">
     <h1>Closure Code Dashboard</h1>
     {generate_global_tab(df)}
@@ -257,6 +273,3 @@ def main():
 
     with open(EXPORT_HTML, "w", encoding="utf-8") as f:
         f.write(html)
-
-if __name__ == "__main__":
-    main()
