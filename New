@@ -1,8 +1,4 @@
-def generate_scheduling_tab_with_dropdown():
-    import pandas as pd
-    import plotly.graph_objects as go
-    import plotly.express as px
-
+def generate_scheduling_tab():
     try:
         xls = pd.read_excel(ADDITIONAL_EXCEL, sheet_name=None, engine="openpyxl")
     except Exception:
@@ -20,16 +16,44 @@ def generate_scheduling_tab_with_dropdown():
         s["End"] = pd.to_datetime(s["End"], errors="coerce")
         s = s.dropna(subset=["End"])
         s["Month"] = s["End"].dt.to_period("M").astype(str)
-        counts = s.groupby("Month").size().reset_index(name="Count")
-        counts["Tab"] = name
-        records.append(counts)
+        s["Tab"] = name
+        records.append(s)
 
     if not records:
         return "<div id='schedulingTab' class='main-tab'><h2>No Scheduling Data Available</h2></div>"
 
-    sched = pd.concat(records, ignore_index=True)
-    sched = sched[sched["Tab"] != "XYZXYZ"]
+    all_data = pd.concat(records, ignore_index=True)
+    all_data = all_data[all_data["Tab"] != "XYZXYZ"]
 
+    # === Chart 1: Average per tab per month ===
+    avg_tab_fig = px.bar(
+        all_data.groupby("Tab")["Month"].value_counts().groupby("Tab").mean().reset_index(name="Average"),
+        x="Tab",
+        y="Average",
+        title="Avg Rows per Tab per Month"
+    )
+    avg_tab_fig.update_layout(height=300)
+
+    # === Chart 2: Total per calendar line chart ===
+    total_monthly_fig = go.Figure()
+    total_df = all_data.groupby("Month").size().reset_index(name="Total Rows")
+    total_monthly_fig.add_trace(go.Scatter(
+        x=total_df["Month"], y=total_df["Total Rows"],
+        name="Total", line=dict(width=3)
+    ))
+    for tab, group in all_data.groupby("Tab"):
+        monthly = group.groupby("Month").size().reset_index(name="Count")
+        total_monthly_fig.add_trace(go.Scatter(
+            x=monthly["Month"], y=monthly["Count"],
+            name=tab, line=dict(dash="dot")
+        ))
+    total_monthly_fig.update_layout(
+        title="Total Rows Across All Tabs and Per Calendar",
+        height=300
+    )
+
+    # === Chart 3: Workday-adjusted rows per scheduler with dropdown ===
+    sched = all_data.groupby(["Month", "Tab"]).size().reset_index(name="Count")
     months = sorted(sched["Month"].unique())
     summary = {}
     for schedulers in [1, 2, 3, 4, 5]:
@@ -47,17 +71,20 @@ def generate_scheduling_tab_with_dropdown():
             rows.append(total / (adj_days * schedulers))
         summary[schedulers] = rows
 
-    traces = []
+    sched_dropdown_fig = go.Figure()
     visibility = []
-    for schedulers, values in summary.items():
-        visible = [False] * len(summary)
-        visible[schedulers - 1] = True
-        trace = go.Bar(x=months, y=values, name=f"{schedulers} Schedulers", visible=(schedulers == 2))
-        traces.append(trace)
-        visibility.append(visible)
+    for i, (schedulers, values) in enumerate(summary.items()):
+        sched_dropdown_fig.add_trace(go.Bar(
+            x=months,
+            y=values,
+            name=f"{schedulers} Scheduler{'s' if schedulers > 1 else ''}",
+            visible=(i == 1)  # default to 2 schedulers
+        ))
+        visibility_row = [False] * len(summary)
+        visibility_row[i] = True
+        visibility.append(visibility_row)
 
-    fig = go.Figure(data=traces)
-    fig.update_layout(
+    sched_dropdown_fig.update_layout(
         title="Adjusted Avg Rows per Scheduler per Workday (With Vacation)",
         height=600,
         updatemenus=[{
@@ -66,23 +93,26 @@ def generate_scheduling_tab_with_dropdown():
                     "label": f"{n} Scheduler{'s' if n > 1 else ''}",
                     "method": "update",
                     "args": [
-                        {"visible": vis},
+                        {"visible": visibility[i]},
                         {"title": f"Adjusted Avg Rows per Scheduler per Workday – {n} Scheduler{'s' if n > 1 else ''}"}
                     ]
-                } for n, vis in zip(summary.keys(), visibility)
+                } for i, n in enumerate(summary.keys())
             ],
             "direction": "down",
             "showactive": True,
             "x": 1,
             "xanchor": "right",
-            "y": 1.1,
+            "y": 1.15,
             "yanchor": "top"
         }]
     )
 
+    # === Export full tab HTML ===
     return f"""
     <div id="schedulingTab" class="main-tab">
       <h2>Scheduling Dashboard</h2>
-      <hr>{fig.to_html(full_html=False, include_plotlyjs=True)}
+      <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
+      <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
+      <hr>{sched_dropdown_fig.to_html(full_html=False, include_plotlyjs=False)}
     </div>
     """
