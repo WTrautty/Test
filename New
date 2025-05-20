@@ -1,7 +1,6 @@
 def generate_frat_tab(frat_df):
     import pandas as pd
     import plotly.graph_objects as go
-    import plotly.express as px
 
     # Ensure dates are datetime
     frat_df = frat_df.copy()
@@ -13,38 +12,35 @@ def generate_frat_tab(frat_df):
 
     # Compute days to close
     frat_df['Days to Close'] = (frat_df['Completed Date'] - frat_df['Create Date']).dt.days
-    frat_df = frat_df[frat_df['Days to Close'] >= 0]  # remove invalid negatives
+    frat_df = frat_df[frat_df['Days to Close'] >= 0]
 
     # Extract month from Completed Date
     frat_df['Month'] = frat_df['Completed Date'].dt.to_period('M').astype(str)
 
-    # Determine top 3 Task Owners from frat_df ONLY
-    top_owners = ["Mclean, Jordan (Jordan)","Lang, Nicholas (Nicholas)", "Gray, Christopher (Chris)"]
+    # Static task owners
+    top_owners = ["Mclean, Jordan (Jordan)", "Lang, Nicholas (Nicholas)", "Gray, Christopher (Chris)"]
 
     def create_bar_chart(data, owner_label):
-        monthly_stats = data.groupby('Month').agg(
-            Avg_Close=('Days to Close', 'mean'),
-            Median_Close=('Days to Close', 'median'),
-            P90_Close=('Days to Close', lambda x: x.quantile(0.9))
-        ).reset_index()
+        monthly = data.groupby('Month')['Days to Close'].mean().reset_index()
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Avg_Close'], name='Average'))
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Median_Close'], name='Median'))
-        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['P90_Close'], name='90th Percentile'))
+        fig.add_trace(go.Bar(
+            x=monthly['Month'],
+            y=monthly['Days to Close'],
+            name='Average Days to Close'
+        ))
         fig.update_layout(
-            barmode='group',
-            title=f"Days to Close (Avg/Median/P90) - {owner_label}",
+            title=f"Average Days to Close - {owner_label}",
             height=400,
-            xaxis_title='Month',
-            yaxis_title='Days'
+            xaxis_title="Month",
+            yaxis_title="Days"
         )
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
-    global_chart = create_bar_chart(frat_df, 'Global')
+    # Global tab chart
+    global_chart = create_bar_chart(frat_df, "Global")
 
-    individual_charts = []
     buttons = [
-        f'<button class="tablink" onclick="openTab(event, \"frat_tab_global\")">Global</button>'
+        f'<button class="tablink" onclick="openTab(event, \'frat_tab_global\')">Global</button>'
     ]
     contents = [
         f'<div id="frat_tab_global" class="tabcontent" style="display:block">{global_chart}</div>'
@@ -54,13 +50,13 @@ def generate_frat_tab(frat_df):
         owner_df = frat_df[frat_df['Task Owner'] == owner]
         chart_html = create_bar_chart(owner_df, owner)
         div_id = f"frat_tab_{i}"
-        buttons.append(f'<button class="tablink" onclick="openTab(event, \"{div_id}\")">{owner}</button>')
+        buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
         contents.append(f'<div id="{div_id}" class="tabcontent" style="display:none">{chart_html}</div>')
 
     html_output = f"""
-    <div id='fratTab' class='main-tab'>
+    <div id="fratTab" class="main-tab">
       <h2>FRAT Task Closure Analysis</h2>
-      <div class='tab-buttons-wrapper'>{''.join(buttons)}</div>
+      <div class="tab-buttons-wrapper">{''.join(buttons)}</div>
       {''.join(contents)}
     </div>
     """
@@ -82,33 +78,27 @@ def main():
     df = df.dropna(subset=required_cols)
     df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
     df = df.dropna(subset=["Completed Date"])
-    df["Month"] = df["Completed Date"].dt.to_period("M")
-    df = df.sort_values("Month")
-    df["Month"] = df["Month"].astype(str)
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
     df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
     frat_tab_html = generate_frat_tab(frat_df)
 
     html = f"""
 <!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-  <meta charset=\"UTF-8\" />
+  <meta charset="UTF-8" />
   <title>Closure Code Dashboard</title>
-  <script src=\"plotly-latest.min.js\"></script> <!-- Local Plotly JS -->
+  <script src="plotly-latest.min.js"></script>
   <style>
-    * {{
-      box-sizing: border-box;
-    }}
-
+    * {{ box-sizing: border-box; }}
     body {{
-      font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Inter', sans-serif;
       margin: 0;
       background-color: #f4f6f9;
       color: #333;
       display: flex;
     }}
-
     .sidebar {{
       width: 220px;
       background: #2f3542;
@@ -121,13 +111,7 @@ def main():
       display: flex;
       flex-direction: column;
     }}
-
-    .sidebar h2 {{
-      text-align: center;
-      font-size: 20px;
-      margin-bottom: 30px;
-    }}
-
+    .sidebar h2 {{ text-align: center; font-size: 20px; margin-bottom: 30px; }}
     .sidebar button {{
       padding: 15px 20px;
       background: none;
@@ -140,27 +124,13 @@ def main():
       transition: background 0.2s ease;
       cursor: pointer;
     }}
-
-    .sidebar button:hover {{
-      background: #57606f;
-    }}
-
-    .sidebar button.active {{
-      background: #1e90ff;
-    }}
-
+    .sidebar button:hover {{ background: #57606f; }}
+    .sidebar button.active {{ background: #1e90ff; }}
     .main-content {{
       margin-left: 220px;
       padding: 30px;
       flex: 1;
     }}
-
-    h1 {{
-      font-size: 28px;
-      font-weight: 600;
-      margin-bottom: 20px;
-    }}
-
     .main-tab {{
       display: none;
       background: white;
@@ -169,14 +139,12 @@ def main():
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
       margin-bottom: 40px;
     }}
-
     .tab-buttons-wrapper {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       margin-bottom: 20px;
     }}
-
     .tablink {{
       padding: 10px 18px;
       border: none;
@@ -186,19 +154,9 @@ def main():
       cursor: pointer;
       transition: background 0.3s ease;
     }}
-
-    .tablink:hover {{
-      background: #ddd;
-    }}
-
-    .tablink.active {{
-      background: #38ef7d;
-      color: white;
-    }}
-
-    .tabcontent {{
-      display: none;
-    }}
+    .tablink:hover {{ background: #ddd; }}
+    .tablink.active {{ background: #38ef7d; color: white; }}
+    .tabcontent {{ display: none; }}
 
     @media (max-width: 768px) {{
       .sidebar {{
@@ -208,14 +166,12 @@ def main():
         justify-content: space-around;
         position: relative;
       }}
-
       .main-content {{
         margin-left: 0;
         padding: 20px;
       }}
     }}
   </style>
-
   <script>
     function switchMainTab(evt, tabId) {{
       var tabs = document.querySelectorAll('.main-tab');
@@ -245,7 +201,7 @@ def main():
     window.onload = function () {{
       document.getElementById('globalTab').style.display = 'block';
       document.querySelector('.sidebar button').classList.add('active');
-    }}
+    }};
   </script>
 </head>
 <body>
@@ -258,6 +214,7 @@ def main():
     <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
     <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
   </div>
+
   <div class="main-content">
     <h1>Closure Code Dashboard</h1>
     {generate_global_tab(df)}
@@ -270,7 +227,6 @@ def main():
 </body>
 </html>
 """
-
     with open(EXPORT_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
