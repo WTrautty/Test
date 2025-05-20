@@ -1,14 +1,52 @@
-        # Line chart: fail rate comparison
-        ofail = owner_df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
-        gfail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Global Fail %")
-        ff = ofail.merge(tfail, on="Month", how="outer").merge(gfail, on="Month", how="outer")
-        fail_fig = go.Figure()
-        fail_fig.add_trace(go.Scatter(x=ff["Month"], y=ff["Fail %"], name=owner))
-        fail_fig.add_trace(
-            go.Scatter(x=ff["Month"], y=ff["Top Fail %"], name=TOP_LABEL, line=dict(dash="dash"))
-        )
-        fail_fig.add_trace(
-            go.Scatter(x=ff["Month"], y=ff["Global Fail %"], name="Global Avg", line=dict(dash="dot"))
-        )
-        fail_fig.update_layout(title=f"{owner} – % Fail Rate", yaxis=dict(range=[0, 100]), height=300)
-        fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+    # === Line Chart: Failure Rate by Task Owner per Month (min 100 tasks) ===
+    if "Task Owner" in df.columns and "Completed Date" in df.columns:
+        df["Month"] = pd.to_datetime(df["Completed Date"]).dt.to_period("M").astype(str)
+
+        owner_task_counts = df["Task Owner"].value_counts()
+        eligible_owners = owner_task_counts[owner_task_counts >= 100].index.tolist()
+        owner_df = df[df["Task Owner"].isin(eligible_owners)]
+
+        if not owner_df.empty:
+            # Global failure rate per month
+            global_monthly = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Global Fail %")
+
+            # Build multi-line figure
+            fail_fig = go.Figure()
+
+            for owner in sorted(eligible_owners):
+                ofail = (
+                    owner_df[owner_df["Task Owner"] == owner]
+                    .groupby("Month")["Is Fail"]
+                    .mean()
+                    .mul(100)
+                    .reset_index(name="Fail %")
+                )
+
+                merged = pd.merge(ofail, global_monthly, on="Month", how="outer")
+                fail_fig.add_trace(
+                    go.Scatter(x=merged["Month"], y=merged["Fail %"], name=owner)
+                )
+
+            # Add global average line
+            fail_fig.add_trace(
+                go.Scatter(
+                    x=global_monthly["Month"],
+                    y=global_monthly["Global Fail %"],
+                    name="Global Avg",
+                    line=dict(dash="dot", color="black")
+                )
+            )
+
+            fail_fig.update_layout(
+                title="Monthly Failure Rate by Task Owner (min 100 tasks)",
+                yaxis_title="Failure Rate (%)",
+                xaxis_title="Month",
+                yaxis=dict(range=[0, 100]),
+                height=600
+            )
+
+            task_owner_time_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            task_owner_time_html = "<p><i>No Task Owners with 100+ tasks to plot.</i></p>"
+    else:
+        task_owner_time_html = "<p><i>Missing Task Owner or Completed Date columns.</i></p>"
