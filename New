@@ -1,90 +1,31 @@
-def generate_global_tab(df):
-    import plotly.graph_objects as go
-    import plotly.express as px
-
-    print("[DEBUG] Starting generate_global_tab")
-
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df["Month"] = pd.to_datetime(df["Month"].astype(str), errors='coerce').dt.to_period("M").astype(str)
-
-    print("[DEBUG] Unique Months in DataFrame:", df["Month"].unique())
-
-    # === Pie Chart Debug ===
-    pie_df = (
-        df["Closure Code 1"]
-        .fillna("Unknown")
-        .value_counts(normalize=True)
-        .mul(100)
-        .reset_index()
-    )
-    pie_df.columns = ["proportion", "Percentage"]
-    print("[DEBUG] Pie Chart Categories:\n", pie_df.head())
-
-    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
-    pie.update_layout(height=450)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
-
-    # === Monthly Aggregates ===
-    monthly_stats = df.groupby("Month").agg(
-        Closed_Orders=("Is Fail", "count"),
-        Failures=("Is Fail", "sum")
-    ).reset_index()
-    monthly_stats["Failure Rate (%)"] = (monthly_stats["Failures"] / monthly_stats["Closed_Orders"]) * 100
-
-    print("[DEBUG] Monthly Aggregated Stats:\n", monthly_stats)
-
-    # Edge case: empty chart
-    if monthly_stats.empty:
-        print("[ERROR] No data found for monthly_stats.")
-        return "<div id='globalTab' class='main-tab'><h2>No Data Available for Global Statistics</h2></div>"
-
-    # === Combined Figure ===
-    combo_fig = go.Figure()
-
-    combo_fig.add_trace(go.Bar(
-        x=monthly_stats["Month"],
-        y=monthly_stats["Failure Rate (%)"],
-        name="% Orders Failed",
-        marker_color="crimson",
-        yaxis="y1"
-    ))
-
-    combo_fig.add_trace(go.Scatter(
-        x=monthly_stats["Month"],
-        y=monthly_stats["Closed_Orders"],
-        name="Closed Orders",
-        mode="lines+markers",
-        marker_color="blue",
-        yaxis="y2"
-    ))
-
-    combo_fig.update_layout(
-        title="Monthly Failure % and Order Volume",
-        height=500,
-        barmode='group',
-        yaxis=dict(
-            title="% Orders Failed",
-            range=[0, max(40, monthly_stats["Failure Rate (%)"].max() + 10)],
-            side='left'
-        ),
-        yaxis2=dict(
-            title="Closed Orders",
-            overlaying="y",
-            side="right"
-        ),
-        xaxis=dict(title="Month"),
-        legend=dict(x=1, y=1, xanchor='right', yanchor='top')
-    )
-
-    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
-
-    print("[DEBUG] Finished generate_global_tab")
-
-    return f"""
-    <div id="globalTab" class="main-tab">
-      <h2>Global Statistics</h2>
-      <hr>{combo_html}
-      <hr>{pie_html}
-    </div>
-    """
+[DEBUG] Starting generate_global_tab
+[DEBUG] Unique Months in DataFrame: ['2024-05' '2024-06' '2024-07' '2024-11' '2024-08' '2024-09' '2024-10'
+ '2024-12' '2025-01' '2025-02' '2025-03' '2025-04' '2025-05' '2024-03'
+ '2024-02' '2024-04' '2024-01']
+[DEBUG] Pie Chart Categories:
+             proportion  Percentage
+0           Successful   74.755823
+1                 Fail   14.725770
+2    Cancel/Reschedule    6.185825
+3  Activation Complete    3.155522
+4               Cancel    1.051841
+[DEBUG] Monthly Aggregated Stats:
+       Month  Closed_Orders  Failures  Failure Rate (%)
+0   2024-01            348        59         16.954023
+1   2024-02            432        72         16.666667
+2   2024-03            462        58         12.554113
+3   2024-04            507        70         13.806706
+4   2024-05            339        49         14.454277
+5   2024-06            199        32         16.080402
+6   2024-07            175        24         13.714286
+7   2024-08            211        35         16.587678
+8   2024-09            211        31         14.691943
+9   2024-10            262        34         12.977099
+10  2024-11            115        21         18.260870
+11  2024-12            117        24         20.512821
+12  2025-01            118        18         15.254237
+13  2025-02            136        20         14.705882
+14  2025-03            110        21         19.090909
+15  2025-04            176        16          9.090909
+16  2025-05             75         4          5.333333
+[DEBUG] Finished generate_global_tab
