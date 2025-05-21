@@ -1,97 +1,25 @@
-def generate_global_tab(df):
+def generate_sheet2_task_owner_pie():
     import pandas as pd
-    import plotly.express as px
     import plotly.graph_objects as go
 
-    #print("[DEBUG] Starting generate_global_tab")
-    df = df.copy()
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-    df['Month'] = pd.to_datetime(df['Month'].astype(str)).dt.to_period('M')
-    df = df.sort_values('Month')
-    df['Month'] = df['Month'].astype(str)
+    try:
+        df_sheet2 = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
+    except Exception as e:
+        return f"<div id='sheet2TaskOwnerTab' class='main-tab'><h2>Failed to load Sheet2: {e}</h2></div>"
 
-    #print("[DEBUG] Unique Months in DataFrame:", df['Month'].unique())
+    if "Task Owner" not in df_sheet2.columns:
+        return "<div id='sheet2TaskOwnerTab' class='main-tab'><h2>'Task Owner' column not found in Sheet2.</h2></div>"
 
-    # === Pie Chart for Closure Code Distribution ===
-    pie_df = (
-        df["Closure Code 1"]
-        .fillna("Unknown")
-        .value_counts(normalize=True)
-        .mul(100)
-        .reset_index()
-    )
-    pie_df.columns = ["proportion", "Percentage"]
-    #print("[DEBUG] Pie Chart Categories:\n", pie_df)
+    task_owner_counts = df_sheet2["Task Owner"].dropna().value_counts()
 
-    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
-    pie.update_layout(height=450)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
+    fig = go.Figure(data=[
+        go.Pie(labels=task_owner_counts.index, values=task_owner_counts.values, hole=0.4)
+    ])
+    fig.update_layout(title="Task Owner Distribution (Sheet2)")
 
-    # === Aggregated Stats ===
-    stats = df.groupby("Month").agg(
-        Closed_Orders=("Is Fail", "count"),
-        Failures=("Is Fail", "sum")
-    ).reset_index()
-    stats["Failure Rate (%)"] = (stats["Failures"] / stats["Closed_Orders"]) * 100
-    #print("[DEBUG] Monthly Aggregated Stats:\n", stats)
-
-    # === Combo Chart ===
-    combo_fig = go.Figure()
-    combo_fig.add_trace(go.Scatter(
-        x=stats["Month"],
-        y=stats["Closed_Orders"],
-        mode="lines+markers",
-        name="Closed Orders",
-        yaxis="y"
-    ))
-    combo_fig.add_trace(go.Scatter(
-        x=stats["Month"],
-        y=stats["Failures"],
-        mode="lines+markers",
-        name="Failed Orders",
-        yaxis="y"
-    ))
-    combo_fig.add_trace(go.Bar(
-        x=stats["Month"],
-        y=stats["Failure Rate (%)"],
-        name="Failure Rate (%)",
-        yaxis="y2",
-        opacity=0.6,
-        marker_color="crimson",
-        hovertemplate="%{y:.2f}% failure rate<br>Month: %{x}<extra></extra>"
-    ))
-
-    combo_fig.update_layout(
-        title="Closed Orders, Failures, and Failure Rate per Month",
-        barmode="overlay",
-        height=450,
-        xaxis=dict(
-            title="Month",
-            showgrid=False
-        ),
-        yaxis=dict(
-            title="Order Count",
-            showgrid=False
-        ),
-        yaxis2=dict(
-            overlaying="y",
-            side="right",
-            range=[0, 100],
-            showgrid=False,
-            showline=False,
-            showticklabels=False
-        ),
-        legend=dict(x=.90, y=.99, xanchor='right', yanchor='top'),
-        margin=dict(t=50, b=50)
-    )
-
-    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=True)
-    #print("[DEBUG] Finished generate_global_tab")
-
-    return f"""
-    <div id="globalTab" class="main-tab">
-      <h2>Global Statistics</h2>
-      <hr>{combo_html}
-      <hr>{pie_html}
+    return f'''
+    <div id="sheet2TaskOwnerTab" class="main-tab">
+        <h2>Task Owner Distribution from Sheet2</h2>
+        {fig.to_html(include_plotlyjs=False, full_html=False)}
     </div>
-    """
+    '''
