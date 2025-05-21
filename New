@@ -1,129 +1,182 @@
-def generate_failure_analysis_tab(df):
-    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date", "PID"]
-    if not all(col in df.columns for col in required_cols):
-        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
+def main():
+    import pandas as pd
 
-    df = df.copy()
-    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
-    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
-    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-    df["Create Date"] = pd.to_datetime(df["Create Date"], errors="coerce")
-    df["Days to Close"] = (df["Completed Date"] - df["Create Date"]).dt.days
-    df = df.dropna(subset=["Completed Date", "Create Date"])
-    if df.empty:
-        return "<div id='failureTab' class='main-tab'><h2>No valid data after date processing.</h2></div>"
-    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
-
-    # === Merge with SITE_INFO ===
     try:
-        site_info = pd.read_excel(SITE_INFO_PATH, sheet_name="USDA Master", engine='openpyxl')
-        site_info = site_info.rename(columns={
-            "Lumen Ckt ID": "PID",
-            "Site Type (Ex lg, lg, med, small)": "Site Type",
-            "Complex or Simple EXD?": "Complex or Simple",
-        })
-        site_info_cols = ["PID", "Time Zone", "MA", "State", "Site Type", "Phase", "Complex or Simple", "PC/PM"]
-        site_info = site_info[[col for col in site_info_cols if col in site_info.columns]]
-        merge_stats = df.merge(site_info, on="PID", how="left", indicator=True)
-        unmatched = (merge_stats["_merge"] == "left_only").mean()
-        if unmatched > 0.5:
-            return f"<div id='failureTab' class='main-tab'><h2>Warning: {unmatched*100:.1f}% of PIDs unmatched in SITE_INFO merge.</h2></div>"
-        df = merge_stats.drop(columns=["_merge"])
+        df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
+    except Exception:
+        raise
+
+    try:
+        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
     except Exception as e:
-        return f"<div id='failureTab' class='main-tab'><h2>Error loading SITE_INFO: {e}</h2></div>"
+        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
 
-    # === Association Calculation ===
-    assoc_x, assoc_y, assoc_text, p_values = [], [], [], []
-    num_tests = 0
+    validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], EXCEL_PATH)
+    df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df = df.dropna(subset=["Completed Date"])
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    def cramers_v(x, y):
-        contingency = pd.crosstab(x, y)
-        if contingency.shape[0] < 2 or contingency.shape[1] < 2:
-            return 0, 1.0
-        chi2, p, _, _ = chi2_contingency(contingency)
-        n = contingency.sum().sum()
-        r, k = contingency.shape
-        return (np.sqrt(chi2 / (n * (min(k, r) - 1))), p)
+    frat_tab_html = generate_frat_tab(frat_df)
 
-    def spearman_corr(x, y):
-        try:
-            corr, p = spearmanr(x, y)
-            return abs(corr), p
-        except:
-            return 0, 1.0
+    html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Closure Code Dashboard</title>
+  <script src="plotly-latest.min.js"></script>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{
+      font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+      margin: 0;
+      background-color: #f4f6f9;
+      display: flex;
+      color: #333;
+    }}
+    .sidebar {{
+      width: 220px;
+      background: #2f3542;
+      color: #fff;
+      height: 100vh;
+      position: fixed;
+      top: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      padding-top: 30px;
+    }}
+    .sidebar h2 {{
+      text-align: center;
+      font-size: 20px;
+      margin-bottom: 30px;
+    }}
+    .sidebar button {{
+      padding: 15px 20px;
+      border: none;
+      background: none;
+      color: white;
+      text-align: left;
+      width: 100%;
+      font-size: 15px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }}
+    .sidebar button:hover {{
+      background: #57606f;
+    }}
+    .sidebar button.active {{
+      background: #1e90ff;
+    }}
+    .main-content {{
+      margin-left: 220px;
+      padding: 30px;
+      flex: 1;
+    }}
+    .main-tab {{
+      display: none;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      margin-bottom: 40px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    }}
+    .tab-buttons-wrapper {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }}
+    .tablink {{
+      padding: 10px 18px;
+      border: none;
+      background: #f1f1f1;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.3s ease;
+    }}
+    .tablink:hover {{
+      background: #ddd;
+    }}
+    .tablink.active {{
+      background: #38ef7d;
+      color: white;
+    }}
+    .tabcontent {{
+      display: none;
+    }}
+    @media (max-width: 768px) {{
+      .sidebar {{
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        justify-content: space-around;
+        position: relative;
+      }}
+      .main-content {{
+        margin-left: 0;
+        padding: 20px;
+      }}
+    }}
+  </style>
+  <script>
+    function switchMainTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.main-tab');
+      tabs.forEach(tab => tab.style.display = 'none');
+      document.getElementById(tabId).style.display = 'block';
 
-    def annotate(value, pval, alpha=0.05):
-        strength = ("Moderate" if value >= 0.3 else "Weak" if value >= 0.1 else "Negligible")
-        significance = "significant" if pval < alpha else "not significant"
-        return f"{strength} association ({significance})"
+      var buttons = document.querySelectorAll('.sidebar button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
 
-    def add_assoc(label, value, p, method):
-        p_display = f"{p:.3f}" if p >= 0.001 else f"{p:.1e}"
-        assoc_x.append(label)
-        assoc_y.append(value)
-        assoc_text.append(f"{method} = {value:.3f}<br>p = {p_display}<br>({annotate(value, p)})")
-        p_values.append(p)
+      window.dispatchEvent(new Event('resize'));
+    }}
 
-    # === Apply associations ===
-    targets = {
-        "Revised LEC": "cat",
-        "Task Owner": "cat",
-        "Time Zone": "cat",
-        "MA": "cat",
-        "State": "cat",
-        "Site Type": "cat",
-        "Phase": "cat",
-        "Complex or Simple": "cat",
-        "PC/PM": "cat",
-        "Days to Close": "num",
-        "Month": "cat"
-    }
+    function openTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.tabcontent');
+      tabs.forEach(tab => tab.style.display = 'none');
+      document.getElementById(tabId).style.display = 'block';
 
-    for col, kind in targets.items():
-        if col not in df.columns or df[col].nunique() <= 1:
-            continue
-        if kind == "cat":
-            val, p = cramers_v(df[col].fillna("Unknown"), df["Is Fail"])
-            add_assoc(col, val, p, "Cramér's V")
-            num_tests += 1
-        else:
-            val, p = spearman_corr(df[col], df["Is Fail"])
-            add_assoc(col, val, p, "Spearman r")
-            num_tests += 1
+      var buttons = document.querySelectorAll('.tablink');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
 
-    # === Bonferroni Correction ===
-    alpha = 0.05 / max(num_tests, 1)
-    assoc_text = [
-        text.replace("(Moderate association)", f"(Moderate association, {'significant' if p < alpha else 'not significant'})")
-             .replace("(Weak association)", f"(Weak association, {'significant' if p < alpha else 'not significant'})")
-             .replace("(Negligible association)", f"(Negligible association, {'significant' if p < alpha else 'not significant'})")
-        for text, p in zip(assoc_text, p_values)
-    ]
+      window.dispatchEvent(new Event('resize'));
+    }}
 
-    # === Association Bar Chart ===
-    assoc_fig = go.Figure(data=[
-        go.Bar(
-            x=assoc_x,
-            y=assoc_y,
-            text=assoc_text,
-            textposition="auto",
-            marker_color=px.colors.qualitative.Pastel
-        )
-    ])
-    assoc_fig.update_layout(
-        title="Factors Associated with Failures",
-        yaxis_title="Association Strength",
-        yaxis=dict(range=[-0.05, 0.45]),
-        height=500
-    )
+    window.onload = function () {{
+      document.getElementById('globalTab').style.display = 'block';
+      document.querySelector('.sidebar button').classList.add('active');
+    }};
+  </script>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>Dashboard</h2>
+    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
+    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
+    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
+    <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
+    <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
+  </div>
+  <div class="main-content">
+    <h1>Testing Dashboard</h1>
+    {generate_global_tab(df)}
+    {generate_individual_tab(df)}
+    {generate_scheduling_tab()}
+    {generate_lec_tab(df)}
+    {generate_failure_analysis_tab(df)}
+    {frat_tab_html}
+  </div>
+</body>
+</html>
+"""
 
-    assoc_desc = f"""
-    <p>This chart analyzes correlations between failure outcomes and related factors using:<br>
-    <ul>
-        <li><b>Cramér's V</b> for categorical variables</li>
-        <li><b>Spearman r</b> for numerical trends</li>
-    </ul>
-    Significance adjusted with Bonferroni correction (α = {alpha:.3f}).<br>
-    <b>Higher bars indicate stronger associations</b>, not causality.</p>
-    """
+    with open(EXPORT_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+if __name__ == "__main__":
+    main()
