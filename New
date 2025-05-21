@@ -34,6 +34,7 @@ def main():
       margin: 0;
       background-color: #f4f6f9;
       display: flex;
+      flex-direction: column;
       color: #333;
     }}
     .sidebar {{
@@ -107,6 +108,21 @@ def main():
     .tabcontent {{
       display: none;
     }}
+    .viewbtn {{
+      padding: 10px 20px;
+      border: none;
+      background: #57606f;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }}
+    .viewbtn:hover {{
+      background: #1e90ff;
+    }}
+    .viewbtn.active {{
+      background: #1e90ff;
+    }}
     @media (max-width: 768px) {{
       .sidebar {{
         width: 100%;
@@ -146,6 +162,35 @@ def main():
       window.dispatchEvent(new Event('resize'));
     }}
 
+    function toggleView(view) {{
+      const mainContent = document.querySelector('.main-content');
+      const mainBtn = document.getElementById('mainBtn');
+      const sideBtn = document.getElementById('sideBtn');
+
+      if (view === 'main') {{
+        mainContent.style.display = 'block';
+        document.getElementById('sideContent')?.remove();
+        mainBtn.classList.add('active');
+        sideBtn.classList.remove('active');
+      }} else {{
+        mainContent.style.display = 'none';
+        if (!document.getElementById('sideContent')) {{
+          const sideDiv = document.createElement('div');
+          sideDiv.id = 'sideContent';
+          sideDiv.className = 'main-content';
+          sideDiv.innerHTML = `
+            <h1>Side View</h1>
+            <div style="background:white; padding:30px; border-radius:12px;">
+              <p>This is the new side panel. Add your new dashboard logic here.</p>
+            </div>
+          `;
+          document.body.appendChild(sideDiv);
+        }}
+        mainBtn.classList.remove('active');
+        sideBtn.classList.add('active');
+      }}
+    }}
+
     window.onload = function () {{
       document.getElementById('globalTab').style.display = 'block';
       document.querySelector('.sidebar button').classList.add('active');
@@ -162,6 +207,7 @@ def main():
     <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
     <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
   </div>
+
   <div class="main-content">
     <h1>Testing Dashboard</h1>
     {generate_global_tab(df)}
@@ -170,6 +216,21 @@ def main():
     {generate_lec_tab(df)}
     {generate_failure_analysis_tab(df)}
     {frat_tab_html}
+  </div>
+
+  <div id="viewSwitcher" style="
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: #2f3542;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    display: flex;
+    z-index: 1000;
+  ">
+    <button onclick="toggleView('main')" id="mainBtn" class="viewbtn active">Main</button>
+    <button onclick="toggleView('side')" id="sideBtn" class="viewbtn">Side</button>
   </div>
 </body>
 </html>
