@@ -1,25 +1,4 @@
 
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import calendar
-import os
-from datetime import datetime
-import plotly.colors
-import hashlib
-import re
-
-# === Configuration ===
-EXCEL_PATH = r"C:\Users\AD39644\Downloads\data (5).xlsx"
-FRAT_PATH = r"C:\Users\AD39644\Downloads\data (6).xlsx"
-EXPORT_HTML = r"C:\Users\AD39644\OneDrive - Lumen\Federal Service Delivery - Scripting Archive\Dashboards.html"
-TAB_MIN_ENTRIES = 100
-TOP_PERFORMER = "Davis, Walter (Walter)"
-TOP_LABEL = "Top Performer"
-ADDITIONAL_EXCEL = r"C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Outlook_Calendars.xlsx"
-SITE_INFO_PATH= r"C:\Users\AD39644\Copy of USDA FIT Remote Site Master Tracker_Implementation.xlsx"
-
-
 def validate_columns(df, required_cols, file_name):
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
@@ -53,7 +32,7 @@ def generate_global_tab(df):
 
     pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
     pie.update_layout(height=450)
-    pie_html = pie.to_html(full_html=False, include_plotlyjs=False)
+    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
 
     # === Aggregated Stats ===
     stats = df.groupby("Month").agg(
@@ -113,7 +92,7 @@ def generate_global_tab(df):
         margin=dict(t=50, b=50)
     )
 
-    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
+    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=True)
     #print("[DEBUG] Finished generate_global_tab")
 
     return f"""
@@ -369,7 +348,7 @@ def generate_scheduling_tab():
     return f"""
     <div id="schedulingTab" class="main-tab">
       <h2>Scheduling Dashboard</h2>
-      <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=False)}
+      <hr>{avg_tab_fig.to_html(full_html=False, include_plotlyjs=True)}
       <hr>{total_monthly_fig.to_html(full_html=False, include_plotlyjs=False)}
       <hr>{sched_dropdown_fig.to_html(full_html=False, include_plotlyjs=False)}
       {explanation}
@@ -554,7 +533,7 @@ def generate_lec_tab(df):
     lec_usage_scatter_html = usage_scatter_fig.to_html(full_html=False, include_plotlyjs=False)
 
     # === Step 7: Export HTML
-    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=False)
+    lec_total_html = lec_total_fig.to_html(full_html=False, include_plotlyjs=True)
     lec_fail_html = lec_fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
     return f"""
@@ -1022,7 +1001,7 @@ def generate_failure_analysis_tab(df):
     return f"""
     <div id="failureTab" class="main-tab">
         <h2>Failure Analysis</h2>
-        {assoc_fig.to_html(full_html=False, include_plotlyjs=False)}
+        {assoc_fig.to_html(full_html=False, include_plotlyjs=True)}
         {assoc_desc}
         {combo_html}
         <h3>Failure Rate by State</h3>
@@ -1175,72 +1154,29 @@ def generate_frat_tab(frat_df):
     </div>
     """
 def generate_sheet2_task_owner_pie_chart_only():
+    import pandas as pd
+    import plotly.graph_objects as go
+
     try:
         df_sheet2 = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
     except Exception as e:
         return f"<p><strong>Failed to load Sheet2:</strong> {e}</p>"
 
-    required_cols = ["Task Owner", "Task Name", "Closure Code 2"]
-    if not all(col in df_sheet2.columns for col in required_cols):
-        return "<p><strong>One or more required columns ('Task Owner', 'Task Name', 'Closure Code 2') not found in Sheet2.</strong></p>"
+    if "Task Owner" not in df_sheet2.columns:
+        return "<p><strong>'Task Owner' column not found in Sheet2.</strong></p>"
 
-    filtered_df = df_sheet2[
-        (df_sheet2["Task Name"] == "Scheduling/Activations") &
-        (~df_sheet2["Closure Code 2"].isin(["Prep/Prework", "Administrative"]))
-    ]
-
-    task_owner_counts = filtered_df["Task Owner"].dropna().value_counts()
-    if task_owner_counts.empty:
-        return "<p><strong>No matching data after filtering.</strong></p>"
-
+    task_owner_counts = df_sheet2["Task Owner"].dropna().value_counts()
     fig = go.Figure(data=[
         go.Pie(labels=task_owner_counts.index, values=task_owner_counts.values, hole=0.4)
     ])
-    fig.update_layout(title="Task Owner Distribution (Filtered from Sheet2)")
+    fig.update_layout(title="Task Owner Distribution (Sheet2)")
 
     return fig.to_html(include_plotlyjs=False, full_html=False)
 
-# Dummy stubs for other tab functions
-#def generate_global_tab(df): return "<div id='globalTab' class='main-tab'>Global tab content here</div>"
-#def generate_individual_tab(df): return "<div id='individualTab' class='main-tab'>Individual tab content here</div>"
-#def generate_scheduling_tab(): return "<div id='schedulingTab' class='main-tab'>Scheduling tab content here</div>"
-#def generate_lec_tab(df): return "<div id='lecTab' class='main-tab'>LEC tab content here</div>"
-#def generate_failure_analysis_tab(df): return "<div id='failureTab' class='main-tab'>Failure analysis tab content here</div>"
-#def generate_frat_tab(frat_df): return "<div id='fratTab' class='main-tab'>FRAT tab content here</div>"
-
-def generate_sheet2_task_owner_pie_chart_only():
-    try:
-        df_sheet2 = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
-    except Exception as e:
-        return f"<p><strong>Failed to load Sheet2:</strong> {e}</p>"
-
-    required_cols = ["Task Owner", "Task Name", "Closure Code 2"]
-    if not all(col in df_sheet2.columns for col in required_cols):
-        return "<p><strong>One or more required columns ('Task Owner', 'Task Name', 'Closure Code 2') not found in Sheet2.</strong></p>"
-
-    filtered_df = df_sheet2[
-        (df_sheet2["Task Name"] == "Scheduling/Activations") &
-        (~df_sheet2["Closure Code 2"].isin(["Prep/Prework", "Administrative"]))
-    ]
-
-    task_owner_counts = filtered_df["Task Owner"].dropna().value_counts()
-    if task_owner_counts.empty:
-        return "<p><strong>No matching data after filtering.</strong></p>"
-
-    fig = go.Figure(data=[
-        go.Pie(labels=task_owner_counts.index, values=task_owner_counts.values, hole=0.4)
-    ])
-    fig.update_layout(title="Task Owner Distribution (Filtered from Sheet2)")
-
-    return fig.to_html(include_plotlyjs=False, full_html=False)
-
-
-def validate_columns(df, required, file):
-    missing = [col for col in required if col not in df.columns]
-    if missing:
-        raise ValueError(f"Missing columns in {file}: {missing}")
 
 def main():
+    import pandas as pd
+
     try:
         df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
     except Exception:
@@ -1324,18 +1260,27 @@ def main():
       margin-bottom: 40px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.06);
     }}
-    @media (max-width: 768px) {{
-      .sidebar {{
-        width: 100%;
-        height: auto;
-        flex-direction: row;
-        justify-content: space-around;
-        position: relative;
-      }}
-      #content-wrapper {{
-        margin-left: 0;
-        padding: 20px;
-      }}
+    .tab-buttons-wrapper {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }}
+    .tablink {{
+      padding: 10px 18px;
+      border: none;
+      background: #f1f1f1;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.3s ease;
+    }}
+    .tablink:hover {{
+      background: #ddd;
+    }}
+    .tablink.active {{
+      background: #38ef7d;
+      color: white;
     }}
     .viewbtn {{
       padding: 10px 20px;
@@ -1352,6 +1297,19 @@ def main():
     .viewbtn.active {{
       background: #1e90ff;
     }}
+    @media (max-width: 768px) {{
+      .sidebar {{
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        justify-content: space-around;
+        position: relative;
+      }}
+      #content-wrapper {{
+        margin-left: 0;
+        padding: 20px;
+      }}
+    }}
   </style>
   <script>
     function switchMainTab(evt, tabId) {{
@@ -1366,42 +1324,46 @@ def main():
       window.dispatchEvent(new Event('resize'));
     }}
 
+    function openTab(evt, tabId) {{
+      var tabs = document.querySelectorAll('.tabcontent');
+      tabs.forEach(tab => tab.style.display = 'none');
+      document.getElementById(tabId).style.display = 'block';
+
+      var buttons = document.querySelectorAll('.tablink');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
+
+      window.dispatchEvent(new Event('resize'));
+    }}
+
     function toggleView(view) {{
       const mainContent = document.getElementById('mainDashboard');
       const sideContent = document.getElementById('sideDashboard');
       const mainBtn = document.getElementById('mainBtn');
       const sideBtn = document.getElementById('sideBtn');
-      const mainSidebar = document.getElementById('mainSidebar');
-      const sideSidebar = document.getElementById('sideSidebar');
 
       if (view === 'main') {{
         mainContent.style.display = 'block';
         sideContent.style.display = 'none';
         mainBtn.classList.add('active');
         sideBtn.classList.remove('active');
-        mainSidebar.style.display = 'flex';
-        sideSidebar.style.display = 'none';
       }} else {{
         mainContent.style.display = 'none';
         sideContent.style.display = 'block';
         mainBtn.classList.remove('active');
         sideBtn.classList.add('active');
-        mainSidebar.style.display = 'none';
-        sideSidebar.style.display = 'flex';
       }}
     }}
 
     window.onload = function () {{
       document.getElementById('globalTab').style.display = 'block';
+      document.querySelector('.sidebar button').classList.add('active');
       document.getElementById('mainDashboard').style.display = 'block';
-      document.querySelector('#mainSidebar button').classList.add('active');
     }};
   </script>
 </head>
 <body>
-
-  <!-- MAIN SIDEBAR -->
-  <div id="mainSidebar" class="sidebar">
+  <div class="sidebar">
     <h2>Dashboard</h2>
     <button onclick="switchMainTab(event, 'globalTab')">Global</button>
     <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
@@ -1409,12 +1371,6 @@ def main():
     <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
     <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
     <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
-  </div>
-
-  <!-- SIDE SIDEBAR -->
-  <div id="sideSidebar" class="sidebar" style="display:none;">
-    <h2>Side View</h2>
-    <button onclick="switchMainTab(event, 'sideDashboard')">Task Owner Pie</button>
   </div>
 
   <div id="content-wrapper">
@@ -1451,7 +1407,6 @@ def main():
     <button onclick="toggleView('main')" id="mainBtn" class="viewbtn active">Main</button>
     <button onclick="toggleView('side')" id="sideBtn" class="viewbtn">Side</button>
   </div>
-
 </body>
 </html>
 """
