@@ -1,11 +1,3 @@
-import pandas as pd
-import plotly.graph_objects as go
-import os
-
-EXCEL_PATH = "your_excel_path_here.xlsx"
-FRAT_PATH = "your_frat_path_here.xlsx"
-EXPORT_HTML = "dashboard.html"
-
 def generate_sheet2_task_owner_pie_chart_only():
     try:
         df_sheet2 = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
@@ -33,12 +25,12 @@ def generate_sheet2_task_owner_pie_chart_only():
     return fig.to_html(include_plotlyjs=False, full_html=False)
 
 # Dummy stubs for other tab functions
-def generate_global_tab(df): return "<div id='globalTab' class='main-tab'>Global tab content here</div>"
-def generate_individual_tab(df): return "<div id='individualTab' class='main-tab'>Individual tab content here</div>"
-def generate_scheduling_tab(): return "<div id='schedulingTab' class='main-tab'>Scheduling tab content here</div>"
-def generate_lec_tab(df): return "<div id='lecTab' class='main-tab'>LEC tab content here</div>"
-def generate_failure_analysis_tab(df): return "<div id='failureTab' class='main-tab'>Failure analysis tab content here</div>"
-def generate_frat_tab(frat_df): return "<div id='fratTab' class='main-tab'>FRAT tab content here</div>"
+#def generate_global_tab(df): return "<div id='globalTab' class='main-tab'>Global tab content here</div>"
+#def generate_individual_tab(df): return "<div id='individualTab' class='main-tab'>Individual tab content here</div>"
+#def generate_scheduling_tab(): return "<div id='schedulingTab' class='main-tab'>Scheduling tab content here</div>"
+#def generate_lec_tab(df): return "<div id='lecTab' class='main-tab'>LEC tab content here</div>"
+#def generate_failure_analysis_tab(df): return "<div id='failureTab' class='main-tab'>Failure analysis tab content here</div>"
+#def generate_frat_tab(frat_df): return "<div id='fratTab' class='main-tab'>FRAT tab content here</div>"
 
 def validate_columns(df, required, file):
     missing = [col for col in required if col not in df.columns]
