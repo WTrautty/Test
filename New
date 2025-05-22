@@ -7,13 +7,24 @@ def generate_barry_task_owner_pie():
     except Exception as e:
         return f"<p><strong>Error loading Sheet2:</strong> {e}</p>"
 
-    if "Task Owner" not in df_sheet2.columns:
-        return "<p><strong>'Task Owner' column not found in Sheet2.</strong></p>"
+    required_cols = {"Task Owner", "Task Name", "Closure Code 2"}
+    if not required_cols.issubset(df_sheet2.columns):
+        missing = required_cols - set(df_sheet2.columns)
+        return f"<p><strong>Missing columns in Sheet2: {', '.join(missing)}</strong></p>"
 
-    pie_df = df_sheet2["Task Owner"].value_counts().reset_index()
+    # Apply filters
+    filtered_df = df_sheet2[
+        (df_sheet2["Task Name"] == "Scheduling/Activations") &
+        (~df_sheet2["Closure Code 2"].isin(["Prep/Prework", "Administrative"]))
+    ]
+
+    if filtered_df.empty:
+        return "<p><i>No matching records found in Sheet2 after filtering.</i></p>"
+
+    pie_df = filtered_df["Task Owner"].value_counts().reset_index()
     pie_df.columns = ["Task Owner", "Count"]
 
-    fig = px.pie(pie_df, names="Task Owner", values="Count", title="Barry – Task Ownership Distribution")
+    fig = px.pie(pie_df, names="Task Owner", values="Count", title="Barry – Task Ownership Distribution (Filtered)")
     fig.update_layout(height=500)
 
     return fig.to_html(full_html=False, include_plotlyjs=True)
