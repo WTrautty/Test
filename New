@@ -1,46 +1,190 @@
-def generate_barry_mac_pie_tab():
-    print("[DEBUG] Starting generate_barry_mac_pie_tab")
+def main():
+    try:
+        df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
+    except Exception:
+        raise
 
     try:
-        df = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
-        print("[DEBUG] Loaded Sheet2 successfully")
+        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
     except Exception as e:
-        print(f"[ERROR] Failed to load Sheet2: {e}")
-        return f"<p><strong>Failed to load Sheet2:</strong> {e}</p>"
+        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
 
-    required_cols = ["Task Owner", "Task Name", "Completed Date"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        print(f"[ERROR] Missing columns: {missing_cols}")
-        return f"<p><strong>Missing columns in Sheet2: {missing_cols}</strong></p>"
-
-    print("[DEBUG] Converting 'Completed Date' to datetime")
+    validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], EXCEL_PATH)
+    df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
     df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df = df.dropna(subset=["Completed Date"])
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
 
-    print("[DEBUG] Filtering Task Name == 'MACD' and Completed Date >= 2024-10-10")
-    filtered_df = df[
-        (df["Task Name"].str.upper() == "MACD") &
-        (df["Completed Date"] >= datetime(2024, 10, 10))
-    ]
+    global_tab_html = generate_global_tab(df)
+    scheduling_tab_html = generate_scheduling_tab()
+    frat_tab_html = generate_frat_tab(frat_df)
 
-    print(f"[DEBUG] Rows after filtering: {len(filtered_df)}")
-    if len(filtered_df) > 0:
-        print("[DEBUG] Sample of filtered Task Owner values:")
-        print(filtered_df["Task Owner"].value_counts().head())
-    else:
-        print("[WARN] No data found after filtering.")
+    barry_general_html = generate_sheet2_task_owner_pie_chart_only()
+    barry_mac_html = generate_barry_mac_pie_tab()
 
-    task_owner_counts = filtered_df["Task Owner"].dropna().value_counts()
-    print(f"[DEBUG] Unique Task Owners in filtered data: {len(task_owner_counts)}")
+    individual_tab_html = generate_individual_tab(df)
+    lec_tab_html = generate_lec_tab(df)
+    failure_analysis_html = generate_failure_analysis_tab(df)
 
-    if task_owner_counts.empty:
-        return "<p><strong>No matching data for Task Name 'MACD' past 10/10/2024.</strong></p>"
+    html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Page Dashboard</title>
+  <script src="plotly-latest.min.js"></script>
+  <style>
+    body {{
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      background: #f4f6f9;
+    }}
+    .page {{
+      display: none;
+      padding: 30px;
+    }}
+    .sidebar {{
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 220px;
+      background: #2f3542;
+      height: 100vh;
+      padding-top: 30px;
+      display: flex;
+      flex-direction: column;
+      color: white;
+    }}
+    .sidebar h2 {{
+      text-align: center;
+      font-size: 20px;
+      margin-bottom: 30px;
+    }}
+    .sidebar button {{
+      background: none;
+      border: none;
+      color: white;
+      padding: 15px 20px;
+      text-align: left;
+      width: 100%;
+      cursor: pointer;
+    }}
+    .sidebar button:hover,
+    .sidebar button.active {{
+      background: #1e90ff;
+    }}
+    .view-switcher {{
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      display: flex;
+      gap: 10px;
+    }}
+    .viewbtn {{
+      background: #57606f;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }}
+    .viewbtn:hover,
+    .viewbtn.active {{
+      background: #1e90ff;
+    }}
+    .viewbtn.global {{
+      flex: 2;
+    }}
+  </style>
+  <script>
+    function switchPage(pageId) {{
+      document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+      document.getElementById(pageId).style.display = 'block';
 
-    fig = go.Figure(data=[
-        go.Pie(labels=task_owner_counts.index, values=task_owner_counts.values, hole=0.4)
-    ])
-    fig.update_layout(title="Task Owner Distribution for MACD Tasks (after 10/10/2024)")
+      document.querySelectorAll('.viewbtn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(pageId + "Btn").classList.add('active');
 
-    print("[DEBUG] Pie chart successfully generated")
+      window.dispatchEvent(new Event('resize'));
+    }}
 
-    return fig.to_html(full_html=False, include_plotlyjs=False)
+    function switchTab(evt, tabId, tabClass) {{
+      document.querySelectorAll("." + tabClass).forEach(tab => tab.style.display = 'none');
+      document.getElementById(tabId).style.display = 'block';
+      evt.currentTarget.parentElement.querySelectorAll("button").forEach(btn => btn.classList.remove("active"));
+      evt.currentTarget.classList.add("active");
+      window.dispatchEvent(new Event('resize'));
+    }}
+
+    window.onload = function () {{
+      switchPage('globalPage');
+    }};
+  </script>
+</head>
+<body>
+
+  <!-- GLOBAL PAGE -->
+  <div id="globalPage" class="page">
+    <div class="sidebar">
+      <h2>Global</h2>
+      <button onclick="switchTab(event, 'globalTab', 'global-tab')">Global</button>
+      <button onclick="switchTab(event, 'schedulingTab', 'global-tab')">Scheduling</button>
+      <button onclick="switchTab(event, 'fratTab', 'global-tab')">FRAT</button>
+    </div>
+    <div style="margin-left: 220px;">
+      <div id="globalTab" class="global-tab" style="display:block;">{global_tab_html}</div>
+      <div id="schedulingTab" class="global-tab" style="display:none;">{scheduling_tab_html}</div>
+      <div id="fratTab" class="global-tab" style="display:none;">{frat_tab_html}</div>
+    </div>
+  </div>
+
+  <!-- BARRY PAGE -->
+  <div id="barryPage" class="page">
+    <div class="sidebar">
+      <h2>Barry</h2>
+      <button onclick="switchTab(event, 'barryGeneral', 'barry-tab')">General</button>
+      <button onclick="switchTab(event, 'barryMac', 'barry-tab')">MAC</button>
+    </div>
+    <div style="margin-left: 220px;">
+      <div id="barryGeneral" class="barry-tab" style="display:block;">
+        <h2>General Distribution from Sheet2</h2>
+        {barry_general_html}
+      </div>
+      <div id="barryMac" class="barry-tab" style="display:none;">
+        <h2>MACD Task Owner Distribution</h2>
+        {barry_mac_html}
+      </div>
+    </div>
+  </div>
+
+  <!-- SHAWN PAGE -->
+  <div id="shawnPage" class="page">
+    <div class="sidebar">
+      <h2>Shawn</h2>
+      <button onclick="switchTab(event, 'individualTab', 'shawn-tab')">Individual</button>
+      <button onclick="switchTab(event, 'lecTab', 'shawn-tab')">LEC</button>
+      <button onclick="switchTab(event, 'failureTab', 'shawn-tab')">Failure</button>
+    </div>
+    <div style="margin-left: 220px;">
+      <div id="individualTab" class="shawn-tab" style="display:block;">{individual_tab_html}</div>
+      <div id="lecTab" class="shawn-tab" style="display:none;">{lec_tab_html}</div>
+      <div id="failureTab" class="shawn-tab" style="display:none;">{failure_analysis_html}</div>
+    </div>
+  </div>
+
+  <!-- PAGE SWITCHER -->
+  <div class="view-switcher">
+    <button id="globalPageBtn" class="viewbtn global" onclick="switchPage('globalPage')">Global</button>
+    <button id="barryPageBtn" class="viewbtn" onclick="switchPage('barryPage')">Barry</button>
+    <button id="shawnPageBtn" class="viewbtn" onclick="switchPage('shawnPage')">Shawn</button>
+  </div>
+
+</body>
+</html>
+"""
+
+    with open(EXPORT_HTML, "w", encoding="utf-8") as f:
+        f.write(html)
+
+if __name__ == "__main__":
+    main()
