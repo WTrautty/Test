@@ -1,26 +1,5 @@
-def main():
-    try:
-        df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
-    except Exception:
-        raise
-
-    try:
-        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
-    except Exception as e:
-        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
-
-    validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], EXCEL_PATH)
-    df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
-    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-    df = df.dropna(subset=["Completed Date"])
-    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-
-    frat_tab_html = generate_frat_tab(frat_df)
-    sheet2_pie_html = generate_barry_task_owner_pie()
-    barry_mac_tab_html = generate_barry_mac_pie_tab()
-
-    html = f"""
+def build_dashboard_html(global_html, individual_html, scheduling_html, lec_html, failure_html, frat_html, sheet2_pie_html, barry_mac_html):
+    return f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,6 +12,7 @@ def main():
       font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
       margin: 0;
       background-color: #f4f6f9;
+      display: flex;
       color: #333;
     }}
     .sidebar {{
@@ -41,8 +21,7 @@ def main():
       color: #fff;
       height: 100vh;
       position: fixed;
-      top: 0;
-      left: 0;
+      top: 0; left: 0;
       display: flex;
       flex-direction: column;
       padding-top: 30px;
@@ -73,7 +52,7 @@ def main():
     #content-wrapper {{
       margin-left: 220px;
       padding: 30px;
-      width: calc(100% - 220px);
+      width: 100%;
     }}
     .main-content, .side-content {{
       background: white;
@@ -146,13 +125,35 @@ def main():
   </script>
 </head>
 <body>
+
+  <!-- MAIN SIDEBAR -->
+  <div id="mainSidebar" class="sidebar">
+    <h2>Dashboard</h2>
+    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
+    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
+    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
+    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
+    <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
+    <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
+  </div>
+
+  <!-- SIDE SIDEBAR for Barry -->
+  <div id="sideSidebar" class="sidebar" style="display:none;">
+    <h2>Barry View</h2>
+    <button onclick="switchMainTab(event, 'sideDashboard')">General</button>
+    <button onclick="switchMainTab(event, 'barryMacTab')">MAC</button>
+  </div>
+
   <div id="content-wrapper">
 
     <!-- GLOBAL PAGE -->
     <div id="globalPage" class="page-group" style="display:block;">
-      <div id="globalTab" class="main-tab">{generate_global_tab(df)}</div>
-      <div id="schedulingTab" class="main-tab">{generate_scheduling_tab()}</div>
-      <div id="fratTab" class="main-tab">{frat_tab_html}</div>
+      <div id="mainDashboard" class="main-content">
+        <h1>Closure Code Dashboard</h1>
+        {global_html}
+        {scheduling_html}
+        {frat_html}
+      </div>
     </div>
 
     <!-- BARRY PAGE -->
@@ -168,16 +169,19 @@ def main():
         <h1>Barry View – MAC</h1>
         <div style="background:white; padding:30px; border-radius:12px;">
           <h2>MACD Task Owner Distribution (after 10/10/2024)</h2>
-          {barry_mac_tab_html}
+          {barry_mac_html}
         </div>
       </div>
     </div>
 
     <!-- SHAWN PAGE -->
     <div id="shawnPage" class="page-group" style="display:none;">
-      <div id="individualTab" class="main-tab">{generate_individual_tab(df)}</div>
-      <div id="lecTab" class="main-tab">{generate_lec_tab(df)}</div>
-      <div id="failureTab" class="main-tab">{generate_failure_analysis_tab(df)}</div>
+      <div id="shawnDashboard" class="main-content">
+        <h1>Shawn View</h1>
+        {individual_html}
+        {lec_html}
+        {failure_html}
+      </div>
     </div>
 
   </div>
@@ -202,9 +206,3 @@ def main():
 </body>
 </html>
 """
-
-    with open(EXPORT_HTML, "w", encoding="utf-8") as f:
-        f.write(html)
-
-if __name__ == "__main__":
-    main()
