@@ -1,3 +1,6 @@
+
+
+
 def validate_columns(df, required_cols, file_name):
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
@@ -1185,40 +1188,22 @@ def generate_barry_task_owner_pie():
     return fig.to_html(full_html=False, include_plotlyjs=True)
 
 def generate_barry_mac_pie_tab():
-    print("[DEBUG] Starting generate_barry_mac_pie_tab")
-
     try:
         df = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
-        print("[DEBUG] Loaded Sheet2 successfully")
     except Exception as e:
-        print(f"[ERROR] Failed to load Sheet2: {e}")
         return f"<p><strong>Failed to load Sheet2:</strong> {e}</p>"
 
     required_cols = ["Task Owner", "Task Name", "Completed Date"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        print(f"[ERROR] Missing columns: {missing_cols}")
-        return f"<p><strong>Missing columns in Sheet2: {missing_cols}</strong></p>"
+    if not all(col in df.columns for col in required_cols):
+        return "<p><strong>One or more required columns ('Task Owner', 'Task Name', 'Completed Date') not found in Sheet2.</strong></p>"
 
-    print("[DEBUG] Converting 'Completed Date' to datetime")
     df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-
-    print("[DEBUG] Filtering Task Name == 'MACD' and Completed Date >= 2024-10-10")
     filtered_df = df[
         (df["Task Name"].str.upper() == "MACD") &
         (df["Completed Date"] >= datetime(2024, 10, 10))
     ]
 
-    print(f"[DEBUG] Rows after filtering: {len(filtered_df)}")
-    if len(filtered_df) > 0:
-        print("[DEBUG] Sample of filtered Task Owner values:")
-        print(filtered_df["Task Owner"].value_counts().head())
-    else:
-        print("[WARN] No data found after filtering.")
-
     task_owner_counts = filtered_df["Task Owner"].dropna().value_counts()
-    print(f"[DEBUG] Unique Task Owners in filtered data: {len(task_owner_counts)}")
-
     if task_owner_counts.empty:
         return "<p><strong>No matching data for Task Name 'MACD' past 10/10/2024.</strong></p>"
 
@@ -1227,46 +1212,118 @@ def generate_barry_mac_pie_tab():
     ])
     fig.update_layout(title="Task Owner Distribution for MACD Tasks (after 10/10/2024)")
 
-    print("[DEBUG] Pie chart successfully generated")
-
-    return fig.to_html(full_html=False, include_plotlyjs=False)
+    return f"""
+    <div id="barryMacTab" class="main-tab" style="display:none;">
+      <h2>MACD Task Owner Distribution (Since 10/10/2024)</h2>
+      {fig.to_html(full_html=False, include_plotlyjs=False)}
+    </div>
+    """
 
 def main():
-    try:
-        df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
-    except Exception:
-        raise
+    import pandas as pd
 
+    print("[INFO] Starting dashboard generation")
+
+    # === Load Data for Both Customers ===
     try:
-        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
+        print("[INFO] Loading Excel data for Shawn...")
+        df_shawn = pd.read_excel(EXCEL_PATH, engine="openpyxl")
+        print(f"[INFO] Loaded Shawn rows: {len(df_shawn)}")
+
+        print("[INFO] Loading Excel data for Barry...")
+        df_barry = pd.read_excel(BARRY_EXCEL_PATH, engine="openpyxl")
+        print(f"[INFO] Loaded Barry rows: {len(df_barry)}")
     except Exception as e:
-        raise RuntimeError(f"Failed to load FRAT Excel file: {e}")
+        raise RuntimeError(f"[ERROR] Failed to load Excel files: {e}")
 
-    validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], EXCEL_PATH)
-    df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
-    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-    df = df.dropna(subset=["Completed Date"])
-    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
-    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+    # === Validate and Preprocess Each Customer ===
+    def preprocess(df, label):
+        print(f"[INFO] Preprocessing {label}...")
+        validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], f"{label} Data")
+        df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
+        df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+        df = df.dropna(subset=["Completed Date"])
+        df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+        df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+        print(f"[INFO] Finished preprocessing {label}. Remaining rows: {len(df)}")
+        return df
 
-    frat_tab_html = generate_frat_tab(frat_df)
-    sheet2_pie_html = generate_barry_task_owner_pie()
-    barry_mac_tab_html = generate_barry_mac_pie_tab()
+    df_shawn = preprocess(df_shawn, "Shawn")
+    df_barry = preprocess(df_barry, "Barry")
 
+    # === Build HTML block per customer ===
+    def customer_block(customer_id, df):
+        print(f"[INFO] Generating HTML for customer: {customer_id}")
+
+        if customer_id == "barry":
+            return f"""
+            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
+              <div class="sidebar">
+                <h2>Barry Dashboard</h2>
+              </div>
+              <div class="main-content">
+                <h1>Barry Data</h1>
+                <div class="main-tab" style="display:block;">
+                  <h2>Barry Dashboard</h2>
+                  {generate_barry_task_owner_pie()}
+                </div>
+              </div>
+            </div>
+            """
+
+        # Full tab content for Shawn
+        global_html = generate_global_tab(df).replace('id="globalTab"', f'id="globalTab-{customer_id}"')
+        individual_html = generate_individual_tab(df, customer_id).replace('id="individualTab"', f'id="individualTab-{customer_id}"')
+        scheduling_html = generate_scheduling_tab().replace('id="schedulingTab"', f'id="schedulingTab-{customer_id}"')
+        lec_html = generate_lec_tab(df).replace('id="lecTab"', f'id="lecTab-{customer_id}"')
+        failure_html = generate_failure_analysis_tab(df).replace('id="failureTab"', f'id="failureTab-{customer_id}"')
+
+        return f"""
+        <div class="customer-container" id="customer-{customer_id}" style="display:{'block' if customer_id == 'shawn' else 'none'};">
+          <div class="sidebar">
+            <h2>{customer_id.capitalize()} Dashboard</h2>
+            <button onclick="switchMainTab(event, 'globalTab-{customer_id}')">Global</button>
+            <button onclick="switchMainTab(event, 'individualTab-{customer_id}')">Individual</button>
+            <button onclick="switchMainTab(event, 'schedulingTab-{customer_id}')">Scheduling</button>
+            <button onclick="switchMainTab(event, 'lecTab-{customer_id}')">LEC</button>
+            <button onclick="switchMainTab(event, 'failureTab-{customer_id}')">Failure Analysis</button>
+          </div>
+          <div class="main-content">
+            <h1>{customer_id.capitalize()} Data</h1>
+            {global_html}
+            {individual_html}
+            {scheduling_html}
+            {lec_html}
+            {failure_html}
+          </div>
+        </div>
+        """
+
+    # === Customer selector dropdown ===
+    customer_switcher_html = """
+    <div class="customer-switcher">
+      <label for="customer-select">Customer:</label>
+      <select id="customer-select" onchange="switchCustomer(this.value)">
+        <option value="shawn" selected>Shawn</option>
+        <option value="barry">Barry</option>
+      </select>
+    </div>
+    """
+
+    # === Final HTML Assembly ===
+    print("[INFO] Assembling full HTML output...")
     html = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Closure Code Dashboard</title>
+  <title>Multi-Customer Dashboard</title>
   <script src="plotly-latest.min.js"></script>
   <style>
-    * {{ box-sizing: border-box; }}
     body {{
-      font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+      font-family: 'Inter', sans-serif;
       margin: 0;
       background-color: #f4f6f9;
-      display: flex;
       color: #333;
     }}
     .sidebar {{
@@ -1279,12 +1336,6 @@ def main():
       display: flex;
       flex-direction: column;
       padding-top: 30px;
-      z-index: 10;
-    }}
-    .sidebar h2 {{
-      text-align: center;
-      font-size: 20px;
-      margin-bottom: 30px;
     }}
     .sidebar button {{
       padding: 15px 20px;
@@ -1292,10 +1343,8 @@ def main():
       background: none;
       color: white;
       text-align: left;
-      width: 100%;
       font-size: 15px;
       cursor: pointer;
-      transition: background 0.2s ease;
     }}
     .sidebar button:hover {{
       background: #57606f;
@@ -1303,175 +1352,113 @@ def main():
     .sidebar button.active {{
       background: #1e90ff;
     }}
-    #content-wrapper {{
+    .main-content {{
       margin-left: 220px;
       padding: 30px;
-      width: 100%;
     }}
-    .main-content, .side-content {{
+    .main-tab {{
+      display: none;
       background: white;
       padding: 30px;
       border-radius: 12px;
-      margin-bottom: 40px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+      margin-bottom: 40px;
     }}
-    @media (max-width: 768px) {{
-      .sidebar {{
-        width: 100%;
-        height: auto;
-        flex-direction: row;
-        justify-content: space-around;
-        position: relative;
-      }}
-      #content-wrapper {{
-        margin-left: 0;
-        padding: 20px;
-      }}
-    }}
-    .viewbtn {{
-      padding: 10px 20px;
+    .tablink {{
+      margin: 5px;
+      padding: 8px 12px;
       border: none;
-      background: #57606f;
-      color: white;
-      font-weight: bold;
+      background: #ccc;
+      border-radius: 6px;
       cursor: pointer;
-      transition: background 0.2s ease;
     }}
-    .viewbtn:hover {{
+    .tablink.active {{
       background: #1e90ff;
+      color: white;
     }}
-    .viewbtn.active {{
-      background: #1e90ff;
+    .tabcontent {{
+      display: none;
+    }}
+    .customer-switcher {{
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }}
   </style>
   <script>
     function switchMainTab(evt, tabId) {{
-      const isSide = document.getElementById('sideDashboard').style.display === 'block' || document.getElementById('barryMacTab').style.display === 'block';
-      const tabClass = isSide ? '.side-tab' : '.main-tab';
-      const tabs = document.querySelectorAll(tabClass);
-      tabs.forEach(tab => tab.style.display = 'none');
-      document.getElementById(tabId).style.display = 'block';
+      const currentCustomer = document.querySelector('.customer-container[style*="display: block"]');
+      if (!currentCustomer) return;
 
-      const sidebarId = isSide ? '#sideSidebar' : '#mainSidebar';
-      const buttons = document.querySelectorAll(sidebarId + ' button');
+      const tabs = currentCustomer.querySelectorAll('.main-tab');
+      tabs.forEach(tab => tab.style.display = 'none');
+
+      const tabToShow = currentCustomer.querySelector(`#${{tabId}}`);
+      if (tabToShow) tabToShow.style.display = 'block';
+
+      const buttons = currentCustomer.querySelectorAll('.sidebar button');
       buttons.forEach(btn => btn.classList.remove('active'));
       evt.currentTarget.classList.add('active');
 
       window.dispatchEvent(new Event('resize'));
     }}
 
-    function toggleView(view) {{
-      const mainContent = document.getElementById('mainDashboard');
-      const sideContent = document.getElementById('sideDashboard');
-      const mainBtn = document.getElementById('mainBtn');
-      const sideBtn = document.getElementById('sideBtn');
-      const mainSidebar = document.getElementById('mainSidebar');
-      const sideSidebar = document.getElementById('sideSidebar');
+    function openTab(evt, tabId) {{
+      const currentCustomer = document.querySelector('.customer-container[style*="display: block"]');
+      const tabs = currentCustomer.querySelectorAll('.tabcontent');
+      tabs.forEach(tab => tab.style.display = 'none');
 
-      document.querySelectorAll('.main-tab, .side-tab').forEach(el => el.style.display = 'none');
-      document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
+      const target = currentCustomer.querySelector(`#${{tabId}}`);
+      if (target) target.style.display = 'block';
 
-      if (view === 'main') {{
-        mainContent.style.display = 'block';
-        sideContent.style.display = 'none';
-        mainBtn.classList.add('active');
-        sideBtn.classList.remove('active');
-        mainSidebar.style.display = 'flex';
-        sideSidebar.style.display = 'none';
+      const buttons = currentCustomer.querySelectorAll('.tablink');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      evt.currentTarget.classList.add('active');
 
-        document.getElementById('globalTab').style.display = 'block';
-        document.querySelector('#mainSidebar button:nth-of-type(1)').classList.add('active');
-      }} else {{
-        mainContent.style.display = 'none';
-        sideContent.style.display = 'block';
-        mainBtn.classList.remove('active');
-        sideBtn.classList.add('active');
-        mainSidebar.style.display = 'none';
-        sideSidebar.style.display = 'flex';
+      window.dispatchEvent(new Event('resize'));
+    }}
 
-        document.getElementById('sideDashboard').style.display = 'block';
-        document.querySelector('#sideSidebar button:nth-of-type(1)').classList.add('active');
-      }}
+    function switchCustomer(customerId) {{
+      document.querySelectorAll('.customer-container').forEach(el => el.style.display = 'none');
+      const target = document.getElementById(`customer-${{customerId}}`);
+      if (target) target.style.display = 'block';
+
+      const tabs = target.querySelectorAll('.main-tab');
+      tabs.forEach(tab => tab.style.display = 'none');
+      const firstTab = tabs[0];
+      if (firstTab) firstTab.style.display = 'block';
+
+      const sidebarButtons = target.querySelectorAll('.sidebar button');
+      sidebarButtons.forEach(btn => btn.classList.remove('active'));
+      if (sidebarButtons[0]) sidebarButtons[0].classList.add('active');
 
       window.dispatchEvent(new Event('resize'));
     }}
 
     window.onload = function () {{
-      document.getElementById('globalTab').style.display = 'block';
-      document.getElementById('mainDashboard').style.display = 'block';
-      document.querySelector('#mainSidebar button').classList.add('active');
+      switchCustomer('shawn');
     }};
   </script>
 </head>
 <body>
-
-  <!-- MAIN SIDEBAR -->
-  <div id="mainSidebar" class="sidebar">
-    <h2>Dashboard</h2>
-    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
-    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
-    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
-    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
-    <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
-    <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
-  </div>
-
-  <!-- SIDE SIDEBAR for Barry -->
-  <div id="sideSidebar" class="sidebar" style="display:none;">
-    <h2>Barry View</h2>
-    <button onclick="switchMainTab(event, 'sideDashboard')">General</button>
-    <button onclick="switchMainTab(event, 'barryMacTab')">MAC</button>
-  </div>
-
-  <div id="content-wrapper">
-    <div id="mainDashboard" class="main-content">
-      <h1>Closure Code Dashboard</h1>
-      {generate_global_tab(df)}
-      {generate_individual_tab(df)}
-      {generate_scheduling_tab()}
-      {generate_lec_tab(df)}
-      {generate_failure_analysis_tab(df)}
-      {frat_tab_html}
-    </div>
-
-    <div id="sideDashboard" class="side-tab side-content" style="display:none;">
-      <h1>Barry View – General</h1>
-      <div style="background:white; padding:30px; border-radius:12px;">
-        <h2>Task Owner Distribution from Sheet2</h2>
-        {sheet2_pie_html}
-      </div>
-    </div>
-
-    <div id="barryMacTab" class="side-tab side-content" style="display:none;">
-      <h1>Barry View – MAC</h1>
-      <div style="background:white; padding:30px; border-radius:12px;">
-        <h2>MACD Task Owner Distribution (after 10/10/2024)</h2>
-        {barry_mac_tab_html}
-      </div>
-    </div>
-  </div>
-
-  <div id="viewSwitcher" style="
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    background: #2f3542;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    display: flex;
-    z-index: 1000;
-  ">
-    <button onclick="toggleView('main')" id="mainBtn" class="viewbtn active">Main</button>
-    <button onclick="toggleView('side')" id="sideBtn" class="viewbtn">Side</button>
-  </div>
-
+  {customer_block("shawn", df_shawn)}
+  {customer_block("barry", df_barry)}
+  {customer_switcher_html}
 </body>
 </html>
 """
 
-    with open(EXPORT_HTML, "w", encoding="utf-8") as f:
-        f.write(html)
+    try:
+        with open(EXPORT_HTML, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"[SUCCESS] Dashboard exported to {EXPORT_HTML}")
+    except Exception as e:
+        print(f"[ERROR] Failed to write dashboard file: {e}")
 
 if __name__ == "__main__":
     main()
+
