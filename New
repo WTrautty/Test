@@ -1,15 +1,149 @@
-[INFO] Finished preprocessing Barry. Remaining rows: 3993
-[INFO] Assembling full HTML output...
-[INFO] Generating HTML for customer: global
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 1503, in <module>
+def main():
+    import pandas as pd
+
+    print("[INFO] Starting dashboard generation")
+
+    # === Load Data for All Sections ===
+    try:
+        print("[INFO] Loading Excel data for Shawn...")
+        df_shawn = pd.read_excel(EXCEL_PATH, engine="openpyxl")
+        print(f"[INFO] Loaded Shawn rows: {len(df_shawn)}")
+
+        print("[INFO] Loading Excel data for Barry...")
+        df_barry = pd.read_excel(BARRY_EXCEL_PATH, engine="openpyxl")
+        print(f"[INFO] Loaded Barry rows: {len(df_barry)}")
+
+        print("[INFO] Loading FRAT data...")
+        frat_df = pd.read_excel(FRAT_PATH, engine="openpyxl")
+        print(f"[INFO] Loaded FRAT rows: {len(frat_df)}")
+
+    except Exception as e:
+        raise RuntimeError(f"[ERROR] Failed to load Excel files: {e}")
+
+    # === Preprocessing Function ===
+    def preprocess(df, label):
+        print(f"[INFO] Preprocessing {label}...")
+        validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], f"{label} Data")
+        df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
+        df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+        df = df.dropna(subset=["Completed Date"])
+        df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+        df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+        print(f"[INFO] Finished preprocessing {label}. Remaining rows: {len(df)}")
+        return df
+
+    df_shawn = preprocess(df_shawn, "Shawn")
+    df_barry = preprocess(df_barry, "Barry")
+
+    # === HTML Assembly Per Customer ===
+    def customer_block(customer_id, df, frat_df=None):
+        print(f"[INFO] Generating HTML for customer: {customer_id}")
+
+        if customer_id == "barry":
+            return f"""
+            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
+              <div class="sidebar">
+                <h2>Barry Dashboard</h2>
+              </div>
+              <div class="main-content">
+                <h1>Barry Data</h1>
+                <div class="main-tab" style="display:block;">
+                  <h2>Barry Dashboard</h2>
+                  {generate_barry_task_owner_pie()}
+                </div>
+              </div>
+            </div>
+            """
+
+        elif customer_id == "global":
+            global_html = generate_global_tab(df).replace('id="globalTab"', f'id="globalTab-{customer_id}"')
+            scheduling_html = generate_scheduling_tab().replace('id="schedulingTab"', f'id="schedulingTab-{customer_id}"')
+
+            frat_source = frat_df if frat_df is not None else df
+            frat_html = generate_frat_tab(frat_source).replace('id="fratTab"', f'id="fratTab-{customer_id}"')
+
+            return f"""
+            <div class="customer-container" id="customer-{customer_id}" style="display:block;">
+              <div class="sidebar">
+                <h2>Global Dashboard</h2>
+                <button onclick="switchMainTab(event, 'globalTab-{customer_id}')">Global</button>
+                <button onclick="switchMainTab(event, 'schedulingTab-{customer_id}')">Scheduling</button>
+                <button onclick="switchMainTab(event, 'fratTab-{customer_id}')">FRAT</button>
+              </div>
+              <div class="main-content">
+                <h1>Global Overview</h1>
+                {global_html}
+                {scheduling_html}
+                {frat_html}
+              </div>
+            </div>
+            """
+
+        elif customer_id == "shawn":
+            individual_html = generate_individual_tab(df, customer_id).replace('id="individualTab"', f'id="individualTab-{customer_id}"')
+            lec_html = generate_lec_tab(df).replace('id="lecTab"', f'id="lecTab-{customer_id}"')
+            failure_html = generate_failure_analysis_tab(df).replace('id="failureTab"', f'id="failureTab-{customer_id}"')
+
+            return f"""
+            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
+              <div class="sidebar">
+                <h2>Shawn Dashboard</h2>
+                <button onclick="switchMainTab(event, 'individualTab-{customer_id}')">Individual</button>
+                <button onclick="switchMainTab(event, 'lecTab-{customer_id}')">LEC</button>
+                <button onclick="switchMainTab(event, 'failureTab-{customer_id}')">Failure Analysis</button>
+              </div>
+              <div class="main-content">
+                <h1>Shawn Data</h1>
+                {individual_html}
+                {lec_html}
+                {failure_html}
+              </div>
+            </div>
+            """
+
+    # === Bottom-left Customer Switch Buttons ===
+    customer_switcher_html = """
+    <div class="customer-switcher">
+      <button onclick="switchCustomer('global')" class="switch-btn global-btn">Global</button>
+      <div class="bottom-buttons">
+        <button onclick="switchCustomer('shawn')" class="switch-btn">Shawn</button>
+        <button onclick="switchCustomer('barry')" class="switch-btn">Barry</button>
+      </div>
+    </div>
+    """
+
+    # === Final HTML Output ===
+    print("[INFO] Assembling full HTML output...")
+    html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Multi-Customer Dashboard</title>
+  <script src="plotly-latest.min.js"></script>
+  <style>
+    /* STYLES OMITTED FOR BREVITY – USE YOUR EXISTING STYLES HERE */
+  </style>
+  <script>
+    // JS SCRIPTS OMITTED FOR BREVITY – USE YOUR EXISTING SCRIPT BLOCK HERE
+  </script>
+</head>
+<body>
+  {customer_block("global", df_shawn, frat_df)}
+  {customer_block("shawn", df_shawn)}
+  {customer_block("barry", df_barry)}
+  {customer_switcher_html}
+</body>
+</html>
+"""
+
+    try:
+        with open(EXPORT_HTML, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"[SUCCESS] Dashboard exported to {EXPORT_HTML}")
+    except Exception as e:
+        print(f"[ERROR] Failed to write dashboard file: {e}")
+
+
+if __name__ == "__main__":
     main()
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 1486, in main
-    {customer_block("global", df_shawn, frat_df)}
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Visualizor.py", line 1301, in customer_block
-    frat_html = generate_frat_tab(frat_df or df).replace('id="fratTab"', f'id="fratTab-{customer_id}"')
-                                  ^^^^^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 1577, in __nonzero__
-    raise ValueError(
-ValueError: The truth value of a DataFrame is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
