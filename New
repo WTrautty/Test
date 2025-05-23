@@ -76,7 +76,6 @@ def main():
       width: 100%;
     }}
     .main-content, .side-content {{
-      display: none;
       background: white;
       padding: 30px;
       border-radius: 12px;
@@ -114,11 +113,14 @@ def main():
   </style>
   <script>
     function switchMainTab(evt, tabId) {{
-      var tabs = document.querySelectorAll('.main-tab');
+      const isSide = document.getElementById('sideDashboard').style.display === 'block' || document.getElementById('barryMacTab').style.display === 'block';
+      const tabClass = isSide ? '.side-tab' : '.main-tab';
+      const tabs = document.querySelectorAll(tabClass);
       tabs.forEach(tab => tab.style.display = 'none');
       document.getElementById(tabId).style.display = 'block';
 
-      var buttons = document.querySelectorAll('.sidebar button');
+      const sidebarId = isSide ? '#sideSidebar' : '#mainSidebar';
+      const buttons = document.querySelectorAll(sidebarId + ' button');
       buttons.forEach(btn => btn.classList.remove('active'));
       evt.currentTarget.classList.add('active');
 
@@ -133,10 +135,7 @@ def main():
       const mainSidebar = document.getElementById('mainSidebar');
       const sideSidebar = document.getElementById('sideSidebar');
 
-      // Hide all tabs first
-      document.querySelectorAll('.main-tab').forEach(el => el.style.display = 'none');
-
-      // Clear all active sidebar buttons
+      document.querySelectorAll('.main-tab, .side-tab').forEach(el => el.style.display = 'none');
       document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
 
       if (view === 'main') {{
@@ -202,15 +201,21 @@ def main():
       {frat_tab_html}
     </div>
 
-    <div id="sideDashboard" class="side-content">
-      <h1>Side View</h1>
+    <div id="sideDashboard" class="side-tab side-content" style="display:none;">
+      <h1>Barry View – General</h1>
       <div style="background:white; padding:30px; border-radius:12px;">
         <h2>Task Owner Distribution from Sheet2</h2>
         {sheet2_pie_html}
       </div>
     </div>
 
-    {barry_mac_tab_html}
+    <div id="barryMacTab" class="side-tab side-content" style="display:none;">
+      <h1>Barry View – MAC</h1>
+      <div style="background:white; padding:30px; border-radius:12px;">
+        <h2>MACD Task Owner Distribution (after 10/10/2024)</h2>
+        {barry_mac_tab_html}
+      </div>
+    </div>
   </div>
 
   <div id="viewSwitcher" style="
