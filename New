@@ -1,283 +1,133 @@
-def main():
+def generate_frat_tab(frat_df):
     import pandas as pd
+    import plotly.graph_objects as go
 
-    print("[INFO] Starting dashboard generation")
+    frat_df = frat_df.copy()
+    frat_df['Create Date'] = pd.to_datetime(frat_df['Create Date'], errors='coerce')
+    frat_df['Completed Date'] = pd.to_datetime(frat_df['Completed Date'], errors='coerce')
+    frat_df = frat_df.dropna(subset=['Create Date', 'Completed Date', 'Task Owner'])
 
-    # === Load Data for Both Customers ===
-    try:
-        print("[INFO] Loading Excel data for Shawn...")
-        df_shawn = pd.read_excel(EXCEL_PATH, engine="openpyxl")
-        print(f"[INFO] Loaded Shawn rows: {len(df_shawn)}")
+    frat_df['Days to Close'] = (frat_df['Completed Date'] - frat_df['Create Date']).dt.days
+    frat_df = frat_df[frat_df['Days to Close'] >= 0]
+    frat_df['Month'] = frat_df['Completed Date'].dt.to_period('M').astype(str)
 
-        print("[INFO] Loading Excel data for Barry...")
-        df_barry = pd.read_excel(BARRY_EXCEL_PATH, engine="openpyxl")
-        print(f"[INFO] Loaded Barry rows: {len(df_barry)}")
-    except Exception as e:
-        raise RuntimeError(f"[ERROR] Failed to load Excel files: {e}")
+    top_owners = [
+        "Mclean, Jordan (Jordan)",
+        "Lang, Nicholas (Nicholas)",
+        "Gray, Christopher (Chris)"
+    ]
 
-    # === Validate and Preprocess Each Customer ===
-    def preprocess(df, label):
-        print(f"[INFO] Preprocessing {label}...")
-        validate_columns(df, ["Task Owner", "Closure Code 1", "Completed Date"], f"{label} Data")
-        df = df.dropna(subset=["Task Owner", "Closure Code 1", "Completed Date"])
-        df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-        df = df.dropna(subset=["Completed Date"])
-        df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
-        df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
-        print(f"[INFO] Finished preprocessing {label}. Remaining rows: {len(df)}")
-        return df
+    def create_bar_chart(data, owner_label):
+        monthly_stats = data.groupby('Month').agg(
+            Avg_Close=('Days to Close', 'mean'),
+            Median_Close=('Days to Close', 'median'),
+            P90_Close=('Days to Close', lambda x: x.quantile(0.9))
+        ).reset_index()
 
-    df_shawn = preprocess(df_shawn, "Shawn")
-    df_barry = preprocess(df_barry, "Barry")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Avg_Close'], name='Mean'))
+        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['Median_Close'], name='Median'))
+        fig.add_trace(go.Bar(x=monthly_stats['Month'], y=monthly_stats['P90_Close'], name='90th Percentile'))
 
-    def customer_block(customer_id, df):
-        print(f"[INFO] Generating HTML for customer: {customer_id}")
+        fig.update_layout(
+            barmode='group',
+            title=f"Days to Close (Mean/Median/P90) - {owner_label}",
+            height=350,
+            xaxis_title='Month',
+            yaxis_title='Days'
+        )
+        return fig.to_html(full_html=False, include_plotlyjs=False)
 
-        if customer_id == "barry":
-            return f"""
-            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
-              <div class="sidebar">
-                <h2>Barry Dashboard</h2>
-              </div>
-              <div class="main-content">
-                <h1>Barry Data</h1>
-                <div class="main-tab" style="display:block;">
-                  <h2>Barry Dashboard</h2>
-                  {generate_barry_task_owner_pie()}
-                </div>
-              </div>
-            </div>
-            """
+    def create_line_chart(label):
+        fig = go.Figure()
+        global_monthly = frat_df.groupby('Month').size().reset_index(name='Closed')
+        fig.add_trace(go.Scatter(
+            x=global_monthly['Month'],
+            y=global_monthly['Closed'],
+            mode='lines+markers',
+            name="Global Total"
+        ))
 
-        elif customer_id == "global":
-            global_html = generate_global_tab(df).replace('id="globalTab"', f'id="globalTab-{customer_id}"')
-            scheduling_html = generate_scheduling_tab().replace('id="schedulingTab"', f'id="schedulingTab-{customer_id}"')
-            frat_html = generate_frat_tab(df).replace('id="fratTab"', f'id="fratTab-{customer_id}"')
+        for owner in top_owners:
+            sub = frat_df[frat_df['Task Owner'] == owner]
+            sub_monthly = sub.groupby('Month').size().reset_index(name='Closed')
+            fig.add_trace(go.Scatter(
+                x=sub_monthly['Month'],
+                y=sub_monthly['Closed'],
+                mode='lines+markers',
+                name=owner
+            ))
 
-            return f"""
-            <div class="customer-container" id="customer-{customer_id}" style="display:block;">
-              <div class="sidebar">
-                <h2>Global Dashboard</h2>
-                <button onclick="switchMainTab(event, 'globalTab-{customer_id}')">Global</button>
-                <button onclick="switchMainTab(event, 'schedulingTab-{customer_id}')">Scheduling</button>
-                <button onclick="switchMainTab(event, 'fratTab-{customer_id}')">FRAT</button>
-              </div>
-              <div class="main-content">
-                <h1>Global Overview</h1>
-                {global_html}
-                {scheduling_html}
-                {frat_html}
-              </div>
-            </div>
-            """
+        fig.update_layout(
+            title=f"Tasks Closed per Month – {label}",
+            height=300,
+            xaxis_title='Month',
+            yaxis_title='Closed Count'
+        )
+        return fig.to_html(full_html=False, include_plotlyjs=False)
 
-        elif customer_id == "shawn":
-            individual_html = generate_individual_tab(df, customer_id).replace('id="individualTab"', f'id="individualTab-{customer_id}"')
-            lec_html = generate_lec_tab(df).replace('id="lecTab"', f'id="lecTab-{customer_id}"')
-            failure_html = generate_failure_analysis_tab(df).replace('id="failureTab"', f'id="failureTab-{customer_id}"')
+    def create_mean_comparison_chart():
+        owners = ['Global'] + top_owners
+        means = []
 
-            return f"""
-            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
-              <div class="sidebar">
-                <h2>Shawn Dashboard</h2>
-                <button onclick="switchMainTab(event, 'individualTab-{customer_id}')">Individual</button>
-                <button onclick="switchMainTab(event, 'lecTab-{customer_id}')">LEC</button>
-                <button onclick="switchMainTab(event, 'failureTab-{customer_id}')">Failure Analysis</button>
-              </div>
-              <div class="main-content">
-                <h1>Shawn Data</h1>
-                {individual_html}
-                {lec_html}
-                {failure_html}
-              </div>
-            </div>
-            """
+        global_mean = frat_df['Days to Close'].mean()
+        means.append(global_mean)
 
-    # === Bottom-left button group ===
-    customer_switcher_html = """
-    <div class="customer-switcher">
-      <button onclick="switchCustomer('global')" class="switch-btn global-btn">Global</button>
-      <div class="bottom-buttons">
-        <button onclick="switchCustomer('shawn')" class="switch-btn">Shawn</button>
-        <button onclick="switchCustomer('barry')" class="switch-btn">Barry</button>
-      </div>
+        for owner in top_owners:
+            owner_df = frat_df[frat_df['Task Owner'] == owner]
+            means.append(owner_df['Days to Close'].mean())
+
+        fig = go.Figure(go.Bar(
+            x=owners,
+            y=means,
+            text=[f"{x:.1f}d" for x in means],
+            textposition="auto",
+            marker_color=['#2c3e50', '#2980b9', '#f39c12', '#e74c3c']
+        ))
+
+        fig.update_layout(
+            title="Average Days to Close (Global vs Top 3)",
+            height=350,
+            yaxis_title="Days"
+        )
+        return fig.to_html(full_html=False, include_plotlyjs=False)
+
+    comparison_chart_html = create_mean_comparison_chart()
+
+    # === Global Tab ===
+    global_bar = create_bar_chart(frat_df, 'Global')
+    global_line = create_line_chart('Global')
+
+    buttons = [f'<button class="tablink" onclick="openTab(event, \'frat_tab_global\')">Global</button>']
+    contents = [f'''
+        <div id="frat_tab_global" class="tabcontent" style="display:block">
+          {global_bar}
+          <hr>{comparison_chart_html}
+          <hr>{global_line}
+        </div>''']
+
+    # === Owner Tabs ===
+    for i, owner in enumerate(top_owners):
+        owner_df = frat_df[frat_df['Task Owner'] == owner]
+        if owner_df.empty:
+            bar_html = "<p>No data available.</p>"
+        else:
+            bar_html = create_bar_chart(owner_df, owner)
+
+        line_html = create_line_chart(owner)
+        div_id = f"frat_tab_{i}"
+        buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}</button>')
+        contents.append(f'''
+        <div id="{div_id}" class="tabcontent" style="display:none">
+          {bar_html}
+          <hr>{comparison_chart_html}
+          <hr>{line_html}
+        </div>''')
+
+    return f"""
+    <div id='fratTab' class='main-tab'>
+      <h2>FRAT Task Closure Analysis</h2>
+      <div class='tab-buttons-wrapper'>{''.join(buttons)}</div>
+      {''.join(contents)}
     </div>
     """
-
-    print("[INFO] Assembling full HTML output...")
-    html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Multi-Customer Dashboard</title>
-  <script src="plotly-latest.min.js"></script>
-  <style>
-    body {{
-      font-family: 'Inter', sans-serif;
-      margin: 0;
-      background-color: #f4f6f9;
-      color: #333;
-    }}
-    .sidebar {{
-      width: 220px;
-      background: #2f3542;
-      color: #fff;
-      height: 100vh;
-      position: fixed;
-      top: 0; left: 0;
-      display: flex;
-      flex-direction: column;
-      padding-top: 30px;
-    }}
-    .sidebar button {{
-      padding: 15px 20px;
-      border: none;
-      background: none;
-      color: white;
-      text-align: left;
-      font-size: 15px;
-      cursor: pointer;
-    }}
-    .sidebar button:hover {{
-      background: #57606f;
-    }}
-    .sidebar button.active {{
-      background: #1e90ff;
-    }}
-    .main-content {{
-      margin-left: 220px;
-      padding: 30px;
-    }}
-    .main-tab {{
-      display: none;
-      background: white;
-      padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.06);
-      margin-bottom: 40px;
-    }}
-    .tablink {{
-      margin: 5px;
-      padding: 8px 12px;
-      border: none;
-      background: #ccc;
-      border-radius: 6px;
-      cursor: pointer;
-    }}
-    .tablink.active {{
-      background: #1e90ff;
-      color: white;
-    }}
-    .tabcontent {{
-      display: none;
-    }}
-    .customer-switcher {{
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      z-index: 999;
-    }}
-    .switch-btn {{
-      padding: 12px;
-      margin: 2px 0;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-      background: #1e90ff;
-      color: white;
-      border-radius: 6px;
-      width: 100%;
-    }}
-    .switch-btn:hover {{
-      background: #1c86ee;
-    }}
-    .bottom-buttons {{
-      display: flex;
-      gap: 6px;
-      margin-top: 4px;
-    }}
-    .bottom-buttons .switch-btn {{
-      flex: 1;
-    }}
-    .global-btn {{
-      font-weight: bold;
-      font-size: 17px;
-    }}
-  </style>
-  <script>
-    function switchMainTab(evt, tabId) {{
-      const currentCustomer = document.querySelector('.customer-container[style*="display: block"]');
-      if (!currentCustomer) return;
-
-      const tabs = currentCustomer.querySelectorAll('.main-tab');
-      tabs.forEach(tab => tab.style.display = 'none');
-
-      const tabToShow = currentCustomer.querySelector(`#${{tabId}}`);
-      if (tabToShow) tabToShow.style.display = 'block';
-
-      const buttons = currentCustomer.querySelectorAll('.sidebar button');
-      buttons.forEach(btn => btn.classList.remove('active'));
-      evt.currentTarget.classList.add('active');
-
-      window.dispatchEvent(new Event('resize'));
-    }}
-
-    function openTab(evt, tabId) {{
-      const currentCustomer = document.querySelector('.customer-container[style*="display: block"]');
-      const tabs = currentCustomer.querySelectorAll('.tabcontent');
-      tabs.forEach(tab => tab.style.display = 'none');
-
-      const target = currentCustomer.querySelector(`#${{tabId}}`);
-      if (target) target.style.display = 'block';
-
-      const buttons = currentCustomer.querySelectorAll('.tablink');
-      buttons.forEach(btn => btn.classList.remove('active'));
-      evt.currentTarget.classList.add('active');
-
-      window.dispatchEvent(new Event('resize'));
-    }}
-
-    function switchCustomer(customerId) {{
-      document.querySelectorAll('.customer-container').forEach(el => el.style.display = 'none');
-      const target = document.getElementById(`customer-${{customerId}}`);
-      if (target) target.style.display = 'block';
-
-      const tabs = target.querySelectorAll('.main-tab');
-      tabs.forEach(tab => tab.style.display = 'none');
-      const firstTab = tabs[0];
-      if (firstTab) firstTab.style.display = 'block';
-
-      const sidebarButtons = target.querySelectorAll('.sidebar button');
-      sidebarButtons.forEach(btn => btn.classList.remove('active'));
-      if (sidebarButtons[0]) sidebarButtons[0].classList.add('active');
-
-      window.dispatchEvent(new Event('resize'));
-    }}
-
-    window.onload = function () {{
-      switchCustomer('global');
-    }};
-  </script>
-</head>
-<body>
-  {customer_block("global", df_shawn)}
-  {customer_block("shawn", df_shawn)}
-  {customer_block("barry", df_barry)}
-  {customer_switcher_html}
-</body>
-</html>
-"""
-
-    try:
-        with open(EXPORT_HTML, "w", encoding="utf-8") as f:
-            f.write(html)
-        print(f"[SUCCESS] Dashboard exported to {EXPORT_HTML}")
-    except Exception as e:
-        print(f"[ERROR] Failed to write dashboard file: {e}")
-
-if __name__ == "__main__":
-    main()
