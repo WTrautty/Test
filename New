@@ -1,4 +1,4 @@
-def generate_frat_tab(frat_df):
+def generate_frat_tab(frat_df, customer_id="global"):
     import pandas as pd
     import plotly.graph_objects as go
 
@@ -24,7 +24,7 @@ def generate_frat_tab(frat_df):
 
     if frat_df.empty:
         print("[FRAT] ERROR: DataFrame is empty after preprocessing.")
-        return "<div id='fratTab' class='main-tab'><h2>No valid FRAT data available.</h2></div>"
+        return f"<div id='fratTab-{customer_id}' class='main-tab'><h2>No valid FRAT data available.</h2></div>"
     else:
         print("[FRAT] Final row count before chart rendering:", len(frat_df))
         print("[FRAT] Sample rows:\n", frat_df.head())
@@ -111,7 +111,6 @@ def generate_frat_tab(frat_df):
         return fig.to_html(full_html=False, include_plotlyjs=False)
 
     comparison_chart_html = create_mean_comparison_chart()
-
     global_bar = create_bar_chart(frat_df, 'Global')
     global_line = create_line_chart('Global')
 
@@ -141,7 +140,7 @@ def generate_frat_tab(frat_df):
         </div>''')
 
     return f"""
-    <div id='fratTab' class='main-tab'>
+    <div id='fratTab-{customer_id}' class='main-tab'>
       <h2>FRAT Task Closure Analysis</h2>
       <div class='tab-buttons-wrapper'>{''.join(buttons)}</div>
       {''.join(contents)}
