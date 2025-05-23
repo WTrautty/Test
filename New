@@ -30,14 +30,62 @@ def main():
     df_shawn = preprocess(df_shawn, "Shawn")
     df_barry = preprocess(df_barry, "Barry")
 
-    # === Customer selector HTML ===
+    # === Build HTML block per customer ===
+    def customer_block(customer_id, df):
+        print(f"[INFO] Generating HTML for customer: {customer_id}")
+
+        if customer_id == "barry":
+            return f"""
+            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
+              <div class="sidebar">
+                <h2>Barry Dashboard</h2>
+              </div>
+              <div class="main-content">
+                <h1>Barry Data</h1>
+                <div class="main-tab" style="display:block;">
+                  <h2>Barry Dashboard</h2>
+                  {generate_barry_task_owner_pie()}
+                </div>
+              </div>
+            </div>
+            """
+
+        # Full tab content for Shawn
+        global_html = generate_global_tab(df).replace('id="globalTab"', f'id="globalTab-{customer_id}"')
+        individual_html = generate_individual_tab(df, customer_id).replace('id="individualTab"', f'id="individualTab-{customer_id}"')
+        scheduling_html = generate_scheduling_tab().replace('id="schedulingTab"', f'id="schedulingTab-{customer_id}"')
+        lec_html = generate_lec_tab(df).replace('id="lecTab"', f'id="lecTab-{customer_id}"')
+        failure_html = generate_failure_analysis_tab(df).replace('id="failureTab"', f'id="failureTab-{customer_id}"')
+
+        return f"""
+        <div class="customer-container" id="customer-{customer_id}" style="display:{'block' if customer_id == 'shawn' else 'none'};">
+          <div class="sidebar">
+            <h2>{customer_id.capitalize()} Dashboard</h2>
+            <button onclick="switchMainTab(event, 'globalTab-{customer_id}')">Global</button>
+            <button onclick="switchMainTab(event, 'individualTab-{customer_id}')">Individual</button>
+            <button onclick="switchMainTab(event, 'schedulingTab-{customer_id}')">Scheduling</button>
+            <button onclick="switchMainTab(event, 'lecTab-{customer_id}')">LEC</button>
+            <button onclick="switchMainTab(event, 'failureTab-{customer_id}')">Failure Analysis</button>
+          </div>
+          <div class="main-content">
+            <h1>{customer_id.capitalize()} Data</h1>
+            {global_html}
+            {individual_html}
+            {scheduling_html}
+            {lec_html}
+            {failure_html}
+          </div>
+        </div>
+        """
+
+    # === Customer selector dropdown ===
     customer_switcher_html = """
     <div class="customer-switcher">
-      <button onclick="switchCustomer('global')" class="switch-btn global-btn">Global</button>
-      <div class="bottom-buttons">
-        <button onclick="switchCustomer('shawn')" class="switch-btn">Shawn</button>
-        <button onclick="switchCustomer('barry')" class="switch-btn">Barry</button>
-      </div>
+      <label for="customer-select">Customer:</label>
+      <select id="customer-select" onchange="switchCustomer(this.value)">
+        <option value="shawn" selected>Shawn</option>
+        <option value="barry">Barry</option>
+      </select>
     </div>
     """
 
@@ -113,37 +161,11 @@ def main():
     .customer-switcher {{
       position: fixed;
       bottom: 20px;
-      left: 20px;
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      z-index: 999;
-    }}
-    .switch-btn {{
-      padding: 12px;
-      margin: 2px 0;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-      background: #1e90ff;
-      color: white;
-      border-radius: 6px;
-      width: 100%;
-    }}
-    .switch-btn:hover {{
-      background: #1c86ee;
-    }}
-    .bottom-buttons {{
-      display: flex;
-      gap: 6px;
-      margin-top: 4px;
-    }}
-    .bottom-buttons .switch-btn {{
-      flex: 1;
-    }}
-    .global-btn {{
-      font-weight: bold;
-      font-size: 17px;
+      right: 20px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }}
   </style>
   <script>
@@ -197,12 +219,11 @@ def main():
     }}
 
     window.onload = function () {{
-      switchCustomer('global');
+      switchCustomer('shawn');
     }};
   </script>
 </head>
 <body>
-  {customer_block("global", df_shawn)}
   {customer_block("shawn", df_shawn)}
   {customer_block("barry", df_barry)}
   {customer_switcher_html}
@@ -216,3 +237,7 @@ def main():
         print(f"[SUCCESS] Dashboard exported to {EXPORT_HTML}")
     except Exception as e:
         print(f"[ERROR] Failed to write dashboard file: {e}")
+
+if __name__ == "__main__":
+    main()
+
