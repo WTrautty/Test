@@ -33,7 +33,6 @@ def main():
       font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
       margin: 0;
       background-color: #f4f6f9;
-      display: flex;
       color: #333;
     }}
     .sidebar {{
@@ -42,7 +41,8 @@ def main():
       color: #fff;
       height: 100vh;
       position: fixed;
-      top: 0; left: 0;
+      top: 0;
+      left: 0;
       display: flex;
       flex-direction: column;
       padding-top: 30px;
@@ -73,7 +73,7 @@ def main():
     #content-wrapper {{
       margin-left: 220px;
       padding: 30px;
-      width: 100%;
+      width: calc(100% - 220px);
     }}
     .main-content, .side-content {{
       background: white;
@@ -81,6 +81,9 @@ def main():
       border-radius: 12px;
       margin-bottom: 40px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    }}
+    .page-group {{
+      display: none;
     }}
     @media (max-width: 768px) {{
       .sidebar {{
@@ -113,7 +116,7 @@ def main():
   </style>
   <script>
     function switchMainTab(evt, tabId) {{
-      const isSide = document.getElementById('sideDashboard').style.display === 'block' || document.getElementById('barryMacTab').style.display === 'block';
+      const isSide = document.getElementById('sideDashboard')?.style.display === 'block' || document.getElementById('barryMacTab')?.style.display === 'block';
       const tabClass = isSide ? '.side-tab' : '.main-tab';
       const tabs = document.querySelectorAll(tabClass);
       tabs.forEach(tab => tab.style.display = 'none');
@@ -127,97 +130,59 @@ def main():
       window.dispatchEvent(new Event('resize'));
     }}
 
-    function toggleView(view) {{
-      const mainContent = document.getElementById('mainDashboard');
-      const sideContent = document.getElementById('sideDashboard');
-      const mainBtn = document.getElementById('mainBtn');
-      const sideBtn = document.getElementById('sideBtn');
-      const mainSidebar = document.getElementById('mainSidebar');
-      const sideSidebar = document.getElementById('sideSidebar');
+    function switchPage(pageId) {{
+      document.querySelectorAll('.page-group').forEach(el => el.style.display = 'none');
+      document.getElementById(pageId).style.display = 'block';
 
-      document.querySelectorAll('.main-tab, .side-tab').forEach(el => el.style.display = 'none');
-      document.querySelectorAll('.sidebar button').forEach(btn => btn.classList.remove('active'));
-
-      if (view === 'main') {{
-        mainContent.style.display = 'block';
-        sideContent.style.display = 'none';
-        mainBtn.classList.add('active');
-        sideBtn.classList.remove('active');
-        mainSidebar.style.display = 'flex';
-        sideSidebar.style.display = 'none';
-
-        document.getElementById('globalTab').style.display = 'block';
-        document.querySelector('#mainSidebar button:nth-of-type(1)').classList.add('active');
-      }} else {{
-        mainContent.style.display = 'none';
-        sideContent.style.display = 'block';
-        mainBtn.classList.remove('active');
-        sideBtn.classList.add('active');
-        mainSidebar.style.display = 'none';
-        sideSidebar.style.display = 'flex';
-
-        document.getElementById('sideDashboard').style.display = 'block';
-        document.querySelector('#sideSidebar button:nth-of-type(1)').classList.add('active');
-      }}
+      document.querySelectorAll('.viewbtn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(pageId + 'Btn').classList.add('active');
 
       window.dispatchEvent(new Event('resize'));
     }}
 
     window.onload = function () {{
-      document.getElementById('globalTab').style.display = 'block';
-      document.getElementById('mainDashboard').style.display = 'block';
-      document.querySelector('#mainSidebar button').classList.add('active');
+      switchPage('globalPage');
     }};
   </script>
 </head>
 <body>
-
-  <!-- MAIN SIDEBAR -->
-  <div id="mainSidebar" class="sidebar">
-    <h2>Dashboard</h2>
-    <button onclick="switchMainTab(event, 'globalTab')">Global</button>
-    <button onclick="switchMainTab(event, 'individualTab')">Individual</button>
-    <button onclick="switchMainTab(event, 'schedulingTab')">Scheduling</button>
-    <button onclick="switchMainTab(event, 'lecTab')">LEC</button>
-    <button onclick="switchMainTab(event, 'failureTab')">Failure Analysis</button>
-    <button onclick="switchMainTab(event, 'fratTab')">FRAT</button>
-  </div>
-
-  <!-- SIDE SIDEBAR for Barry -->
-  <div id="sideSidebar" class="sidebar" style="display:none;">
-    <h2>Barry View</h2>
-    <button onclick="switchMainTab(event, 'sideDashboard')">General</button>
-    <button onclick="switchMainTab(event, 'barryMacTab')">MAC</button>
-  </div>
-
   <div id="content-wrapper">
-    <div id="mainDashboard" class="main-content">
-      <h1>Closure Code Dashboard</h1>
-      {generate_global_tab(df)}
-      {generate_individual_tab(df)}
-      {generate_scheduling_tab()}
-      {generate_lec_tab(df)}
-      {generate_failure_analysis_tab(df)}
-      {frat_tab_html}
+
+    <!-- GLOBAL PAGE -->
+    <div id="globalPage" class="page-group" style="display:block;">
+      <div id="globalTab" class="main-tab">{generate_global_tab(df)}</div>
+      <div id="schedulingTab" class="main-tab">{generate_scheduling_tab()}</div>
+      <div id="fratTab" class="main-tab">{frat_tab_html}</div>
     </div>
 
-    <div id="sideDashboard" class="side-tab side-content" style="display:none;">
-      <h1>Barry View – General</h1>
-      <div style="background:white; padding:30px; border-radius:12px;">
-        <h2>Task Owner Distribution from Sheet2</h2>
-        {sheet2_pie_html}
+    <!-- BARRY PAGE -->
+    <div id="barryPage" class="page-group" style="display:none;">
+      <div id="sideDashboard" class="side-tab side-content">
+        <h1>Barry View – General</h1>
+        <div style="background:white; padding:30px; border-radius:12px;">
+          <h2>Task Owner Distribution from Sheet2</h2>
+          {sheet2_pie_html}
+        </div>
+      </div>
+      <div id="barryMacTab" class="side-tab side-content" style="display:none;">
+        <h1>Barry View – MAC</h1>
+        <div style="background:white; padding:30px; border-radius:12px;">
+          <h2>MACD Task Owner Distribution (after 10/10/2024)</h2>
+          {barry_mac_tab_html}
+        </div>
       </div>
     </div>
 
-    <div id="barryMacTab" class="side-tab side-content" style="display:none;">
-      <h1>Barry View – MAC</h1>
-      <div style="background:white; padding:30px; border-radius:12px;">
-        <h2>MACD Task Owner Distribution (after 10/10/2024)</h2>
-        {barry_mac_tab_html}
-      </div>
+    <!-- SHAWN PAGE -->
+    <div id="shawnPage" class="page-group" style="display:none;">
+      <div id="individualTab" class="main-tab">{generate_individual_tab(df)}</div>
+      <div id="lecTab" class="main-tab">{generate_lec_tab(df)}</div>
+      <div id="failureTab" class="main-tab">{generate_failure_analysis_tab(df)}</div>
     </div>
+
   </div>
 
+  <!-- PAGE SWITCHER -->
   <div id="viewSwitcher" style="
     position: fixed;
     bottom: 20px;
@@ -229,8 +194,9 @@ def main():
     display: flex;
     z-index: 1000;
   ">
-    <button onclick="toggleView('main')" id="mainBtn" class="viewbtn active">Main</button>
-    <button onclick="toggleView('side')" id="sideBtn" class="viewbtn">Side</button>
+    <button onclick="switchPage('globalPage')" id="globalPageBtn" class="viewbtn active" style="flex: 2;">Global</button>
+    <button onclick="switchPage('barryPage')" id="barryPageBtn" class="viewbtn">Barry</button>
+    <button onclick="switchPage('shawnPage')" id="shawnPageBtn" class="viewbtn">Shawn</button>
   </div>
 
 </body>
