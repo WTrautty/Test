@@ -1,44 +1,25 @@
-def generate_barry_mac_pie_tab():
-    print("[DEBUG] Starting generate_barry_mac_pie_tab...")
-
-    try:
-        print(f"[DEBUG] Attempting to load Sheet2 from {EXCEL_PATH}")
-        df = pd.read_excel(EXCEL_PATH, sheet_name="Sheet2", engine="openpyxl")
-        print(f"[DEBUG] Sheet2 loaded. Rows: {len(df)}")
-    except Exception as e:
-        print(f"[ERROR] Failed to load Sheet2: {e}")
-        return f"<p><strong>Failed to load Sheet2:</strong> {e}</p>"
-
-    required_cols = ["Task Owner", "Task Name", "Completed Date"]
-    if not all(col in df.columns for col in required_cols):
-        print(f"[ERROR] Missing columns. Found columns: {df.columns.tolist()}")
-        return "<p><strong>One or more required columns ('Task Owner', 'Task Name', 'Completed Date') not found in Sheet2.</strong></p>"
-
-    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
-    print(f"[DEBUG] Converted 'Completed Date' to datetime. Nulls after conversion: {df['Completed Date'].isna().sum()}")
-
-    filtered_df = df[
-        (df["Task Name"].str.upper() == "MACD") &
-        (df["Completed Date"] >= datetime(2024, 10, 10))
-    ]
-    print(f"[DEBUG] Filtered MACD tasks since 2024-10-10. Rows remaining: {len(filtered_df)}")
-
-    task_owner_counts = filtered_df["Task Owner"].dropna().value_counts()
-    print(f"[DEBUG] Task Owner value counts:\n{task_owner_counts}")
-
-    if task_owner_counts.empty:
-        print("[WARNING] No matching MACD data found after 10/10/2024.")
-        return "<p><strong>No matching data for Task Name 'MACD' past 10/10/2024.</strong></p>"
-
-    fig = go.Figure(data=[
-        go.Pie(labels=task_owner_counts.index, values=task_owner_counts.values, hole=0.4)
-    ])
-    fig.update_layout(title="Task Owner Distribution for MACD Tasks (after 10/10/2024)")
-    print("[DEBUG] Pie chart generated successfully.")
-
-    return f"""
-    <div id="BarryTab-mac" class="main-tab" style="display:none;">
-      <h2>MACD Task Owner Distribution (Since 10/10/2024)</h2>
-      {fig.to_html(full_html=False, include_plotlyjs=False)}
-    </div>
-    """
+import random
+def run draft lottery():
+# Teams ranked from worst (index 0) to best (index 9)
+teams = ['Andrew', "Colby', 'David', 'Isaac',
+'Joe', "Matthew', 'Pearce', "Ralph', 'Sammie', 'Wyatt']
+weights = list(range (10, 0, 1)) # [10, 9, ., 1]
+total weight = sum(weights)
+# Create a weighted Lottery pool
+lottery_pool = [l
+for team, weight in zip(teams, weights): lottery_pool. extend([team] * weight)
+# Shuffle for randomness
+random. shuffle(lottery_pool)
+# Draw for draft order
+draft _order # l]
+drawn_teams = set()
+while len(draft _order) < 10:
+pick = random. choice(lottery_pool)
+if pick not in drawn_teams: draft_order append (pick)
+drawn_teams.add (pick)
+# Print the results
+print("Draft Order (1st pick to 10th):")
+for i, team in enumerate(draft_order, 1):
+print (f" (i}: {team)")
+if name_ =="_main_":
+run_draft_lottery()
