@@ -1,4 +1,43 @@
-import random
+lines = [
+    "some random line",
+    "business: BLAHCorp",
+    "more content",
+    "workaround loop_123 for the ast",
+    "another line",
+]
+
+insert_block = [
+    "asdf {replace}",
+    "fasdfasdfa {replace} arsdrasdf"
+]
+
+output_lines = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+    output_lines.append(line)
+
+    # Check if line starts with business: BLAH
+    if line.strip().lower().startswith("business: blah"):
+        # Search for workaround line
+        j = i + 1
+        while j < len(lines):
+            workaround_line = lines[j]
+            output_lines.append(workaround_line)
+            if workaround_line.strip().startswith("workaround"):
+                # Insert the block after the workaround line
+                output_lines.extend(insert_block)
+                i = j  # Skip ahead to avoid double-processing
+                break
+            j += 1
+        i = j
+    else:
+        i += 1
+
+# Print or write to file
+for line in output_lines:
+    print(line)import random
 def run draft lottery():
 # Teams ranked from worst (index 0) to best (index 9)
 teams = ['Andrew', "Colby', 'David', 'Isaac',
