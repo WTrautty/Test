@@ -1,54 +1,7 @@
-import pandas as pd
-from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
-from openpyxl.utils.dataframe import dataframe_to_rows
-
-# === Configuration ===
-EXCEL_PATH = "your_excel_file.xlsx"
-SHEET1_NAME = "Sheet1"
-SHEET2_NAME = "Sheet2"
-KEY_COLUMN = "WHD_LCO"
-
-# === Load data ===
-df1 = pd.read_excel(EXCEL_PATH, sheet_name=SHEET1_NAME, dtype=str).fillna('').set_index(KEY_COLUMN)
-df2 = pd.read_excel(EXCEL_PATH, sheet_name=SHEET2_NAME, dtype=str).fillna('').set_index(KEY_COLUMN)
-
-# === Open workbook and prepare for new sheets ===
-wb = load_workbook(EXCEL_PATH)
-
-for name in ["Diff_Report", "Changes_Summary"]:
-    if name in wb.sheetnames:
-        del wb[name]
-
-diff_ws = wb.create_sheet("Diff_Report")
-summary_ws = wb.create_sheet("Changes_Summary")
-
-# === Highlight Style ===
-highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-
-# === Create Diff_Report (copy of Sheet2 with highlights for differences) ===
-# Add header
-diff_ws.append([KEY_COLUMN] + df2.columns.tolist())
-
-for key, row2 in df2.iterrows():
-    row_data = [key] + row2.tolist()
-    diff_ws.append(row_data)
-    row_idx = diff_ws.max_row
-
-    if key in df1.index:
-        row1 = df1.loc[key]
-        for col_idx, col in enumerate(df2.columns, start=2):  # start=2 because column 1 is key
-            if str(row2[col]) != str(row1.get(col, "")):
-                diff_ws.cell(row=row_idx, column=col_idx).fill = highlight_fill
-    else:
-        # New row in Sheet2, log as "Added"
-        summary_ws.append(["Added", key] + row2.tolist())
-
-# === Find Removed rows from Sheet1 ===
-for key in df1.index:
-    if key not in df2.index:
-        summary_ws.append(["Removed", key] + df1.loc[key].tolist())
-
-# === Save results ===
-wb.save("comparison_result.xlsx")
-print("✅ Clean diff complete: Sheet2 cloned and differences highlighted.")
+File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Excel_diff.py", line 50, in <module>
+    summary_ws.append(["Removed", key] + df1.loc[key].tolist())
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 6299, in __getattr__
+    return object.__getattribute__(self, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DataFrame' object has no attribute 'tolist'
