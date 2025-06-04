@@ -1,31 +1,34 @@
-import requests
+import pandas as pd
 
 # === Configuration ===
-API_URL = "https://api.starlingbank.com/api/v2/accounts"  # Basic account info endpoint
-ACCESS_TOKEN = "YOUR_STARLING_PERSONAL_ACCESS_TOKEN"  # Replace this with your actual token
+excel_file = 'input.xlsx'   # Input Excel file
+sheet1_name = 'Sheet1'
+sheet2_name = 'Sheet2'
+output_file = 'differences_output.xlsx'
 
-HEADERS = {
-    "Authorization": f"Bearer {ACCESS_TOKEN}",
-    "Accept": "application/json"
-}
+# === Load the sheets ===
+df1 = pd.read_excel(excel_file, sheet_name=sheet1_name, dtype=str)
+df2 = pd.read_excel(excel_file, sheet_name=sheet2_name, dtype=str)
 
-def check_starling_api():
-    try:
-        response = requests.get(API_URL, headers=HEADERS, timeout=10)
-        print(f"Status Code: {response.status_code}")
-        if response.status_code == 200:
-            print("✅ API access successful.")
-            print("Account info retrieved:")
-            print(response.json())
-        elif response.status_code == 401:
-            print("❌ Unauthorized (401). Check your access token.")
-        elif response.status_code == 403:
-            print("❌ Forbidden (403). Access may be restricted.")
-        else:
-            print(f"⚠️ Unexpected response: {response.status_code}")
-            print(response.text)
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error connecting to Starling API: {e}")
+# Normalize NaN and whitespace for comparison
+df1 = df1.fillna('').applymap(str).applymap(str.strip)
+df2 = df2.fillna('').applymap(str).applymap(str.strip)
 
-# Run the check
-check_starling_api()
+# Use all columns as the key for comparison
+df1['__key__'] = df1.astype(str).agg('|'.join, axis=1)
+df2['__key__'] = df2.astype(str).agg('|'.join, axis=1)
+
+# Find differences
+added_sheet1 = df1[~df1['__key__'].isin(df2['__key__'])].drop(columns='__key__')
+removed_sheet1 = df2[~df2['__key__'].isin(df1['__key__'])].drop(columns='__key__')
+added_sheet2 = df2[~df2['__key__'].isin(df1['__key__'])].drop(columns='__key__')
+removed_sheet2 = df1[~df1['__key__'].isin(df2['__key__'])].drop(columns='__key__')
+
+# === Export the results ===
+with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+    added_sheet1.to_excel(writer, index=False, sheet_name='Added in Sheet1')
+    removed_sheet1.to_excel(writer, index=False, sheet_name='Removed from Sheet1')
+    added_sheet2.to_excel(writer, index=False, sheet_name='Added in Sheet2')
+    removed_sheet2.to_excel(writer, index=False, sheet_name='Removed from Sheet2')
+
+print(f"[INFO] Differences exported to: {output_file}")
