@@ -1,9 +1,7 @@
-# === Find Removed rows from Sheet1 ===
-for key in df1.index:
-    if key not in df2.index:
-        removed_row = df1.loc[key]
-        if isinstance(removed_row, pd.DataFrame):
-            for _, sub_row in removed_row.iterrows():
-                summary_ws.append(["Removed", key] + sub_row.tolist())
-        else:
-            summary_ws.append(["Removed", key] + removed_row.tolist())
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Excel_diff.py", line 51, in <module>
+    summary_ws.append(["Removed", key] + df1.loc[key].tolist())
+                                         ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 6299, in __getattr__
+    return object.__getattribute__(self, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DataFrame' object has no attribute 'tolist'
