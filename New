@@ -10,53 +10,45 @@ SHEET2_NAME = "Sheet2"
 KEY_COLUMN = "WHD_LCO"
 
 # === Load data ===
-df1 = pd.read_excel(EXCEL_PATH, sheet_name=SHEET1_NAME, dtype=str).fillna('')
-df2 = pd.read_excel(EXCEL_PATH, sheet_name=SHEET2_NAME, dtype=str).fillna('')
+df1 = pd.read_excel(EXCEL_PATH, sheet_name=SHEET1_NAME, dtype=str).fillna('').set_index(KEY_COLUMN)
+df2 = pd.read_excel(EXCEL_PATH, sheet_name=SHEET2_NAME, dtype=str).fillna('').set_index(KEY_COLUMN)
 
-df1.set_index(KEY_COLUMN, inplace=True)
-df2.set_index(KEY_COLUMN, inplace=True)
-
-# === Prepare workbook ===
+# === Open workbook and prepare for new sheets ===
 wb = load_workbook(EXCEL_PATH)
 
-# Remove existing report sheets if present
 for name in ["Diff_Report", "Changes_Summary"]:
     if name in wb.sheetnames:
         del wb[name]
 
-# Create new sheets
 diff_ws = wb.create_sheet("Diff_Report")
 summary_ws = wb.create_sheet("Changes_Summary")
 
-# === Write header to Diff_Report ===
-diff_ws.append([KEY_COLUMN] + df2.columns.tolist())
-
-# Yellow fill for differences
+# === Highlight Style ===
 highlight_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
-# === Compare and fill Diff_Report ===
-for key in df2.index:
-    row2 = df2.loc[key]
+# === Create Diff_Report (copy of Sheet2 with highlights for differences) ===
+# Add header
+diff_ws.append([KEY_COLUMN] + df2.columns.tolist())
+
+for key, row2 in df2.iterrows():
+    row_data = [key] + row2.tolist()
+    diff_ws.append(row_data)
+    row_idx = diff_ws.max_row
+
     if key in df1.index:
         row1 = df1.loc[key]
-        combined_row = [key] + row2.tolist()
-        diff_ws.append(combined_row)
-        row_idx = diff_ws.max_row
-
-        for col_idx, col in enumerate(df2.columns, start=2):  # Start at 2 to skip KEY_COLUMN
-            val1 = str(row1[col])
-            val2 = str(row2[col])
-            if val1 != val2:
+        for col_idx, col in enumerate(df2.columns, start=2):  # start=2 because column 1 is key
+            if str(row2[col]) != str(row1.get(col, "")):
                 diff_ws.cell(row=row_idx, column=col_idx).fill = highlight_fill
     else:
-        # New entry in Sheet2
+        # New row in Sheet2, log as "Added"
         summary_ws.append(["Added", key] + row2.tolist())
 
-# === Log removed rows ===
+# === Find Removed rows from Sheet1 ===
 for key in df1.index:
     if key not in df2.index:
         summary_ws.append(["Removed", key] + df1.loc[key].tolist())
 
 # === Save results ===
 wb.save("comparison_result.xlsx")
-print("✅ Comparison complete. Output saved to 'comparison_result.xlsx'.")
+print("✅ Clean diff complete: Sheet2 cloned and differences highlighted.")
