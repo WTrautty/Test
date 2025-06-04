@@ -1,7 +1,9 @@
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Excel_diff.py", line 51, in <module>
-    summary_ws.append(["Removed", key] + df1.loc[key].tolist())
-                                         ^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 6299, in __getattr__
-    return object.__getattribute__(self, name)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'DataFrame' object has no attribute 'tolist'
+# === Find Removed rows from Sheet1 ===
+removed_keys = set(df1.index) - set(df2.index)
+for key in removed_keys:
+    removed_rows = df1.loc[[key]] if isinstance(df1.loc[key], pd.Series) else df1.loc[key]
+    if isinstance(removed_rows, pd.Series):
+        summary_ws.append(["Removed", key] + removed_rows.tolist())
+    else:
+        for _, row in removed_rows.iterrows():
+            summary_ws.append(["Removed", key] + row.tolist())
