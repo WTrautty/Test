@@ -1,4 +1,7 @@
 import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # === Configuration ===
 excel_file = 'input.xlsx'   # Input Excel file
@@ -10,25 +13,51 @@ output_file = 'differences_output.xlsx'
 df1 = pd.read_excel(excel_file, sheet_name=sheet1_name, dtype=str)
 df2 = pd.read_excel(excel_file, sheet_name=sheet2_name, dtype=str)
 
-# Normalize NaN and whitespace for comparison
+# Normalize: fill NaN, strip, convert to string
 df1 = df1.fillna('').applymap(str).applymap(str.strip)
 df2 = df2.fillna('').applymap(str).applymap(str.strip)
 
-# Use all columns as the key for comparison
+# Use all columns to create a unique row key
 df1['__key__'] = df1.astype(str).agg('|'.join, axis=1)
 df2['__key__'] = df2.astype(str).agg('|'.join, axis=1)
 
-# Find differences
+# === Find differences ===
 added_sheet1 = df1[~df1['__key__'].isin(df2['__key__'])].drop(columns='__key__')
 removed_sheet1 = df2[~df2['__key__'].isin(df1['__key__'])].drop(columns='__key__')
 added_sheet2 = df2[~df2['__key__'].isin(df1['__key__'])].drop(columns='__key__')
 removed_sheet2 = df1[~df1['__key__'].isin(df2['__key__'])].drop(columns='__key__')
 
-# === Export the results ===
-with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-    added_sheet1.to_excel(writer, index=False, sheet_name='Added in Sheet1')
-    removed_sheet1.to_excel(writer, index=False, sheet_name='Removed from Sheet1')
-    added_sheet2.to_excel(writer, index=False, sheet_name='Added in Sheet2')
-    removed_sheet2.to_excel(writer, index=False, sheet_name='Removed from Sheet2')
+# === Define red fill for highlighting ===
+red_fill = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
 
-print(f"[INFO] Differences exported to: {output_file}")
+# === Helper to write and highlight ===
+def write_highlighted(ws, df):
+    for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
+        for c_idx, value in enumerate(row, 1):
+            ws.cell(row=r_idx, column=c_idx, value=value)
+            if r_idx > 1:  # skip header
+                ws.cell(row=r_idx, column=c_idx).fill = red_fill
+
+# === Export to new workbook ===
+from openpyxl import Workbook
+
+wb = Workbook()
+sheet_map = {
+    "Added in Sheet1": added_sheet1,
+    "Removed from Sheet1": removed_sheet1,
+    "Added in Sheet2": added_sheet2,
+    "Removed from Sheet2": removed_sheet2
+}
+
+# Write each sheet
+for i, (name, df_diff) in enumerate(sheet_map.items()):
+    ws = wb.active if i == 0 else wb.create_sheet(title=name)
+    if i != 0:
+        ws.title = name
+    else:
+        ws.title = name  # overwrite default 'Sheet'
+    write_highlighted(ws, df_diff)
+
+# Save the result
+wb.save(output_file)
+print(f"[INFO] Differences with highlights saved to: {output_file}")
