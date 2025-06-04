@@ -1,11 +1,80 @@
-n deprecated. Use DataFrame.map instead.
-  df1 = pd.read_excel(excel_file, sheet_name=sheet1_name, dtype=str).fillna('').applymap(str).applymap(str.strip)
-c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Excel_diff.py:17: FutureWarning: DataFrame.applymap has been deprecated. Use DataFrame.map instead.
-  df2 = pd.read_excel(excel_file, sheet_name=sheet2_name, dtype=str).fillna('').applymap(str).applymap(str.strip)
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Excel_diff.py", line 38, in <module>
-    if val1 != val2:
-       ^^^^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 1577, in __nonzero__
-    raise ValueError(
-ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+from openpyxl.utils.dataframe import dataframe_to_rows
+
+# === Configuration ===
+excel_file = 'input.xlsx'
+sheet1_name = 'Sheet1'
+sheet2_name = 'Sheet2'
+output_file = 'asd_loc_diff_report.xlsx'
+
+KEY_COL = 'ASD_LOC'
+red_fill = PatternFill(start_color="FFFF0000", end_color="FFFF0000", fill_type="solid")
+
+# === Load and clean data ===
+df1 = pd.read_excel(excel_file, sheet_name=sheet1_name, dtype=str).fillna('').astype(str).apply(lambda x: x.str.strip())
+df2 = pd.read_excel(excel_file, sheet_name=sheet2_name, dtype=str).fillna('').astype(str).apply(lambda x: x.str.strip())
+
+df1.set_index(KEY_COL, inplace=True)
+df2.set_index(KEY_COL, inplace=True)
+
+# === Find added and removed keys ===
+added_keys = sorted(set(df2.index) - set(df1.index))
+removed_keys = sorted(set(df1.index) - set(df2.index))
+
+# === Find modified rows (same keys, different values) ===
+common_keys = sorted(set(df1.index).intersection(set(df2.index)))
+modified_rows = []
+
+for key in common_keys:
+    row1 = df1.loc[key]
+    row2 = df2.loc[key]
+
+    # Ensure we only compare Series (one row per key)
+    if isinstance(row1, pd.DataFrame) or isinstance(row2, pd.DataFrame):
+        continue  # skip if multiple rows per key (not expected)
+
+    if not row1.equals(row2):
+        diff = {'ASD_LOC': key}
+        for col in df1.columns:
+            val1 = row1.get(col, '')
+            val2 = row2.get(col, '')
+            if val1 != val2:
+                diff[f"{col} (Sheet1)"] = val1
+                diff[f"{col} (Sheet2)"] = val2
+        modified_rows.append(diff)
+
+# === Create workbook ===
+wb = Workbook()
+
+# Sheet 1: Added Keys
+ws1 = wb.active
+ws1.title = "Added Keys"
+ws1.append([KEY_COL])
+for k in added_keys:
+    cell = ws1.cell(row=ws1.max_row + 1, column=1, value=k)
+    cell.fill = red_fill
+
+# Sheet 2: Removed Keys
+ws2 = wb.create_sheet(title="Removed Keys")
+ws2.append([KEY_COL])
+for k in removed_keys:
+    cell = ws2.cell(row=ws2.max_row + 1, column=1, value=k)
+    cell.fill = red_fill
+
+# Sheet 3: Modified Rows
+ws3 = wb.create_sheet(title="Modified Rows")
+if modified_rows:
+    df_mod = pd.DataFrame(modified_rows)
+    for r_idx, row in enumerate(dataframe_to_rows(df_mod, index=False, header=True), 1):
+        for c_idx, value in enumerate(row, 1):
+            cell = ws3.cell(row=r_idx, column=c_idx, value=value)
+            if r_idx > 1:
+                cell.fill = red_fill
+else:
+    ws3.append(["No modified rows found."])
+
+# Save file
+wb.save(output_file)
+print(f"[INFO] Output saved to: {output_file}")
