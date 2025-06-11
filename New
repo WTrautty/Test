@@ -1,1 +1,9 @@
-IPv6 LAN value: 35:f::9/126
+import re
+
+def get_bor_lan(ipv6_value):
+    """
+    Extracts and normalizes a specific IPv6 LAN address (f::9/...) and replaces it with 0::/56.
+    Returns '0::/56' if a match is found, otherwise returns the original string.
+    """
+    pattern = r'\b(?:[0-9a-fA-F]*:)?f::9/\d{1,3}\b'
+    return re.sub(pattern, '0::/56', ipv6_value, flags=re.IGNORECASE)
