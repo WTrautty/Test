@@ -1,1 +1,4 @@
- template = template.replace('{BOR LAN}', re.sub(r'f::9/56', '0::/56', (data.get("IPv6 LAN", "")), flags=re.IGNORECASE))
+template = template.replace(
+    '{BOR LAN}',
+    re.sub(r'[fF]::9/56', '0::/56', data.get("IPv6 LAN", ""))
+)
