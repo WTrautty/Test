@@ -1,19 +1,27 @@
-def get_bor_lan(ipv6_value):
-    print("[DEBUG] Original IPv6 WAN value:", ipv6_value)
-
-    # Simplified pattern: match only 'f::9/126' case-insensitive
-    pattern = r'f::9/126'
-    result = re.sub(pattern, '0::/56', ipv6_value, flags=re.IGNORECASE)
-
-    print("[DEBUG] Transformed BOR LAN value:", result)
-    return result
-
-# Retrieve original WAN value and apply transformation
-ipv6_wan = data.get("IPv6 WAN", "")
-bor_lan = get_bor_lan(ipv6_wan)
-
-# Template replacement
-template = template.replace('{BOR LAN}', bor_lan)
-
-# Final output check
-print("[DEBUG] Final template result:", template)
+        if default_device.upper().startswith("ESP"):
+            pe_type = "Alcatel"
+            if device_vendor.upper().startswith("FORT"):
+                template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt"
+            else:
+                if bureau.upper().startswith("DOI-BOR"):
+                    template_path = r"C:\Users\AD39644\Service Information ESP_BOR.txt"
+                else:
+                    template_path = r"C:\Users\AD39644\Service Information ESP.txt"
+        else:
+            pe_type = "Juniper"
+            if default_interface.upper().startswith("LSQ"):
+                if device_vendor.upper().startswith("FORT"):
+                    template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt"
+                else:
+                    if bureau.upper().startswith("DOI-BOR"):
+                        template_path = r"C:\Users\AD39644\Service Information Juno LSQ_BOR.txt"
+                    else:
+                        template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+            else:
+                if device_vendor.upper().startswith("FORT"):
+                    template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt"
+                else:
+                    if bureau.upper().startswith("DOI-BOR"):
+                        template_path = r"C:\Users\AD39644\Service Information Juno T1_BOR.txt"
+                    else:
+                        template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
