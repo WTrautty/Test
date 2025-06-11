@@ -1,30 +1,18 @@
-# Normalize bureau to handle extra spaces, lowercase, etc.
-bureau_clean = (bureau or "").strip().upper()
-
-if default_device.upper().startswith("ESP"):
-    pe_type = "Alcatel"
-    if device_vendor.upper().startswith("FORT"):
-        template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt"
-    else:
-        if "BOR" in bureau_clean:
-            template_path = r"C:\Users\AD39644\Service Information ESP_BOR.txt"
-        else:
-            template_path = r"C:\Users\AD39644\Service Information ESP.txt"
-else:
-    pe_type = "Juniper"
-    if default_interface.upper().startswith("LSQ"):
-        if device_vendor.upper().startswith("FORT"):
-            template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt"
-        else:
-            if "BOR" in bureau_clean:
-                template_path = r"C:\Users\AD39644\Service Information Juno LSQ_BOR.txt"
-            else:
-                template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
-    else:
-        if device_vendor.upper().startswith("FORT"):
-            template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt"
-        else:
-            if "BOR" in bureau_clean:
-                template_path = r"C:\Users\AD39644\Service Information Juno T1_BOR.txt"
-            else:
-                template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
+New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568841 - 2025-06-11 - Pre-Checks.txt' created successfully!    
+C:\Users\AD39644\Service Information ESP.txt
+DOI-BOR
+New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568833 - 2025-06-11 - Pre-Checks.txt' created successfully!    
+C:\Users\AD39644\Service Information ESP.txt
+DOI-BOR
+New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568851 - 2025-06-11 - Pre-Checks.txt' created successfully!    
+C:\Users\AD39644\Service Information ESP.txt
+DOI-BOR
+New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568837 - 2025-06-11 - Pre-Checks.txt' created successfully!    
+C:\Users\AD39644\Service Information ESP.txt
+DOI-BOR
+New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568852 - 2025-06-11 - Pre-Checks.txt' created successfully!    
+C:\Users\AD39644\Service Information Juno LSQ FORT.txt
+DOI-BOR
+New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568838 - 2025-06-11 - Pre-Checks.txt' created successfully!    
+C:\Users\AD39644\Service Information ESP.txt
+DOI-BOR
