@@ -1,18 +1,45 @@
-New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568841 - 2025-06-11 - Pre-Checks.txt' created successfully!    
-C:\Users\AD39644\Service Information ESP.txt
-DOI-BOR
-New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568833 - 2025-06-11 - Pre-Checks.txt' created successfully!    
-C:\Users\AD39644\Service Information ESP.txt
-DOI-BOR
-New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568851 - 2025-06-11 - Pre-Checks.txt' created successfully!    
-C:\Users\AD39644\Service Information ESP.txt
-DOI-BOR
-New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568837 - 2025-06-11 - Pre-Checks.txt' created successfully!    
-C:\Users\AD39644\Service Information ESP.txt
-DOI-BOR
-New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568852 - 2025-06-11 - Pre-Checks.txt' created successfully!    
-C:\Users\AD39644\Service Information Juno LSQ FORT.txt
-DOI-BOR
-New text file 'C:\Users\AD39644\IPv6_Test_Files\2025-06-11\31568838 - 2025-06-11 - Pre-Checks.txt' created successfully!    
-C:\Users\AD39644\Service Information ESP.txt
-DOI-BOR
+# Normalize bureau
+bureau_clean = (bureau or "").strip().upper()
+print(f"[DEBUG] Bureau Cleaned: '{bureau_clean}'")
+print(f"[DEBUG] Default Device: '{default_device}'")
+print(f"[DEBUG] Device Vendor: '{device_vendor}'")
+print(f"[DEBUG] Default Interface: '{default_interface}'")
+
+if default_device.upper().startswith("ESP"):
+    pe_type = "Alcatel"
+    print("[DEBUG] PE Type: Alcatel")
+    if device_vendor.upper().startswith("FORT"):
+        template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt"
+        print("[DEBUG] Template selected: ESP FORT")
+    else:
+        if "BOR" in bureau_clean:
+            template_path = r"C:\Users\AD39644\Service Information ESP_BOR.txt"
+            print("[DEBUG] Template selected: ESP_BOR")
+        else:
+            template_path = r"C:\Users\AD39644\Service Information ESP.txt"
+            print("[DEBUG] Template selected: ESP Default")
+else:
+    pe_type = "Juniper"
+    print("[DEBUG] PE Type: Juniper")
+    if default_interface.upper().startswith("LSQ"):
+        if device_vendor.upper().startswith("FORT"):
+            template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt"
+            print("[DEBUG] Template selected: Juno LSQ FORT")
+        else:
+            if "BOR" in bureau_clean:
+                template_path = r"C:\Users\AD39644\Service Information Juno LSQ_BOR.txt"
+                print("[DEBUG] Template selected: Juno LSQ BOR")
+            else:
+                template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
+                print("[DEBUG] Template selected: Juno LSQ Default")
+    else:
+        if device_vendor.upper().startswith("FORT"):
+            template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt"
+            print("[DEBUG] Template selected: Juno T1 FORT")
+        else:
+            if "BOR" in bureau_clean:
+                template_path = r"C:\Users\AD39644\Service Information Juno T1_BOR.txt"
+                print("[DEBUG] Template selected: Juno T1 BOR")
+            else:
+                template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
+                print("[DEBUG] Template selected: Juno T1 Default")
