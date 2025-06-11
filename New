@@ -1,1 +1,1 @@
-print("IPv6 LAN value:", data.get("IPv6 LAN", ""))
+IPv6 LAN value: 35:f::9/126
