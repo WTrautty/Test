@@ -1,45 +1,48 @@
-# Normalize bureau
-bureau_clean = (bureau or "").strip().upper()
-print(f"[DEBUG] Bureau Cleaned: '{bureau_clean}'")
-print(f"[DEBUG] Default Device: '{default_device}'")
-print(f"[DEBUG] Device Vendor: '{device_vendor}'")
-print(f"[DEBUG] Default Interface: '{default_interface}'")
+import pandas as pd
 
-if default_device.upper().startswith("ESP"):
-    pe_type = "Alcatel"
-    print("[DEBUG] PE Type: Alcatel")
-    if device_vendor.upper().startswith("FORT"):
-        template_path = r"C:\Users\AD39644\Service Information ESP FORT.txt"
-        print("[DEBUG] Template selected: ESP FORT")
-    else:
-        if "BOR" in bureau_clean:
-            template_path = r"C:\Users\AD39644\Service Information ESP_BOR.txt"
-            print("[DEBUG] Template selected: ESP_BOR")
-        else:
-            template_path = r"C:\Users\AD39644\Service Information ESP.txt"
-            print("[DEBUG] Template selected: ESP Default")
-else:
-    pe_type = "Juniper"
-    print("[DEBUG] PE Type: Juniper")
-    if default_interface.upper().startswith("LSQ"):
-        if device_vendor.upper().startswith("FORT"):
-            template_path = r"C:\Users\AD39644\Service Information Juno LSQ FORT.txt"
-            print("[DEBUG] Template selected: Juno LSQ FORT")
-        else:
-            if "BOR" in bureau_clean:
-                template_path = r"C:\Users\AD39644\Service Information Juno LSQ_BOR.txt"
-                print("[DEBUG] Template selected: Juno LSQ BOR")
-            else:
-                template_path = r"C:\Users\AD39644\Service Information Juno LSQ.txt"
-                print("[DEBUG] Template selected: Juno LSQ Default")
-    else:
-        if device_vendor.upper().startswith("FORT"):
-            template_path = r"C:\Users\AD39644\Service Information Juno T1 FORT.txt"
-            print("[DEBUG] Template selected: Juno T1 FORT")
-        else:
-            if "BOR" in bureau_clean:
-                template_path = r"C:\Users\AD39644\Service Information Juno T1_BOR.txt"
-                print("[DEBUG] Template selected: Juno T1 BOR")
-            else:
-                template_path = r"C:\Users\AD39644\Service Information Juno T1.txt"
-                print("[DEBUG] Template selected: Juno T1 Default")
+def reformat_audit_sheet(sheet_df, sheet_name):
+    row = sheet_df.iloc[0]
+    criteria = []
+
+    # Process columns in groups of three: MEASURE, WEIGHT, SCORE
+    for i in range(0, len(row), 3):
+        try:
+            label = row[i]
+            score_type = row[i+2]
+            if pd.notna(label) and pd.notna(score_type):
+                col_base = str(label).strip().replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
+                criteria.append({
+                    "criterion": label,
+                    "score_col": f"{col_base}_Score",
+                    "notes_col": f"{col_base}_Notes",
+                    "score_type": score_type
+                })
+        except IndexError:
+            break
+
+    # Build a new DataFrame with empty values, one row per audit
+    data = {
+        "AuditName": [sheet_name],
+        "AuditDate": [""]
+    }
+
+    for crit in criteria:
+        data[crit["score_col"]] = [""]
+        data[crit["notes_col"]] = [""]
+
+    return pd.DataFrame(data)
+
+def reformat_workbook(input_path, output_path):
+    xls = pd.ExcelFile(input_path)
+    with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+        for sheet_name in xls.sheet_names:
+            df = xls.parse(sheet_name)
+            clean_df = reformat_audit_sheet(df, sheet_name)
+            clean_df.to_excel(writer, sheet_name=sheet_name, index=False)
+    print(f"Reformatted workbook saved to: {output_path}")
+
+# Example usage
+if __name__ == "__main__":
+    input_file = "audit_templates.xlsx"  # Replace this with your input file name
+    output_file = "audit_templates_reformatted.xlsx"
+    reformat_workbook(input_file, output_file)
