@@ -1,48 +1,46 @@
 import pandas as pd
 
-def reformat_audit_sheet(sheet_df, sheet_name):
+def reformat_sheet_to_vertical(sheet_df, audit_name):
     row = sheet_df.iloc[0]
-    criteria = []
+    vertical_data = []
 
-    # Process columns in groups of three: MEASURE, WEIGHT, SCORE
     for i in range(0, len(row), 3):
         try:
-            label = row[i]
+            criterion = str(row[i]).strip()
+            weight = row[i+1]
             score_type = row[i+2]
-            if pd.notna(label) and pd.notna(score_type):
-                col_base = str(label).strip().replace(' ', '_').replace('/', '_').replace('(', '').replace(')', '')
-                criteria.append({
-                    "criterion": label,
-                    "score_col": f"{col_base}_Score",
-                    "notes_col": f"{col_base}_Notes",
-                    "score_type": score_type
+
+            if pd.notna(criterion) and pd.notna(score_type):
+                vertical_data.append({
+                    "AuditName": audit_name,
+                    "AuditDate": "",  # Leave blank for user to fill later
+                    "Criterion": criterion,
+                    "Weight": weight,
+                    "ScoreType": score_type,
+                    "Score": "",
+                    "Notes": ""
                 })
         except IndexError:
-            break
+            continue
 
-    # Build a new DataFrame with empty values, one row per audit
-    data = {
-        "AuditName": [sheet_name],
-        "AuditDate": [""]
-    }
+    return pd.DataFrame(vertical_data)
 
-    for crit in criteria:
-        data[crit["score_col"]] = [""]
-        data[crit["notes_col"]] = [""]
-
-    return pd.DataFrame(data)
-
-def reformat_workbook(input_path, output_path):
+def reformat_workbook_vertically(input_path, output_path):
     xls = pd.ExcelFile(input_path)
-    with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
-        for sheet_name in xls.sheet_names:
-            df = xls.parse(sheet_name)
-            clean_df = reformat_audit_sheet(df, sheet_name)
-            clean_df.to_excel(writer, sheet_name=sheet_name, index=False)
-    print(f"Reformatted workbook saved to: {output_path}")
+
+    all_sheets_combined = []
+
+    for sheet_name in xls.sheet_names:
+        df = xls.parse(sheet_name)
+        clean_df = reformat_sheet_to_vertical(df, sheet_name)
+        all_sheets_combined.append(clean_df)
+
+    final_df = pd.concat(all_sheets_combined, ignore_index=True)
+    final_df.to_excel(output_path, index=False)
+    print(f"Reformatted vertical workbook saved to: {output_path}")
 
 # Example usage
 if __name__ == "__main__":
-    input_file = "audit_templates.xlsx"  # Replace this with your input file name
-    output_file = "audit_templates_reformatted.xlsx"
-    reformat_workbook(input_file, output_file)
+    input_file = "audit_templates.xlsx"  # Replace with your file name
+    output_file = "audit_templates_vertical.xlsx"
+    reformat_workbook_vertically(input_file, output_file)
