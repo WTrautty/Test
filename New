@@ -1,27 +1,25 @@
-import plotly.graph_objects as go
+        else:
+            # Static 100% success pie chart
+            import plotly.graph_objects as go
+            success_fig = go.Figure(data=[go.Pie(labels=["Success"], values=[100])])
+            success_fig.update_layout(
+                title="Task Success Rate",
+                height=300
+            )
+            success_html = success_fig.to_html(full_html=False, include_plotlyjs=True)
 
-# Inside the `else` block of customer_block(...)
-success_fig = go.Figure(data=[go.Pie(labels=["Success"], values=[100])])
-success_fig.update_layout(
-    title="Task Success Rate",
-    height=300
-)
-success_html = success_fig.to_html(full_html=False, include_plotlyjs=False)
-
-
-
-return f"""
-<div class="customer-container" id="customer-{customer_id}" style="display:none;">
-  <div class="sidebar">
-    <h2>{customer_id}</h2>
-    <button onclick="switchMainTab(event, '{customer_id}-placeholder')">Overview</button>
-  </div>
-  <div class="main-content">
-    <h1>{customer_id} Dashboard</h1>
-    <div id="{customer_id}-placeholder" class="main-tab" style="display:block;">
-      <p><i>This is a placeholder page for {customer_id}. Charts will go here.</i></p>
-      {success_html}
-    </div>
-  </div>
-</div>
-"""
+            return f"""
+            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
+              <div class="sidebar">
+                <h2>{customer_id}</h2>
+                <button onclick="switchMainTab(event, '{customer_id}-placeholder')">Overview</button>
+              </div>
+              <div class="main-content">
+                <h1>{customer_id} Dashboard</h1>
+                <div id="{customer_id}-placeholder" class="main-tab" style="display:block;">
+                  <p><i>This is a placeholder page for {customer_id}. Charts will go here.</i></p>
+                  {success_html}
+                </div>
+              </div>
+            </div>
+            """
