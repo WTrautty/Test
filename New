@@ -27,10 +27,11 @@ inbox = outlook.GetDefaultFolder(6)
 messages = inbox.Items
 messages.Sort("[ReceivedTime]", True)
 
-print("\nScanning emails for attachments...\n")
+print("\nScanning emails for CSV attachments...\n")
 
-# Change this to the sender you want
+# Change these to what you want
 TARGET_SENDER = "someoneelse@domain.com"
+TARGET_SUBJECT_KEYWORD = "monthly report"
 
 all_dataframes = []
 count = 0
@@ -48,10 +49,12 @@ for message in messages:
         print(f"Subject: {subject}")
 
         sender_match = sender_resolved.lower() == TARGET_SENDER.lower()
+        subject_match = TARGET_SUBJECT_KEYWORD.lower() in subject.lower()
 
         print(f"Sender match: {sender_match}")
+        print(f"Subject match: {subject_match}")
 
-        if sender_match:
+        if sender_match and subject_match:
             attachments = message.Attachments
             print(f"Attachments count: {attachments.Count}")
 
@@ -60,21 +63,21 @@ for message in messages:
                 filename = attachment.FileName
                 print(f"Found attachment: {filename}")
 
-                # Check if it's an Excel file
-                if filename.lower().endswith((".xlsx", ".xls")):
-                    print(f"Processing Excel attachment: {filename}")
+                # Check if it's a CSV file
+                if filename.lower().endswith(".csv"):
+                    print(f"Processing CSV attachment: {filename}")
 
                     # Save attachment to temp file
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
                         temp_path = tmp_file.name
 
                     attachment.SaveAsFile(temp_path)
 
-                    # Read the Excel file into a DataFrame
-                    df = pd.read_excel(temp_path)
+                    # Read the CSV file into a DataFrame
+                    df = pd.read_csv(temp_path)
                     print(f"Rows read: {len(df)}")
 
-                    # Add source info if you want
+                    # Add source info
                     df["Source Email"] = subject
                     df["Received Time"] = received_time
 
@@ -95,6 +98,6 @@ print(f"\nFinished scanning. Emails processed: {count}")
 if all_dataframes:
     combined_df = pd.concat(all_dataframes, ignore_index=True)
     combined_df.to_excel("combined_attachments.xlsx", index=False)
-    print("\nExported combined Excel data to 'combined_attachments.xlsx'")
+    print("\nExported combined CSV data to 'combined_attachments.xlsx'")
 else:
-    print("\nNo matching Excel attachments found.")
+    print("\nNo matching CSV attachments found.")
