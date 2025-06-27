@@ -1,5 +1,67 @@
-Sender: /O=EXCHANGELABS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=DD830AF9AE2F42D0994179E5AE5BB177-0A55E481-96
-Subject: RE: Designated SDWAN Configuration Audit Reports - 5/28
-Received: 2025-05-28 04:52:51.521000+00:00
-Sender match: False
-Subject match: False
+import win32com.client
+
+def get_sender_email(message):
+    try:
+        exch_user = message.Sender.GetExchangeUser()
+        if exch_user is not None:
+            return exch_user.PrimarySmtpAddress
+    except Exception:
+        pass
+
+    return message.SenderEmailAddress
+
+# Launch Outlook namespace
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+
+# ====== Adjust mailbox selection ======
+# This example uses the default Inbox:
+inbox = outlook.GetDefaultFolder(6)
+
+# If you need a specific mailbox, use:
+# mailbox = outlook.Folders.Item("Shared Mailbox Name")
+# inbox = mailbox.Folders.Item("Inbox")
+# =======================================
+
+messages = inbox.Items
+messages.Sort("[ReceivedTime]", True)
+
+print("\nScanning emails...\n")
+
+count = 0
+index = 0
+
+for message in messages:
+    index += 1
+    try:
+        subject = message.Subject or ""
+        sender_resolved = get_sender_email(message) or ""
+        sender_display = message.SenderName or ""
+        received_time = str(message.ReceivedTime)
+
+        print(f"\n=== Email #{index} ===")
+        print(f"Sender (resolved): {sender_resolved}")
+        print(f"Sender (display): {sender_display}")
+        print(f"Subject: {subject}")
+        print(f"Received: {received_time}")
+
+        sender_match = sender_resolved.lower() == "johndoe@aol.com"
+        subject_match = "designated" in subject.lower()
+
+        print(f"Sender match: {sender_match}")
+        print(f"Subject match: {subject_match}")
+
+        if sender_match and subject_match:
+            print(">>>>> MATCH FOUND <<<<<")
+            print("----- Email -----")
+            print("From:", sender_resolved)
+            print("Display Name:", sender_display)
+            print("Date:", received_time)
+            print("Subject:", subject)
+            print()
+            count += 1
+
+    except Exception as e:
+        print(f"Skipping item due to error: {e}")
+        continue
+
+print(f"\nFinished scanning. Found {count} matching emails.")
