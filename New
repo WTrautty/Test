@@ -1,18 +1,28 @@
 import win32com.client
 
-# Create Outlook application object
+# Launch Outlook namespace
 outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
 
-# Default Inbox
-inbox = outlook.GetDefaultFolder(6)
+# === Choose mailbox ===
+# Option 1: By name
+mailbox_name = "Your Shared Mailbox Name Here"  # <-- Change this
+mailbox = outlook.Folders.Item(mailbox_name)
 
-# Get all messages
+# Option 2: By index (uncomment if you prefer)
+# mailbox = outlook.Folders.Item(2)
+
+# Confirm selection
+print(f"Selected mailbox: {mailbox.Name}")
+
+# Select the Inbox
+inbox = mailbox.Folders.Item("Inbox")
+print(f"Selected folder: {inbox.Name}")
+
+# Get messages
 messages = inbox.Items
-
-# Sort descending by received time
 messages.Sort("[ReceivedTime]", True)
 
-print("Scanning emails...\n")
+print("\nScanning emails...\n")
 
 count = 0
 index = 0
@@ -20,7 +30,6 @@ index = 0
 for message in messages:
     index += 1
     try:
-        # Sometimes you'll get Meeting Requests etc.
         subject = message.Subject or ""
         sender = message.SenderEmailAddress or ""
         received_time = str(message.ReceivedTime)
@@ -30,7 +39,6 @@ for message in messages:
         print(f"Subject: {subject}")
         print(f"Received: {received_time}")
 
-        # Check the conditions
         sender_match = sender.lower() == "johndoe@aol.com"
         subject_match = "designated" in subject.lower()
 
