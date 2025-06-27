@@ -1,39 +1,6 @@
-import win32com.client
-
-# Create Outlook application object
-outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
-
-# 0 = Default Inbox
-inbox = outlook.GetDefaultFolder(6)
-
-# You can use this if you want a subfolder:
-# inbox = outlook.Folders.Item("Mailbox Name").Folders.Item("Inbox")
-
-# Get all messages
-messages = inbox.Items
-
-# Restrict to only items with the word "designated" in the Subject
-# NOTE: Restrict uses SQL-like syntax and is case-insensitive
-filtered_messages = messages.Restrict("[Subject] Like '%designated%'")
-
-# Sort by received time descending
-filtered_messages.Sort("[ReceivedTime]", True)
-
-print("Scanning emails...\n")
-
-count = 0
-for message in filtered_messages:
-    try:
-        # Filter by sender email address
-        if message.SenderEmailAddress.lower() == "johndoe@aol.com":
-            print("----- Email -----")
-            print("From:", message.SenderEmailAddress)
-            print("Date:", message.ReceivedTime)
-            print("Subject:", message.Subject)
-            print()
-            count += 1
-    except Exception as e:
-        # Sometimes non-mail items cause issues
-        print(f"Skipping item: {e}")
-
-print(f"Found {count} matching emails.")
+Traceback (most recent call last):
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Outlook JM report.py", line 17, in <module>        
+    filtered_messages = messages.Restrict("[Subject] Like '%designated%'")
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<COMObject <unknown>>", line 2, in Restrict
+pywintypes.com_error: (-2147352567, 'Exception occurred.', (4096, 'Microsoft Outlook', 'Condition is not valid.', None, 0, -2147352567), None)
