@@ -1,6 +1,35 @@
-Traceback (most recent call last):
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Outlook JM report.py", line 17, in <module>        
-    filtered_messages = messages.Restrict("[Subject] Like '%designated%'")
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<COMObject <unknown>>", line 2, in Restrict
-pywintypes.com_error: (-2147352567, 'Exception occurred.', (4096, 'Microsoft Outlook', 'Condition is not valid.', None, 0, -2147352567), None)
+import win32com.client
+
+# Create Outlook application object
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+
+# Default Inbox
+inbox = outlook.GetDefaultFolder(6)
+
+# Get all messages
+messages = inbox.Items
+# Sort descending by received time
+messages.Sort("[ReceivedTime]", True)
+
+print("Scanning emails...\n")
+
+count = 0
+for message in messages:
+    try:
+        subject = message.Subject or ""
+        sender = message.SenderEmailAddress or ""
+        if (
+            sender.lower() == "johndoe@aol.com"
+            and "designated" in subject.lower()
+        ):
+            print("----- Email -----")
+            print("From:", sender)
+            print("Date:", message.ReceivedTime)
+            print("Subject:", subject)
+            print()
+            count += 1
+    except Exception as e:
+        # Skip non-mail items
+        continue
+
+print(f"Found {count} matching emails.")
