@@ -1,5 +1,7 @@
 import win32com.client
 import pandas as pd
+import tempfile
+import os
 
 def get_sender_email(message):
     try:
@@ -10,14 +12,14 @@ def get_sender_email(message):
         pass
     return message.SenderEmailAddress
 
-# Launch Outlook namespace
+# Outlook namespace
 outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
 
-# ===== Adjust mailbox selection =====
-# Example: default inbox
+# ====== Choose mailbox ======
+# Default Inbox:
 inbox = outlook.GetDefaultFolder(6)
 
-# If you need a different mailbox:
+# If you want a different mailbox:
 # mailbox = outlook.Folders.Item("Shared Mailbox Name")
 # inbox = mailbox.Folders.Item("Inbox")
 # =====================================
@@ -25,55 +27,74 @@ inbox = outlook.GetDefaultFolder(6)
 messages = inbox.Items
 messages.Sort("[ReceivedTime]", True)
 
-print("\nScanning emails...\n")
+print("\nScanning emails for attachments...\n")
 
-email_data = []
+# Change this to the sender you want
+TARGET_SENDER = "someoneelse@domain.com"
+
+all_dataframes = []
 count = 0
 index = 0
 
 for message in messages:
     index += 1
     try:
-        subject = message.Subject or ""
         sender_resolved = get_sender_email(message) or ""
-        sender_display = message.SenderName or ""
+        subject = message.Subject or ""
         received_time = str(message.ReceivedTime)
-        body = message.Body or ""
 
-        # Debug prints
         print(f"\n=== Email #{index} ===")
         print(f"Sender: {sender_resolved}")
         print(f"Subject: {subject}")
 
-        # Matching logic
-        sender_match = sender_resolved.lower() == "johndoe@aol.com"
-        subject_match = "designated" in subject.lower()
+        sender_match = sender_resolved.lower() == TARGET_SENDER.lower()
 
         print(f"Sender match: {sender_match}")
-        print(f"Subject match: {subject_match}")
 
-        if sender_match and subject_match:
-            print(">>>>> MATCH FOUND <<<<<")
+        if sender_match:
+            attachments = message.Attachments
+            print(f"Attachments count: {attachments.Count}")
+
+            for i in range(1, attachments.Count + 1):
+                attachment = attachments.Item(i)
+                filename = attachment.FileName
+                print(f"Found attachment: {filename}")
+
+                # Check if it's an Excel file
+                if filename.lower().endswith((".xlsx", ".xls")):
+                    print(f"Processing Excel attachment: {filename}")
+
+                    # Save attachment to temp file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_file:
+                        temp_path = tmp_file.name
+
+                    attachment.SaveAsFile(temp_path)
+
+                    # Read the Excel file into a DataFrame
+                    df = pd.read_excel(temp_path)
+                    print(f"Rows read: {len(df)}")
+
+                    # Add source info if you want
+                    df["Source Email"] = subject
+                    df["Received Time"] = received_time
+
+                    all_dataframes.append(df)
+
+                    # Clean up temp file
+                    os.unlink(temp_path)
+
             count += 1
-
-            email_data.append({
-                "Sender": sender_resolved,
-                "Display Name": sender_display,
-                "Subject": subject,
-                "Received Time": received_time,
-                "Body": body
-            })
 
     except Exception as e:
         print(f"Skipping item due to error: {e}")
         continue
 
-print(f"\nFinished scanning. Found {count} matching emails.")
+print(f"\nFinished scanning. Emails processed: {count}")
 
-# Export to Excel
-if email_data:
-    df = pd.DataFrame(email_data)
-    df.to_excel("emails.xlsx", index=False)
-    print("\nExported results to 'emails.xlsx'")
+# Combine and export
+if all_dataframes:
+    combined_df = pd.concat(all_dataframes, ignore_index=True)
+    combined_df.to_excel("combined_attachments.xlsx", index=False)
+    print("\nExported combined Excel data to 'combined_attachments.xlsx'")
 else:
-    print("\nNo matching emails to export.")
+    print("\nNo matching Excel attachments found.")
