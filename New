@@ -1,25 +1,39 @@
-        else:
-            # Static 100% success pie chart
-            import plotly.graph_objects as go
-            success_fig = go.Figure(data=[go.Pie(labels=["Success"], values=[100])])
-            success_fig.update_layout(
-                title="Task Success Rate",
-                height=300
-            )
-            success_html = success_fig.to_html(full_html=False, include_plotlyjs=True)
+import win32com.client
 
-            return f"""
-            <div class="customer-container" id="customer-{customer_id}" style="display:none;">
-              <div class="sidebar">
-                <h2>{customer_id}</h2>
-                <button onclick="switchMainTab(event, '{customer_id}-placeholder')">Overview</button>
-              </div>
-              <div class="main-content">
-                <h1>{customer_id} Dashboard</h1>
-                <div id="{customer_id}-placeholder" class="main-tab" style="display:block;">
-                  <p><i>This is a placeholder page for {customer_id}. Charts will go here.</i></p>
-                  {success_html}
-                </div>
-              </div>
-            </div>
-            """
+# Create Outlook application object
+outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+
+# 0 = Default Inbox
+inbox = outlook.GetDefaultFolder(6)
+
+# You can use this if you want a subfolder:
+# inbox = outlook.Folders.Item("Mailbox Name").Folders.Item("Inbox")
+
+# Get all messages
+messages = inbox.Items
+
+# Restrict to only items with the word "designated" in the Subject
+# NOTE: Restrict uses SQL-like syntax and is case-insensitive
+filtered_messages = messages.Restrict("[Subject] Like '%designated%'")
+
+# Sort by received time descending
+filtered_messages.Sort("[ReceivedTime]", True)
+
+print("Scanning emails...\n")
+
+count = 0
+for message in filtered_messages:
+    try:
+        # Filter by sender email address
+        if message.SenderEmailAddress.lower() == "johndoe@aol.com":
+            print("----- Email -----")
+            print("From:", message.SenderEmailAddress)
+            print("Date:", message.ReceivedTime)
+            print("Subject:", message.Subject)
+            print()
+            count += 1
+    except Exception as e:
+        # Sometimes non-mail items cause issues
+        print(f"Skipping item: {e}")
+
+print(f"Found {count} matching emails.")
