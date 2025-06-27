@@ -8,28 +8,46 @@ inbox = outlook.GetDefaultFolder(6)
 
 # Get all messages
 messages = inbox.Items
+
 # Sort descending by received time
 messages.Sort("[ReceivedTime]", True)
 
 print("Scanning emails...\n")
 
 count = 0
+index = 0
+
 for message in messages:
+    index += 1
     try:
+        # Sometimes you'll get Meeting Requests etc.
         subject = message.Subject or ""
         sender = message.SenderEmailAddress or ""
-        if (
-            sender.lower() == "johndoe@aol.com"
-            and "designated" in subject.lower()
-        ):
+        received_time = str(message.ReceivedTime)
+
+        print(f"\n=== Email #{index} ===")
+        print(f"Sender: {sender}")
+        print(f"Subject: {subject}")
+        print(f"Received: {received_time}")
+
+        # Check the conditions
+        sender_match = sender.lower() == "johndoe@aol.com"
+        subject_match = "designated" in subject.lower()
+
+        print(f"Sender match: {sender_match}")
+        print(f"Subject match: {subject_match}")
+
+        if sender_match and subject_match:
+            print(">>>>> MATCH FOUND <<<<<")
             print("----- Email -----")
             print("From:", sender)
-            print("Date:", message.ReceivedTime)
+            print("Date:", received_time)
             print("Subject:", subject)
             print()
             count += 1
+
     except Exception as e:
-        # Skip non-mail items
+        print(f"Skipping item due to error: {e}")
         continue
 
-print(f"Found {count} matching emails.")
+print(f"\nFinished scanning. Found {count} matching emails.")
