@@ -1,3 +1,37 @@
+import pandas as pd
+
+# === Configuration ===
+INPUT_FILE = "errors.xlsx"               # Your input Excel file
+OUTPUT_FILE = "categorized_errors.xlsx"  # Output file
+ERROR_COLUMN = "Error Message"           # Column containing error messages
+
+# Your categories and keywords
+# IMPORTANT: Keywords can have any casing ("Timeout", "Timeout", etc.)
+keyword_categories = {
+    "Timeout Errors": ["timeout", "timed out"],
+    "Connection Errors": ["connection", "unreachable", "refused"],
+    "Authentication Errors": ["auth", "login failed", "unauthorized"],
+    "File Errors": ["file not found", "no such file", "permission denied"],
+    "Other": []   # fallback
+}
+
+# Preprocess keywords into lowercase for matching
+keyword_categories_lower = {
+    category: [kw.lower() for kw in keywords]
+    for category, keywords in keyword_categories.items()
+}
+
+def assign_category(message):
+    """
+    Assigns a category based on the first keyword found in the message.
+    """
+    text = str(message).lower()
+    for category, keywords in keyword_categories_lower.items():
+        for keyword in keywords:
+            if keyword in text:
+                return category
+    return "Other"
+
 def main():
     # Load Excel data
     df = pd.read_excel(INPUT_FILE)
@@ -23,3 +57,6 @@ def main():
             subset.to_excel(writer, sheet_name=sheet_name, index=False)
 
     print(f"Categorized file saved to '{OUTPUT_FILE}'.")
+
+if __name__ == "__main__":
+    main()
