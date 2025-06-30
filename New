@@ -1,62 +1,12 @@
-import pandas as pd
-
-# === Configuration ===
-INPUT_FILE = "errors.xlsx"               # Your input Excel file
-OUTPUT_FILE = "categorized_errors.xlsx"  # Output file
-ERROR_COLUMN = "Error Message"           # Column containing error messages
-
-# Your categories and keywords
-# IMPORTANT: Keywords can have any casing ("Timeout", "Timeout", etc.)
-keyword_categories = {
-    "Timeout Errors": ["timeout", "timed out"],
-    "Connection Errors": ["connection", "unreachable", "refused"],
-    "Authentication Errors": ["auth", "login failed", "unauthorized"],
-    "File Errors": ["file not found", "no such file", "permission denied"],
-    "Other": []   # fallback
-}
-
-# Preprocess keywords into lowercase for matching
-keyword_categories_lower = {
-    category: [kw.lower() for kw in keywords]
-    for category, keywords in keyword_categories.items()
-}
+import re
 
 def assign_category(message):
     """
-    Assigns a category based on the first keyword found in the message.
+    Assigns a category based on the first regex keyword that matches the message.
     """
     text = str(message).lower()
     for category, keywords in keyword_categories_lower.items():
-        for keyword in keywords:
-            if keyword in text:
+        for pattern in keywords:
+            if re.search(pattern, text):
                 return category
     return "Other"
-
-def main():
-    # Load Excel data
-    df = pd.read_excel(INPUT_FILE)
-
-    if ERROR_COLUMN not in df.columns:
-        raise ValueError(f"Column '{ERROR_COLUMN}' not found.")
-
-    # Assign categories
-    df["Category"] = df[ERROR_COLUMN].apply(assign_category)
-
-    # Function to clean up sheet names
-    def clean_sheet_name(name):
-        invalid_chars = r'[]:*?/\\'
-        for ch in invalid_chars:
-            name = name.replace(ch, "")
-        return name[:31]  # Excel max length
-
-    # Write separate sheets
-    with pd.ExcelWriter(OUTPUT_FILE, engine="openpyxl") as writer:
-        for category in sorted(df["Category"].unique()):
-            subset = df[df["Category"] == category].drop(columns=["Category"])
-            sheet_name = clean_sheet_name(category)
-            subset.to_excel(writer, sheet_name=sheet_name, index=False)
-
-    print(f"Categorized file saved to '{OUTPUT_FILE}'.")
-
-if __name__ == "__main__":
-    main()
