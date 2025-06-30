@@ -1,49 +1,17 @@
-import pandas as pd
-
-# === Configuration ===
-INPUT_FILE = "errors.xlsx"               # Your input Excel file
-OUTPUT_FILE = "categorized_errors.xlsx"  # Output file
-ERROR_COLUMN = "Error Message"           # Column containing the error messages
-
-# Define your categories and their keywords here.
-# Each key is the sheet name, and each value is a list of keywords.
-keyword_categories = {
-    "Timeout Errors": ["timeout", "timed out"],
-    "Connection Errors": ["connection", "unreachable", "refused"],
-    "Authentication Errors": ["auth", "login failed", "unauthorized"],
-    "File Errors": ["file not found", "no such file", "permission denied"],
-    "Other": []   # fallback if nothing matches
-}
-
-def assign_category(message):
-    """
-    Assigns a category based on the first keyword found in the message.
-    """
-    text = str(message).lower()
-    for category, keywords in keyword_categories.items():
-        for keyword in keywords:
-            if keyword in text:
-                return category
-    return "Other"
-
-def main():
-    # Load Excel data
-    df = pd.read_excel(INPUT_FILE)
-
-    if ERROR_COLUMN not in df.columns:
-        raise ValueError(f"Column '{ERROR_COLUMN}' not found.")
-
-    # Assign categories
-    df["Category"] = df[ERROR_COLUMN].apply(assign_category)
-
-    # Write separate sheets for each category
-    with pd.ExcelWriter(OUTPUT_FILE, engine="openpyxl") as writer:
-        for category in sorted(df["Category"].unique()):
-            subset = df[df["Category"] == category].drop(columns=["Category"])
-            sheet_name = category[:31]  # Excel sheet name max length
-            subset.to_excel(writer, sheet_name=sheet_name, index=False)
-
-    print(f"Categorized file saved to '{OUTPUT_FILE}'.")
-
-if __name__ == "__main__":
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Keyword Finder.py", line 79, in <module>
     main()
+  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Keyword Finder.py", line 74, in main
+    subset.to_excel(writer, sheet_name=sheet_name, index=False)
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\util\_decorators.py", line 333, in wrapper 
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 2417, in to_excel   
+    formatter.write(
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\io\formats\excel.py", line 952, in write   
+    writer._write_cells(
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\io\excel\_openpyxl.py", line 478, in _write_cells
+    wks.title = sheet_name
+    ^^^^^^^^^
+  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\workbook\child.py", line 93, in title    
+    raise ValueError(msg)
+ValueError: Invalid character : found in sheet title
