@@ -1,103 +1,56 @@
-import win32com.client
 import pandas as pd
-import tempfile
-import os
+import re
+from collections import Counter
 
-def get_sender_email(message):
-    try:
-        exch_user = message.Sender.GetExchangeUser()
-        if exch_user is not None:
-            return exch_user.PrimarySmtpAddress
-    except Exception:
-        pass
-    return message.SenderEmailAddress
+# === Configuration ===
+INPUT_FILE = "errors.xlsx"           # Your Excel file
+OUTPUT_FILE = "categorized_errors.xlsx"
+ERROR_COLUMN = "Error Message"       # Name of the column with error messages
+TOP_N_KEYWORDS = 10                  # Number of top words to use as categories
+MIN_WORD_LENGTH = 4                  # Ignore very short common words (e.g., "the", "and")
 
-# Outlook namespace
-outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
+def extract_words(text):
+    """
+    Extract a list of cleaned lowercase words from text.
+    """
+    text = str(text).lower()
+    words = re.findall(r'\b\w+\b', text)
+    return [w for w in words if len(w) >= MIN_WORD_LENGTH]
 
-# ====== Choose mailbox ======
-# Default Inbox:
-inbox = outlook.GetDefaultFolder(6)
+def main():
+    # Load Excel data
+    df = pd.read_excel(INPUT_FILE)
 
-# If you want a different mailbox:
-# mailbox = outlook.Folders.Item("Shared Mailbox Name")
-# inbox = mailbox.Folders.Item("Inbox")
-# =====================================
+    if ERROR_COLUMN not in df.columns:
+        raise ValueError(f"Column '{ERROR_COLUMN}' not found.")
 
-messages = inbox.Items
-messages.Sort("[ReceivedTime]", True)
+    # Count all words across all error messages
+    all_words = []
+    for msg in df[ERROR_COLUMN]:
+        all_words.extend(extract_words(msg))
 
-print("\nScanning emails for CSV attachments...\n")
+    word_counts = Counter(all_words)
+    top_keywords = [w for w, _ in word_counts.most_common(TOP_N_KEYWORDS)]
+    print("Top keywords selected as categories:", top_keywords)
 
-# Change these to what you want
-TARGET_SENDER = "someoneelse@domain.com"
-TARGET_SUBJECT_KEYWORD = "monthly report"
+    # Assign category for each row
+    def assign_category(msg):
+        msg_words = set(extract_words(msg))
+        for keyword in top_keywords:
+            if keyword in msg_words:
+                return keyword.capitalize()
+        return "Other"
 
-all_dataframes = []
-count = 0
-index = 0
+    df["Category"] = df[ERROR_COLUMN].apply(assign_category)
 
-for message in messages:
-    index += 1
-    try:
-        sender_resolved = get_sender_email(message) or ""
-        subject = message.Subject or ""
-        received_time = str(message.ReceivedTime)
+    # Write to Excel with one sheet per category
+    with pd.ExcelWriter(OUTPUT_FILE, engine="openpyxl") as writer:
+        for category in sorted(df["Category"].unique()):
+            subset = df[df["Category"] == category].drop(columns=["Category"])
+            sheet_name = category[:31]
+            subset.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        print(f"\n=== Email #{index} ===")
-        print(f"Sender: {sender_resolved}")
-        print(f"Subject: {subject}")
+    print(f"Categorized file saved to '{OUTPUT_FILE}'.")
 
-        sender_match = sender_resolved.lower() == TARGET_SENDER.lower()
-        subject_match = TARGET_SUBJECT_KEYWORD.lower() in subject.lower()
-
-        print(f"Sender match: {sender_match}")
-        print(f"Subject match: {subject_match}")
-
-        if sender_match and subject_match:
-            attachments = message.Attachments
-            print(f"Attachments count: {attachments.Count}")
-
-            for i in range(1, attachments.Count + 1):
-                attachment = attachments.Item(i)
-                filename = attachment.FileName
-                print(f"Found attachment: {filename}")
-
-                # Check if it's a CSV file
-                if filename.lower().endswith(".csv"):
-                    print(f"Processing CSV attachment: {filename}")
-
-                    # Save attachment to temp file
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp_file:
-                        temp_path = tmp_file.name
-
-                    attachment.SaveAsFile(temp_path)
-
-                    # Read the CSV file into a DataFrame
-                    df = pd.read_csv(temp_path)
-                    print(f"Rows read: {len(df)}")
-
-                    # Add source info
-                    df["Source Email"] = subject
-                    df["Received Time"] = received_time
-
-                    all_dataframes.append(df)
-
-                    # Clean up temp file
-                    os.unlink(temp_path)
-
-            count += 1
-
-    except Exception as e:
-        print(f"Skipping item due to error: {e}")
-        continue
-
-print(f"\nFinished scanning. Emails processed: {count}")
-
-# Combine and export
-if all_dataframes:
-    combined_df = pd.concat(all_dataframes, ignore_index=True)
-    combined_df.to_excel("combined_attachments.xlsx", index=False)
-    print("\nExported combined CSV data to 'combined_attachments.xlsx'")
-else:
-    print("\nNo matching CSV attachments found.")
+if __name__ == "__main__":
+    main()
