@@ -1,21 +1,30 @@
 import pandas as pd
-import re
-from collections import Counter
 
 # === Configuration ===
-INPUT_FILE = "errors.xlsx"           # Your Excel file
-OUTPUT_FILE = "categorized_errors.xlsx"
-ERROR_COLUMN = "Error Message"       # Name of the column with error messages
-TOP_N_KEYWORDS = 10                  # Number of top words to use as categories
-MIN_WORD_LENGTH = 4                  # Ignore very short common words (e.g., "the", "and")
+INPUT_FILE = "errors.xlsx"               # Your input Excel file
+OUTPUT_FILE = "categorized_errors.xlsx"  # Output file
+ERROR_COLUMN = "Error Message"           # Column containing the error messages
 
-def extract_words(text):
+# Define your categories and their keywords here.
+# Each key is the sheet name, and each value is a list of keywords.
+keyword_categories = {
+    "Timeout Errors": ["timeout", "timed out"],
+    "Connection Errors": ["connection", "unreachable", "refused"],
+    "Authentication Errors": ["auth", "login failed", "unauthorized"],
+    "File Errors": ["file not found", "no such file", "permission denied"],
+    "Other": []   # fallback if nothing matches
+}
+
+def assign_category(message):
     """
-    Extract a list of cleaned lowercase words from text.
+    Assigns a category based on the first keyword found in the message.
     """
-    text = str(text).lower()
-    words = re.findall(r'\b\w+\b', text)
-    return [w for w in words if len(w) >= MIN_WORD_LENGTH]
+    text = str(message).lower()
+    for category, keywords in keyword_categories.items():
+        for keyword in keywords:
+            if keyword in text:
+                return category
+    return "Other"
 
 def main():
     # Load Excel data
@@ -24,30 +33,14 @@ def main():
     if ERROR_COLUMN not in df.columns:
         raise ValueError(f"Column '{ERROR_COLUMN}' not found.")
 
-    # Count all words across all error messages
-    all_words = []
-    for msg in df[ERROR_COLUMN]:
-        all_words.extend(extract_words(msg))
-
-    word_counts = Counter(all_words)
-    top_keywords = [w for w, _ in word_counts.most_common(TOP_N_KEYWORDS)]
-    print("Top keywords selected as categories:", top_keywords)
-
-    # Assign category for each row
-    def assign_category(msg):
-        msg_words = set(extract_words(msg))
-        for keyword in top_keywords:
-            if keyword in msg_words:
-                return keyword.capitalize()
-        return "Other"
-
+    # Assign categories
     df["Category"] = df[ERROR_COLUMN].apply(assign_category)
 
-    # Write to Excel with one sheet per category
+    # Write separate sheets for each category
     with pd.ExcelWriter(OUTPUT_FILE, engine="openpyxl") as writer:
         for category in sorted(df["Category"].unique()):
             subset = df[df["Category"] == category].drop(columns=["Category"])
-            sheet_name = category[:31]
+            sheet_name = category[:31]  # Excel sheet name max length
             subset.to_excel(writer, sheet_name=sheet_name, index=False)
 
     print(f"Categorized file saved to '{OUTPUT_FILE}'.")
