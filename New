@@ -1,17 +1,25 @@
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Keyword Finder.py", line 79, in <module>
-    main()
-  File "c:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\Keyword Finder.py", line 74, in main
-    subset.to_excel(writer, sheet_name=sheet_name, index=False)
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\util\_decorators.py", line 333, in wrapper 
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\core\generic.py", line 2417, in to_excel   
-    formatter.write(
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\io\formats\excel.py", line 952, in write   
-    writer._write_cells(
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\pandas\io\excel\_openpyxl.py", line 478, in _write_cells
-    wks.title = sheet_name
-    ^^^^^^^^^
-  File "C:\Users\AD39644\Desktop\EIS\OneDrive_2024-07-25\Auditing Script\.venv\Lib\site-packages\openpyxl\workbook\child.py", line 93, in title    
-    raise ValueError(msg)
-ValueError: Invalid character : found in sheet title
+def main():
+    # Load Excel data
+    df = pd.read_excel(INPUT_FILE)
+
+    if ERROR_COLUMN not in df.columns:
+        raise ValueError(f"Column '{ERROR_COLUMN}' not found.")
+
+    # Assign categories
+    df["Category"] = df[ERROR_COLUMN].apply(assign_category)
+
+    # Function to clean up sheet names
+    def clean_sheet_name(name):
+        invalid_chars = r'[]:*?/\\'
+        for ch in invalid_chars:
+            name = name.replace(ch, "")
+        return name[:31]  # Excel max length
+
+    # Write separate sheets
+    with pd.ExcelWriter(OUTPUT_FILE, engine="openpyxl") as writer:
+        for category in sorted(df["Category"].unique()):
+            subset = df[df["Category"] == category].drop(columns=["Category"])
+            sheet_name = clean_sheet_name(category)
+            subset.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    print(f"Categorized file saved to '{OUTPUT_FILE}'.")
