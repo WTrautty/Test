@@ -1,17 +1,1 @@
-Hello @{triggerBody()?['TaskOwner/DisplayName']},
-
-A new audit has been submitted.
-
-Cancelled/Reschedule (Process): @{triggerBody()?['Cancelled_x002f_Reschedule_x0028']}
-Failed (Process): @{triggerBody()?['Failed_x0028_Process_x0029_']}
-Flight Deck Task Notes & Closure: @{triggerBody()?['FlightDeckTaskNotesClosure']}
-Identified & Logged Call Participants: @{triggerBody()?['CompletionEmail']}
-Results Uploaded to SharePoint: @{triggerBody()?['ResultsUploadedtoSharePoint']}
-Scrub Quality: @{triggerBody()?['ScrubQuality']}
-Test Results: @{triggerBody()?['TestResults']}
-Use of Templates: @{triggerBody()?['UseofTemplates']}
-Activation Details & Note Quality: @{triggerBody()?['ActivationDetailsNoteQuality']}
-
-Overall Audit Score: @{formatNumber(float(triggerBody()?['Overall_x0020_Score']), '0.00')}%
-
-Thank you.
+Overall Audit Score: @{formatNumber(mul(float(triggerBody()?['Overall_x0020_Score']), 100), '0.00')}%
