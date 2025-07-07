@@ -31,3 +31,6 @@
     - IF([Cleanup],0,10)
   )
 )
+
+
+[Cleanup][Closure Activities][Created][Failed & Cancelled/Rescheduled (Process)][Non-Technical Notes][Scrub Quality][Technical Notes]
