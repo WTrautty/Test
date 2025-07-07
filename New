@@ -1,19 +1,17 @@
-Hello,
-
-A new audit has been submitted.
-
-Here are the details:
-
-Failed (Process): @{triggerOutputs()?['body/Failed_x0020__x0028_Process_x0029_']}
-Flight Deck Task Notes & Closure: @{triggerOutputs()?['body/Flight_x0020_Deck_x0020_Task_x0020_Notes_x0020__x0026__x0020_Closure']}
-Identified & Logged Call Participants: @{triggerOutputs()?['body/Identified_x0020__x0026__x0020_Logged_x0020_Call_x0020_Participants']}
-Results Uploaded to SharePoint: @{triggerOutputs()?['body/Results_x0020_Uploaded_x0020_to_x0020_SharePoint']}
-Scrub Quality: @{triggerOutputs()?['body/Scrub_x0020_Quality']}
-Test Results: @{triggerOutputs()?['body/Test_x0020_Results']}
-Use of Templates: @{triggerOutputs()?['body/Use_x0020_of_x0020_Templates']}
-Cancelled/Reschedule (Process): @{triggerOutputs()?['body/Cancelled_x002f_Reschedule_x0020__x0028_Process_x0029_']}
-Activation Details & Note Quality: @{triggerOutputs()?['body/Activation_x0020_Details_x0020__x0026__x0020_Note_x0020_Quality']}
-
-Overall Audit Score: @{triggerOutputs()?['body/Audit_x0020_Score']}
-
-Thank you.
+{
+  "type": "OpenApiConnection",
+  "inputs": {
+    "parameters": {
+      "emailMessage/To": "@triggerBody()?['TaskOwner/Email']",
+      "emailMessage/Subject": "New Audit: @{triggerOutputs()?['body/Title']}",
+      "emailMessage/Body": "<p class=\"editor-paragraph\">Hello,<br><br>A new audit has been submitted.<br><br>Failed (Process): @{triggerOutputs()?['body/Failed_x0020__x0028_Process_x0029_']}<br>Flight Deck Task Notes &amp; Closure: @{triggerOutputs()?['body/Flight_x0020_Deck_x0020_Task_x0020_Notes_x0020__x0026__x0020_Closure']}<br>Identified &amp; Logged Call Participants: @{triggerOutputs()?['body/Identified_x0020__x0026__x0020_Logged_x0020_Call_x0020_Participants']}<br>Results Uploaded to SharePoint: @{triggerOutputs()?['body/Results_x0020_Uploaded_x0020_to_x0020_SharePoint']}<br>Scrub Quality: @{triggerOutputs()?['body/Scrub_x0020_Quality']}<br>Test Results: @{triggerOutputs()?['body/Test_x0020_Results']}<br>Use of Templates: @{triggerOutputs()?['body/Use_x0020_of_x0020_Templates']}<br>Cancelled/Reschedule (Process): @{triggerOutputs()?['body/Cancelled_x002f_Reschedule_x0020__x0028_Process_x0029_']}<br>Activation Details &amp; Note Quality: @{triggerOutputs()?['body/Activation_x0020_Details_x0020__x0026__x0020_Note_x0020_Quality']}<br><br>Overall Audit Score: @{triggerOutputs()?['body/Audit_x0020_Score']}<br><br>Thank you.</p>",
+      "emailMessage/Importance": "Normal"
+    },
+    "host": {
+      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365",
+      "connection": "shared_office365",
+      "operationId": "SendEmailV2"
+    }
+  },
+  "runAfter": {}
+}
