@@ -1,38 +1,33 @@
-Measure 1: Failed & Cancelled/Rescheduled (Process)
-•	Measured as: Scale
-•	Weight: 1x (10 points)
-
-Measure 2: Completion Email
-•	Measured as: Scale
-•	Weight: 1x (10 points)
-
-Measure 3: Scrub Quality
-•	Measured as: Scale
-•	Weight: 2x (20 points)
-
-
-Measure 4: Non-Technical Notes
-•	Measured as: Scale
-•	Weight: 1x (10 points)
-
-
-Measure 5: Technical Notes
-•	Measured as: Scale
-•	Weight: 2x (20 points)
-
-
-Measure 6: Closure Activities
-•	Measured as: Scale
-•	Weight: 1x (10 points)
-
-
-
-Measure 7: Cleanup
-•	Measured as: Pass / Fail
-•	Weight: 1x (10 points)
-
-
-
-
-
-
+=IF(
+  (
+    90
+    - IF(ISBLANK([Failed and Cancelled]),10,0)
+    - IF(ISBLANK([Completion Email]),10,0)
+    - IF(ISBLANK([Scrub Quality]),20,0)
+    - IF(ISBLANK([Non-Technical Notes]),10,0)
+    - IF(ISBLANK([Technical Notes]),20,0)
+    - IF(ISBLANK([Closure Activities]),10,0)
+    - IF([Cleanup],0,10)
+  )=0,
+  0,
+  (
+    IF(ISBLANK([Failed and Cancelled]),0,[Failed and Cancelled])
+    + IF(ISBLANK([Completion Email]),0,[Completion Email])
+    + IF(ISBLANK([Scrub Quality]),0,[Scrub Quality]*2)
+    + IF(ISBLANK([Non-Technical Notes]),0,[Non-Technical Notes])
+    + IF(ISBLANK([Technical Notes]),0,[Technical Notes]*2)
+    + IF(ISBLANK([Closure Activities]),0,[Closure Activities])
+    + IF([Cleanup],10,0)
+  )
+  /
+  (
+    90
+    - IF(ISBLANK([Failed and Cancelled]),10,0)
+    - IF(ISBLANK([Completion Email]),10,0)
+    - IF(ISBLANK([Scrub Quality]),20,0)
+    - IF(ISBLANK([Non-Technical Notes]),10,0)
+    - IF(ISBLANK([Technical Notes]),20,0)
+    - IF(ISBLANK([Closure Activities]),10,0)
+    - IF([Cleanup],0,10)
+  )
+)
