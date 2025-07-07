@@ -1,1 +1,38 @@
-Overall Audit Score: @{formatNumber(mul(float(triggerBody()?['Overall_x0020_Score']), 100), '0.00')}%
+Measure 1: Failed & Cancelled/Rescheduled (Process)
+•	Measured as: Scale
+•	Weight: 1x (10 points)
+
+Measure 2: Completion Email
+•	Measured as: Scale
+•	Weight: 1x (10 points)
+
+Measure 3: Scrub Quality
+•	Measured as: Scale
+•	Weight: 2x (20 points)
+
+
+Measure 4: Non-Technical Notes
+•	Measured as: Scale
+•	Weight: 1x (10 points)
+
+
+Measure 5: Technical Notes
+•	Measured as: Scale
+•	Weight: 2x (20 points)
+
+
+Measure 6: Closure Activities
+•	Measured as: Scale
+•	Weight: 1x (10 points)
+
+
+
+Measure 7: Cleanup
+•	Measured as: Pass / Fail
+•	Weight: 1x (10 points)
+
+
+
+
+
+
