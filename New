@@ -1,1 +1,40 @@
-=IF((IF(ISBLANK([Failed (Process)]),0,[Failed (Process)])+IF(ISBLANK([Flight Deck Task Notes & Closure]),0,[Flight Deck Task Notes & Closure]*2)+IF(ISBLANK([Identified & Logged Call Participants]),0,[Identified & Logged Call Participants])+IF(ISBLANK([Results Uploaded to SharePoint]),0,[Results Uploaded to SharePoint])+IF(ISBLANK([Scrub Quality]),0,[Scrub Quality]*2)+IF(ISBLANK([Test Results]),0,[Test Results]*2)+IF(ISBLANK([Use of Templates]),0,[Use of Templates])+IF(ISBLANK([Cancelled/Reschedule (Process)]),0,[Cancelled/Reschedule (Process)])+IF(ISBLANK([Activation Details & Note Quality]),0,[Activation Details & Note Quality]*2))/(130-IF(ISBLANK([Failed (Process)]),10,0)-IF(ISBLANK([Flight Deck Task Notes & Closure]),20,0)-IF(ISBLANK([Identified & Logged Call Participants]),10,0)-IF(ISBLANK([Results Uploaded to SharePoint]),10,0)-IF(ISBLANK([Scrub Quality]),20,0)-IF(ISBLANK([Test Results]),20,0)-IF(ISBLANK([Use of Templates]),10,0)-IF(ISBLANK([Cancelled/Reschedule (Process)]),10,0)-IF(ISBLANK([Activation Details & Note Quality]),20,0)),0)
+=IF(
+  (
+    130
+    - IF(ISBLANK([Failed (Process)]),10,0)
+    - IF(ISBLANK([Flight Deck Task Notes & Closure]),20,0)
+    - IF(ISBLANK([Identified & Logged Call Participants]),10,0)
+    - IF(ISBLANK([Results Uploaded to SharePoint]),10,0)
+    - IF(ISBLANK([Scrub Quality]),20,0)
+    - IF(ISBLANK([Test Results]),20,0)
+    - IF(ISBLANK([Use of Templates]),10,0)
+    - IF(ISBLANK([Cancelled/Reschedule (Process)]),10,0)
+    - IF(ISBLANK([Activation Details & Note Quality]),20,0)
+  )
+  =0,
+  0,
+  (
+    IF(ISBLANK([Failed (Process)]),0,[Failed (Process)])
+    + IF(ISBLANK([Flight Deck Task Notes & Closure]),0,[Flight Deck Task Notes & Closure]*2)
+    + IF(ISBLANK([Identified & Logged Call Participants]),0,[Identified & Logged Call Participants])
+    + IF(ISBLANK([Results Uploaded to SharePoint]),0,[Results Uploaded to SharePoint])
+    + IF(ISBLANK([Scrub Quality]),0,[Scrub Quality]*2)
+    + IF(ISBLANK([Test Results]),0,[Test Results]*2)
+    + IF(ISBLANK([Use of Templates]),0,[Use of Templates])
+    + IF(ISBLANK([Cancelled/Reschedule (Process)]),0,[Cancelled/Reschedule (Process)])
+    + IF(ISBLANK([Activation Details & Note Quality]),0,[Activation Details & Note Quality]*2)
+  )
+  /
+  (
+    130
+    - IF(ISBLANK([Failed (Process)]),10,0)
+    - IF(ISBLANK([Flight Deck Task Notes & Closure]),20,0)
+    - IF(ISBLANK([Identified & Logged Call Participants]),10,0)
+    - IF(ISBLANK([Results Uploaded to SharePoint]),10,0)
+    - IF(ISBLANK([Scrub Quality]),20,0)
+    - IF(ISBLANK([Test Results]),20,0)
+    - IF(ISBLANK([Use of Templates]),10,0)
+    - IF(ISBLANK([Cancelled/Reschedule (Process)]),10,0)
+    - IF(ISBLANK([Activation Details & Note Quality]),20,0)
+  )
+)
