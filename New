@@ -1,39 +1,19 @@
-=IF(
-  (
-    130
-    - IF(ISBLANK([Failed (Process)]),10,0)
-    - IF(ISBLANK([Flight Deck Task Notes & Closure]),20,0)
-    - IF(ISBLANK([Identified & Logged Call Participants]),10,0)
-    - IF([Results Uploaded to SharePoint],0,10)
-    - IF(ISBLANK([Scrub Quality]),20,0)
-    - IF(ISBLANK([Test Results]),20,0)
-    - IF(ISBLANK([Use of Templates]),10,0)
-    - IF(ISBLANK([Cancelled/Reschedule (Process)]),10,0)
-    - IF(ISBLANK([Activation Details & Note Quality]),20,0)
-  )=0,
-  0,
-  (
-    IF(ISBLANK([Failed (Process)]),0,[Failed (Process)])
-    + IF(ISBLANK([Flight Deck Task Notes & Closure]),0,[Flight Deck Task Notes & Closure]*2)
-    + IF(ISBLANK([Identified & Logged Call Participants]),0,[Identified & Logged Call Participants])
-    + IF([Results Uploaded to SharePoint],10,0)
-    + IF(ISBLANK([Scrub Quality]),0,[Scrub Quality]*2)
-    + IF(ISBLANK([Test Results]),0,[Test Results]*2)
-    + IF(ISBLANK([Use of Templates]),0,[Use of Templates])
-    + IF(ISBLANK([Cancelled/Reschedule (Process)]),0,[Cancelled/Reschedule (Process)])
-    + IF(ISBLANK([Activation Details & Note Quality]),0,[Activation Details & Note Quality]*2)
-  )
-  /
-  (
-    130
-    - IF(ISBLANK([Failed (Process)]),10,0)
-    - IF(ISBLANK([Flight Deck Task Notes & Closure]),20,0)
-    - IF(ISBLANK([Identified & Logged Call Participants]),10,0)
-    - IF([Results Uploaded to SharePoint],0,10)
-    - IF(ISBLANK([Scrub Quality]),20,0)
-    - IF(ISBLANK([Test Results]),20,0)
-    - IF(ISBLANK([Use of Templates]),10,0)
-    - IF(ISBLANK([Cancelled/Reschedule (Process)]),10,0)
-    - IF(ISBLANK([Activation Details & Note Quality]),20,0)
-  )
-)
+Hello,
+
+A new audit has been submitted.
+
+Here are the details:
+
+Failed (Process): @{triggerOutputs()?['body/Failed_x0020__x0028_Process_x0029_']}
+Flight Deck Task Notes & Closure: @{triggerOutputs()?['body/Flight_x0020_Deck_x0020_Task_x0020_Notes_x0020__x0026__x0020_Closure']}
+Identified & Logged Call Participants: @{triggerOutputs()?['body/Identified_x0020__x0026__x0020_Logged_x0020_Call_x0020_Participants']}
+Results Uploaded to SharePoint: @{triggerOutputs()?['body/Results_x0020_Uploaded_x0020_to_x0020_SharePoint']}
+Scrub Quality: @{triggerOutputs()?['body/Scrub_x0020_Quality']}
+Test Results: @{triggerOutputs()?['body/Test_x0020_Results']}
+Use of Templates: @{triggerOutputs()?['body/Use_x0020_of_x0020_Templates']}
+Cancelled/Reschedule (Process): @{triggerOutputs()?['body/Cancelled_x002f_Reschedule_x0020__x0028_Process_x0029_']}
+Activation Details & Note Quality: @{triggerOutputs()?['body/Activation_x0020_Details_x0020__x0026__x0020_Note_x0020_Quality']}
+
+Overall Audit Score: @{triggerOutputs()?['body/Audit_x0020_Score']}
+
+Thank you.
