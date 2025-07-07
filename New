@@ -1,12 +1,6 @@
-
-InvalidTemplate
-Unable to process template language expressions in action 'Send_an_email_(V2)' inputs at line '0' and column '0': 'The template language function 'formatNumber' expects its first parameter to be an integer or a decimal number. The provided value is of type 'String'. Please see https://aka.ms/logicexpressions#FormatNumber for usage details.'.
-
-
 Hello @{triggerBody()?['TaskOwner/DisplayName']},
 
 A new audit has been submitted.
-
 
 Cancelled/Reschedule (Process): @{triggerBody()?['Cancelled_x002f_Reschedule_x0028']}
 Failed (Process): @{triggerBody()?['Failed_x0028_Process_x0029_']}
@@ -18,7 +12,6 @@ Test Results: @{triggerBody()?['TestResults']}
 Use of Templates: @{triggerBody()?['UseofTemplates']}
 Activation Details & Note Quality: @{triggerBody()?['ActivationDetailsNoteQuality']}
 
-Overall Audit Score: @{formatNumber(triggerBody()?['Overall_x0020_Score'], '0.00')}%
-
+Overall Audit Score: @{formatNumber(float(triggerBody()?['Overall_x0020_Score']), '0.00')}%
 
 Thank you.
