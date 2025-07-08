@@ -25,6 +25,7 @@ def generate_failure_analysis_tab(df):
 
     # === Merge with SITE_INFO ===
     try:
+        SITE_INFO_PATH = r"YOUR_SITE_INFO_PATH.xlsx"  # <-- Replace with your path
         site_info = pd.read_excel(SITE_INFO_PATH, sheet_name="USDA Master", engine='openpyxl')
         site_info = site_info.rename(columns={
             "Lumen Ckt ID": "PID",
@@ -155,11 +156,310 @@ def generate_failure_analysis_tab(df):
         heatmap_html = heatmap_fig.to_html(full_html=False, include_plotlyjs=False)
     else:
         heatmap_html = "<p><i>State column not available.</i></p>"
+    # === Failure Rate by PC/PM (bar chart) ===
+    if "PC/PM" in df.columns:
+        pcpm_summary = (
+            df.groupby("PC/PM")
+              .agg(
+                  Failures=("Is Fail", "sum"),
+                  Total_Tasks=("Is Fail", "count")
+              )
+              .reset_index()
+        )
+        pcpm_summary = pcpm_summary[pcpm_summary["Total_Tasks"] > 40]
+        pcpm_summary["Failure_Rate"] = (pcpm_summary["Failures"] / pcpm_summary["Total_Tasks"] * 100).round(1)
+        pcpm_summary = pcpm_summary.sort_values(by="Failure_Rate", ascending=True)
 
-    # (Similarly, **replace all other groupby mean aggregations** with Failures/Total_Tasks logic)
-    # For brevity, I haven’t re-pasted all the remaining charts here (they follow the same pattern).
+        if not pcpm_summary.empty:
+            pcpm_bar = px.bar(
+                pcpm_summary,
+                x="Failure_Rate",
+                y="PC/PM",
+                orientation="h",
+                color="Failure_Rate",
+                color_continuous_scale="Reds",
+                hover_data={"PC/PM": True, "Failure_Rate": True, "Total_Tasks": True},
+                title="Failure Rate by PC/PM (%)"
+            )
+            pcpm_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="PC/PM")
+            pcpm_bar_html = pcpm_bar.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            pcpm_bar_html = "<p><i>No PC/PMs with more than 40 tasks to display.</i></p>"
+    else:
+        pcpm_bar_html = "<p><i>PC/PM column not available.</i></p>"
 
-    # === Return HTML ===
+    # === Dual Axis Chart: Task Count & Failure Rate per PC/PM ===
+    if "PC/PM" in df.columns:
+        pcpm_dual = (
+            df.groupby("PC/PM")
+              .agg(
+                  Failures=("Is Fail", "sum"),
+                  Total_Tasks=("Is Fail", "count")
+              )
+              .reset_index()
+        )
+        pcpm_dual = pcpm_dual[pcpm_dual["Total_Tasks"] > 2]
+        pcpm_dual["Failure_Rate"] = (pcpm_dual["Failures"] / pcpm_dual["Total_Tasks"] * 100).round(1)
+        pcpm_dual = pcpm_dual.sort_values(by="Total_Tasks", ascending=False)
+
+        if not pcpm_dual.empty:
+            dual_fig = go.Figure()
+
+            dual_fig.add_trace(go.Bar(
+                x=pcpm_dual["PC/PM"],
+                y=pcpm_dual["Total_Tasks"],
+                name="Total Tasks",
+                yaxis="y1",
+                marker_color="lightskyblue"
+            ))
+
+            dual_fig.add_trace(go.Scatter(
+                x=pcpm_dual["PC/PM"],
+                y=pcpm_dual["Failure_Rate"],
+                name="Failure Rate (%)",
+                yaxis="y2",
+                mode="lines+markers",
+                marker=dict(color="crimson")
+            ))
+
+            dual_fig.update_layout(
+                title="Orders Completed vs. Failure Rate per PC/PM",
+                xaxis=dict(title="PC/PM"),
+                yaxis=dict(title="Total Tasks", side="left"),
+                yaxis2=dict(
+                    title="Failure Rate (%)",
+                    overlaying="y",
+                    side="right",
+                    range=[0, 100]
+                ),
+                legend=dict(x=0.01, y=0.99),
+                height=600
+            )
+            dual_axis_html = dual_fig.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            dual_axis_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
+    else:
+        dual_axis_html = "<p><i>PC/PM column not available.</i></p>"
+
+    # === First Name Failure Rates ===
+    def extract_first_names(pcpm_val):
+        if pd.isna(pcpm_val):
+            return []
+        names = re.split(r"[\/,&]+", str(pcpm_val))
+        firsts = []
+        for name in names:
+            name = name.strip()
+            if not name:
+                continue
+            if "," in name:
+                parts = name.split(",")
+                if len(parts) > 1:
+                    firsts.append(parts[1].strip().split()[0])
+            else:
+                firsts.append(name.split()[0])
+        return firsts
+
+    if "PC/PM" in df.columns:
+        first_name_rows = []
+        for _, row in df.iterrows():
+            firsts = extract_first_names(row["PC/PM"])
+            for first in firsts:
+                first_name_rows.append({"First": first, "Is Fail": row["Is Fail"]})
+
+        first_df = pd.DataFrame(first_name_rows)
+        if not first_df.empty:
+            summary = (
+                first_df.groupby("First")
+                    .agg(
+                        Failures=("Is Fail", "sum"),
+                        Total_Tasks=("Is Fail", "count")
+                    )
+                    .reset_index()
+            )
+            summary = summary[summary["Total_Tasks"] > 30]
+            summary["Failure_Rate"] = (summary["Failures"] / summary["Total_Tasks"] * 100).round(1)
+            summary = summary.sort_values(by="Failure_Rate", ascending=False)
+
+            if not summary.empty:
+                first_bar = px.bar(
+                    summary,
+                    x="Failure_Rate",
+                    y="First",
+                    orientation="h",
+                    color="Failure_Rate",
+                    color_continuous_scale="Reds",
+                    hover_data={"First": True, "Failure_Rate": True, "Total_Tasks": True},
+                    title="Failure Rate by First Name (from PC/PM)"
+                )
+                first_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="First Name")
+                first_name_html = first_bar.to_html(full_html=False, include_plotlyjs=False)
+            else:
+                first_name_html = "<p><i>No individuals with >30 tasks to show.</i></p>"
+        else:
+            first_name_html = "<p><i>No valid PC/PM names parsed.</i></p>"
+    else:
+        first_name_html = "<p><i>PC/PM column not found.</i></p>"
+    # === Monthly Failure Rate by First Name ===
+    if "PC/PM" in df.columns and "Completed Date" in df.columns:
+        temp_df = df[["PC/PM", "Is Fail", "Completed Date"]].copy()
+        temp_df["Month"] = pd.to_datetime(temp_df["Completed Date"]).dt.to_period("M").astype(str)
+
+        name_records = []
+        for _, row in temp_df.iterrows():
+            names = extract_first_names(row["PC/PM"])
+            for name in names:
+                name_records.append({"First": name, "Month": row["Month"], "Is Fail": row["Is Fail"]})
+
+        name_month_df = pd.DataFrame(name_records)
+        if not name_month_df.empty:
+            grouped = (
+                name_month_df.groupby(["First", "Month"])
+                    .agg(
+                        Failures=("Is Fail", "sum"),
+                        Total_Tasks=("Is Fail", "count")
+                    )
+                    .reset_index()
+            )
+            grouped = grouped[grouped["Total_Tasks"] > 50]
+            grouped["Failure_Rate"] = (grouped["Failures"] / grouped["Total_Tasks"] * 100).round(1)
+
+            if not grouped.empty:
+                line_fig = px.line(
+                    grouped,
+                    x="Month",
+                    y="Failure_Rate",
+                    color="First",
+                    markers=True,
+                    title="Monthly Failure Rate by Individual First Name"
+                )
+                line_fig.update_layout(height=600, yaxis_title="Failure Rate (%)")
+                name_time_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
+            else:
+                name_time_html = "<p><i>No sufficient monthly data to chart.</i></p>"
+        else:
+            name_time_html = "<p><i>No valid PC/PM names or dates.</i></p>"
+    else:
+        name_time_html = "<p><i>PC/PM or Completed Date column missing.</i></p>"
+
+    # === Monthly Failure Rate by Task Owner (line chart) ===
+    if "Task Owner" in df.columns and "Completed Date" in df.columns:
+        df["Month"] = pd.to_datetime(df["Completed Date"]).dt.to_period("M").astype(str)
+
+        owner_task_counts = df["Task Owner"].value_counts()
+        eligible_owners = owner_task_counts[owner_task_counts >= 450].index.tolist()
+        owner_df = df[df["Task Owner"].isin(eligible_owners)]
+
+        if not owner_df.empty:
+            global_monthly = (
+                df.groupby("Month")
+                  .agg(
+                      Failures=("Is Fail", "sum"),
+                      Total_Tasks=("Is Fail", "count")
+                  )
+                  .reset_index()
+            )
+            global_monthly["Global Fail %"] = (global_monthly["Failures"] / global_monthly["Total_Tasks"] * 100).round(1)
+
+            fail_fig = go.Figure()
+
+            for owner in sorted(eligible_owners):
+                owner_grouped = (
+                    owner_df[owner_df["Task Owner"] == owner]
+                    .groupby("Month")
+                    .agg(
+                        Failures=("Is Fail", "sum"),
+                        Total_Tasks=("Is Fail", "count")
+                    )
+                    .reset_index()
+                )
+                owner_grouped["Fail %"] = (owner_grouped["Failures"] / owner_grouped["Total_Tasks"] * 100).round(1)
+
+                fail_fig.add_trace(
+                    go.Scatter(
+                        x=owner_grouped["Month"],
+                        y=owner_grouped["Fail %"],
+                        name=owner,
+                        mode="lines+markers"
+                    )
+                )
+
+            fail_fig.add_trace(
+                go.Scatter(
+                    x=global_monthly["Month"],
+                    y=global_monthly["Global Fail %"],
+                    name="Global Avg",
+                    line=dict(dash="dot", color="black")
+                )
+            )
+
+            fail_fig.update_layout(
+                title="Monthly Failure Rate by Task Owner (min 450 tasks)",
+                yaxis_title="Failure Rate (%)",
+                xaxis_title="Month",
+                yaxis=dict(range=[0, 100]),
+                height=600
+            )
+
+            task_owner_time_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            task_owner_time_html = "<p><i>No Task Owners with >=450 tasks to plot.</i></p>"
+    else:
+        task_owner_time_html = "<p><i>Missing Task Owner or Completed Date columns.</i></p>"
+
+    # === Monthly Unique Task Owners and Failure Rate Combo Chart ===
+    monthly_summary = (
+        df.groupby("Month")
+          .agg(
+              Unique_Owners=("Task Owner", pd.Series.nunique),
+              Failures=("Is Fail", "sum"),
+              Total_Tasks=("Is Fail", "count")
+          )
+          .reset_index()
+    )
+    monthly_summary["Failure_Rate"] = (monthly_summary["Failures"] / monthly_summary["Total_Tasks"] * 100).round(1)
+
+    if not monthly_summary.empty:
+        combo_fig = go.Figure()
+
+        combo_fig.add_trace(go.Bar(
+            x=monthly_summary["Month"],
+            y=monthly_summary["Unique_Owners"],
+            name="Unique Task Owners",
+            marker_color="lightblue",
+            yaxis="y1"
+        ))
+
+        combo_fig.add_trace(go.Scatter(
+            x=monthly_summary["Month"],
+            y=monthly_summary["Failure_Rate"],
+            name="Failure Rate (%)",
+            yaxis="y2",
+            mode="lines+markers",
+            marker=dict(color="crimson")
+        ))
+
+        combo_fig.update_layout(
+            title="Monthly Failure Rate and Unique Task Owners",
+            xaxis_title="Month",
+            yaxis=dict(
+                title="Unique Task Owners",
+                side="left",
+                showgrid=False
+            ),
+            yaxis2=dict(
+                title="Failure Rate (%)",
+                overlaying="y",
+                side="right",
+                range=[0, 100]
+            ),
+            legend=dict(x=0.90, y=0.99),
+            height=500
+        )
+
+        combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
+    else:
+        combo_html = "<p><i>Insufficient data to render task owner/failure chart.</i></p>"
+    # === Return the full HTML tab ===
     return f"""
     <div id="failureTab" class="main-tab">
         <h2>Failure Analysis</h2>
@@ -167,6 +467,17 @@ def generate_failure_analysis_tab(df):
         {assoc_desc}
         <h3>Failure Rate by State</h3>
         {heatmap_html}
-        <!-- Add other charts here, ensuring all Failure_Rate calculations are sum/count -->
+        <h3>Failure Rate by PC/PM</h3>
+        {pcpm_bar_html}
+        <h3>PC/PM Task Volume vs. Failure Rate</h3>
+        {dual_axis_html}
+        <h3>Failure Rate by First Name (from PC/PM)</h3>
+        {first_name_html}
+        <h3>Monthly Failure Rate by First Name</h3>
+        {name_time_html}
+        <h3>Monthly Failure Rate by Task Owner</h3>
+        {task_owner_time_html}
+        <h3>Monthly Failure Rate and Unique Task Owners</h3>
+        {combo_html}
     </div>
     """
