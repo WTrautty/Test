@@ -1,36 +1,597 @@
-=IF(
-  (
-    90
-    - IF(ISBLANK([Failed & Cancelled/Rescheduled (Process)]),10,0)
-    - IF(ISBLANK([Completion Email]),10,0)
-    - IF(ISBLANK([Scrub Quality]),20,0)
-    - IF(ISBLANK([Non-Technical Notes]),10,0)
-    - IF(ISBLANK([Technical Notes]),20,0)
-    - IF(ISBLANK([Closure Activities]),10,0)
-    - IF([Cleanup],0,10)
-  )=0,
-  0,
-  (
-    IF(ISBLANK([Failed & Cancelled/Rescheduled (Process)]),0,[Failed & Cancelled/Rescheduled (Process)])
-    + IF(ISBLANK([Completion Email]),0,[Completion Email])
-    + IF(ISBLANK([Scrub Quality]),0,[Scrub Quality]*2)
-    + IF(ISBLANK([Non-Technical Notes]),0,[Non-Technical Notes])
-    + IF(ISBLANK([Technical Notes]),0,[Technical Notes]*2)
-    + IF(ISBLANK([Closure Activities]),0,[Closure Activities])
-    + IF([Cleanup],10,0)
-  )
-  /
-  (
-    90
-    - IF(ISBLANK([Failed & Cancelled/Reschedule (Process)]),10,0)
-    - IF(ISBLANK([Completion Email]),10,0)
-    - IF(ISBLANK([Scrub Quality]),20,0)
-    - IF(ISBLANK([Non-Technical Notes]),10,0)
-    - IF(ISBLANK([Technical Notes]),20,0)
-    - IF(ISBLANK([Closure Activities]),10,0)
-    - IF([Cleanup],0,10)
-  )
-)
+import pandas as pd
+import numpy as np
+from scipy.stats import chi2_contingency, spearmanr
+import plotly.graph_objects as go
+import plotly.express as px
+
+def generate_failure_analysis_tab(df):
+    required_cols = ["Revised LEC", "Closure Code 1", "Task Owner", "Completed Date", "Create Date", "PID"]
+    if not all(col in df.columns for col in required_cols):
+        return "<div id='failureTab' class='main-tab'><h2>Required columns not found.</h2></div>"
+
+    df = df.copy()
+    df["Revised LEC"] = df["Revised LEC"].fillna("Unknown").astype(str)
+    df["Task Owner"] = df["Task Owner"].fillna("Unknown").astype(str)
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False).astype(int)
+    df["Completed Date"] = pd.to_datetime(df["Completed Date"], errors="coerce")
+    df["Create Date"] = pd.to_datetime(df["Create Date"], errors="coerce")
+    df["Days to Close"] = (df["Completed Date"] - df["Create Date"]).dt.days
+    df = df.dropna(subset=["Completed Date", "Create Date"])
+    if df.empty:
+        return "<div id='failureTab' class='main-tab'><h2>No valid data after date processing.</h2></div>"
+    df["Month"] = df["Completed Date"].dt.to_period("M").astype(str)
+
+    # === Merge with SITE_INFO ===
+    try:
+        site_info = pd.read_excel(SITE_INFO_PATH, sheet_name="USDA Master", engine='openpyxl')
+        site_info = site_info.rename(columns={
+            "Lumen Ckt ID": "PID",
+            "Site Type (Ex lg, lg, med, small)": "Site Type",
+            "Complex or Simple EXD?": "Complex or Simple",
+        })
+        site_info_cols = ["PID", "Time Zone", "MA", "State", "Site Type", "Phase", "Complex or Simple", "PC/PM"]
+        site_info = site_info[[col for col in site_info_cols if col in site_info.columns]]
+        merge_stats = df.merge(site_info, on="PID", how="left", indicator=True)
+        unmatched = (merge_stats["_merge"] == "left_only").mean()
+        if unmatched > 0.5:
+            return f"<div id='failureTab' class='main-tab'><h2>Warning: {unmatched*100:.1f}% of PIDs unmatched in SITE_INFO merge.</h2></div>"
+        df = merge_stats.drop(columns=["_merge"])
+    except Exception as e:
+        return f"<div id='failureTab' class='main-tab'><h2>Error loading SITE_INFO: {e}</h2></div>"
+
+    # === Association Calculation ===
+    assoc_x, assoc_y, assoc_text, p_values = [], [], [], []
+    num_tests = 0
+
+    def cramers_v(x, y):
+        contingency = pd.crosstab(x, y)
+        if contingency.shape[0] < 2 or contingency.shape[1] < 2:
+            return 0, 1.0
+        chi2, p, _, _ = chi2_contingency(contingency)
+        n = contingency.sum().sum()
+        r, k = contingency.shape
+        return (np.sqrt(chi2 / (n * (min(k, r) - 1))), p)
+
+    def spearman_corr(x, y):
+        try:
+            corr, p = spearmanr(x, y)
+            return abs(corr), p
+        except:
+            return 0, 1.0
+
+    def annotate(value, pval, alpha=0.05):
+        strength = ("Moderate" if value >= 0.3 else "Weak" if value >= 0.1 else "Negligible")
+        significance = "significant" if pval < alpha else "not significant"
+        return f"{strength} association ({significance})"
+
+    def add_assoc(label, value, p, method):
+        p_display = f"{p:.3f}" if p >= 0.001 else f"{p:.1e}"
+        assoc_x.append(label)
+        assoc_y.append(value)
+        assoc_text.append(f"{method} = {value:.3f}<br>p = {p_display}<br>({annotate(value, p)})")
+        p_values.append(p)
+
+    # === Apply associations ===
+    targets = {
+        "Revised LEC": "cat",
+        "Task Owner": "cat",
+        "Time Zone": "cat",
+        "MA": "cat",
+        "State": "cat",
+        "Site Type": "cat",
+        "Phase": "cat",
+        "Complex or Simple": "cat",
+        "PC/PM": "cat",
+        "Days to Close": "num",
+        "Month": "cat"
+    }
+
+    for col, kind in targets.items():
+        if col not in df.columns or df[col].nunique() <= 1:
+            continue
+        if kind == "cat":
+            val, p = cramers_v(df[col].fillna("Unknown"), df["Is Fail"])
+            add_assoc(col, val, p, "Cramér's V")
+            num_tests += 1
+        else:
+            val, p = spearman_corr(df[col], df["Is Fail"])
+            add_assoc(col, val, p, "Spearman r")
+            num_tests += 1
+
+    # === Bonferroni Correction ===
+    alpha = 0.05 / max(num_tests, 1)
+    assoc_text = [
+        text.replace("(Moderate association)", f"(Moderate association, {'significant' if p < alpha else 'not significant'})")
+             .replace("(Weak association)", f"(Weak association, {'significant' if p < alpha else 'not significant'})")
+             .replace("(Negligible association)", f"(Negligible association, {'significant' if p < alpha else 'not significant'})")
+        for text, p in zip(assoc_text, p_values)
+    ]
+
+    # === Association Bar Chart ===
+    assoc_fig = go.Figure(data=[
+        go.Bar(
+            x=assoc_x,
+            y=assoc_y,
+            text=assoc_text,
+            textposition="auto",
+            marker_color=px.colors.qualitative.Pastel
+        )
+    ])
+    assoc_fig.update_layout(
+        title="Factors Associated with Failures",
+        yaxis_title="Association Strength",
+        yaxis=dict(range=[-0.05, 0.45]),
+        height=500
+    )
+
+    assoc_desc = f"""
+    <p>This chart analyzes correlations between failure outcomes and related factors using:<br>
+    <ul>
+        <li><b>Cramér's V</b> for categorical variables</li>
+        <li><b>Spearman r</b> for numerical trends</li>
+    </ul>
+    Significance adjusted with Bonferroni correction (α = {alpha:.3f}).<br>
+    <b>Higher bars indicate stronger associations</b>, not causality.</p>
+    """
+
+    # === Heatmap by State ===
+    if "State" in df.columns:
+        state_summary = (
+            df.groupby("State")
+              .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
+              .reset_index()
+        )
+        state_summary["Failure_Rate"] = (state_summary["Failure_Rate"] * 100).round(1)
+
+        heatmap_fig = px.choropleth(
+            state_summary,
+            locations="State",
+            locationmode="USA-states",
+            scope="usa",
+            color="Failure_Rate",
+            hover_data={"State": True, "Failure_Rate": True, "Total_Tasks": True},
+            color_continuous_scale="Reds",
+            title="Failure Rate by State",
+        )
+        heatmap_fig.update_layout(height=600)
+        heatmap_html = heatmap_fig.to_html(full_html=False, include_plotlyjs=False)
+    else:
+        heatmap_html = "<p><i>State column not available.</i></p>"
+
+        # === Row Bar Chart: Failure Rate by PC/PM ===
+    
+    # === Row Bar Chart: Failure Rate by PC/PM (min 3 tasks) ===
+    if "PC/PM" in df.columns:
+        pcpm_summary = (
+            df.groupby("PC/PM")
+              .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
+              .reset_index()
+        )
+        pcpm_summary = pcpm_summary[pcpm_summary["Total_Tasks"] > 40]
+        pcpm_summary["Failure_Rate"] = (pcpm_summary["Failure_Rate"] * 100).round(1)
+        pcpm_summary = pcpm_summary.sort_values(by="Failure_Rate", ascending=True)
+
+        if not pcpm_summary.empty:
+            pcpm_bar = px.bar(
+                pcpm_summary,
+                x="Failure_Rate",
+                y="PC/PM",
+                orientation="h",
+                color="Failure_Rate",
+                color_continuous_scale="Reds",
+                hover_data={"PC/PM": True, "Failure_Rate": True, "Total_Tasks": True},
+                title="Failure Rate by PC/PM (%)"
+            )
+            pcpm_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="PC/PM")
+            pcpm_bar_html = pcpm_bar.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            pcpm_bar_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
+    else:
+        pcpm_bar_html = "<p><i>PC/PM column not available.</i></p>"
 
 
-[Cleanup][Closure Activities][Created][Failed & Cancelled/Rescheduled (Process)][Non-Technical Notes][Scrub Quality][Technical Notes]
+        # === Dual Axis Bar Chart: Task Count & Failure Rate per PC/PM (min 3 tasks) ===
+    if "PC/PM" in df.columns:
+        pcpm_summary_dual = (
+            df.groupby("PC/PM")
+              .agg(Failure_Rate=("Is Fail", "mean"), Total_Tasks=("Is Fail", "count"))
+              .reset_index()
+        )
+        pcpm_summary_dual = pcpm_summary_dual[pcpm_summary_dual["Total_Tasks"] > 2]
+        pcpm_summary_dual["Failure_Rate"] = (pcpm_summary_dual["Failure_Rate"] * 100).round(1)
+        pcpm_summary_dual = pcpm_summary_dual.sort_values(by="Total_Tasks", ascending=False)
+
+        if not pcpm_summary_dual.empty:
+            dual_fig = go.Figure()
+
+            # Bar: Total Tasks
+            dual_fig.add_trace(go.Bar(
+                x=pcpm_summary_dual["PC/PM"],
+                y=pcpm_summary_dual["Total_Tasks"],
+                name="Total Tasks",
+                yaxis="y1",
+                marker_color="lightskyblue"
+            ))
+
+            # Line: Failure Rate (%)
+            dual_fig.add_trace(go.Scatter(
+                x=pcpm_summary_dual["PC/PM"],
+                y=pcpm_summary_dual["Failure_Rate"],
+                name="Failure Rate (%)",
+                yaxis="y2",
+                mode="lines+markers",
+                marker=dict(color="crimson")
+            ))
+
+            dual_fig.update_layout(
+                title="Orders Completed vs. Failure Rate per PC/PM",
+                xaxis=dict(title="PC/PM"),
+                yaxis=dict(title="Total Tasks", side="left"),
+                yaxis2=dict(
+                    title="Failure Rate (%)",
+                    overlaying="y",
+                    side="right",
+                    range=[0, 100]
+                ),
+                legend=dict(x=0.01, y=0.99),
+                height=600
+            )
+
+            dual_axis_html = dual_fig.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            dual_axis_html = "<p><i>No PC/PMs with more than 2 tasks to display.</i></p>"
+    else:
+        dual_axis_html = "<p><i>PC/PM column not available.</i></p>"
+
+    def extract_first_names(pcpm_val):
+        if pd.isna(pcpm_val):
+            return []
+        names = re.split(r"[\/,&]+", str(pcpm_val))  # Split on / , & or other delimiters
+        firsts = []
+        for name in names:
+            name = name.strip()
+            if not name:
+                continue
+            if "," in name:  # e.g. "Smith, John"
+                parts = name.split(",")
+                if len(parts) > 1:
+                    firsts.append(parts[1].strip().split()[0])
+            else:
+                firsts.append(name.split()[0])
+        return firsts
+
+    if "PC/PM" in df.columns:
+        first_name_rows = []
+        for _, row in df.iterrows():
+            firsts = extract_first_names(row["PC/PM"])
+            for first in firsts:
+                first_name_rows.append({"First": first, "Is Fail": row["Is Fail"]})
+
+        first_df = pd.DataFrame(first_name_rows)
+        if not first_df.empty:
+            summary = (
+                first_df.groupby("First")
+                    .agg(Failure_Rate=("Is Fail", "mean"), Count=("Is Fail", "count"))
+                    .reset_index()
+            )
+            summary = summary[summary["Count"] > 30]
+            summary["Failure_Rate"] = (summary["Failure_Rate"] * 100).round(1)
+            summary = summary.sort_values(by="Failure_Rate", ascending=False)
+
+            if not summary.empty:
+                first_bar = px.bar(
+                    summary,
+                    x="Failure_Rate",
+                    y="First",
+                    orientation="h",
+                    color="Failure_Rate",
+                    color_continuous_scale="Reds",
+                    hover_data={"First": True, "Failure_Rate": True, "Count": True},
+                    title="Failure Rate by First Name (from PC/PM)"
+                )
+                first_bar.update_layout(height=600, xaxis_title="Failure Rate (%)", yaxis_title="First Name")
+                first_name_html = first_bar.to_html(full_html=False, include_plotlyjs=False)
+            else:
+                first_name_html = "<p><i>No individuals with >2 tasks to show.</i></p>"
+        else:
+            first_name_html = "<p><i>No valid PC/PM names parsed.</i></p>"
+    else:
+        first_name_html = "<p><i>PC/PM column not found.</i></p>"
+
+        # === Line Chart: Monthly Failure Rate by First Name ===
+    if "PC/PM" in df.columns and "Completed Date" in df.columns:
+        temp_df = df[["PC/PM", "Is Fail", "Completed Date"]].copy()
+        temp_df["Month"] = pd.to_datetime(temp_df["Completed Date"]).dt.to_period("M").astype(str)
+
+        name_records = []
+        for _, row in temp_df.iterrows():
+            names = extract_first_names(row["PC/PM"])
+            for name in names:
+                name_records.append({"First": name, "Month": row["Month"], "Is Fail": row["Is Fail"]})
+
+        name_month_df = pd.DataFrame(name_records)
+        if not name_month_df.empty:
+            grouped = (
+                name_month_df.groupby(["First", "Month"])
+                    .agg(Failure_Rate=("Is Fail", "mean"), Count=("Is Fail", "count"))
+                    .reset_index()
+            )
+            grouped = grouped[grouped["Count"] > 50]
+            grouped["Failure_Rate"] = (grouped["Failure_Rate"] * 100).round(1)
+
+            if not grouped.empty:
+                line_fig = px.line(
+                    grouped,
+                    x="Month",
+                    y="Failure_Rate",
+                    color="First",
+                    markers=True,
+                    title="Monthly Failure Rate by Individual First Name"
+                )
+                line_fig.update_layout(height=600, yaxis_title="Failure Rate (%)")
+                name_time_html = line_fig.to_html(full_html=False, include_plotlyjs=False)
+            else:
+                name_time_html = "<p><i>No sufficient monthly data to chart.</i></p>"
+        else:
+            name_time_html = "<p><i>No valid PC/PM names or dates.</i></p>"
+    else:
+        name_time_html = "<p><i>PC/PM or Completed Date column missing.</i></p>"
+
+
+    # === Line Chart: Failure Rate by Task Owner per Month (min 100 tasks) ===
+    if "Task Owner" in df.columns and "Completed Date" in df.columns:
+        df["Month"] = pd.to_datetime(df["Completed Date"]).dt.to_period("M").astype(str)
+
+        owner_task_counts = df["Task Owner"].value_counts()
+        eligible_owners = owner_task_counts[owner_task_counts >= 450].index.tolist()
+        owner_df = df[df["Task Owner"].isin(eligible_owners)]
+
+        if not owner_df.empty:
+            # Global failure rate per month
+            global_monthly = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Global Fail %")
+
+            # Build multi-line figure
+            fail_fig = go.Figure()
+
+            for owner in sorted(eligible_owners):
+                ofail = (
+                    owner_df[owner_df["Task Owner"] == owner]
+                    .groupby("Month")["Is Fail"]
+                    .mean()
+                    .mul(100)
+                    .reset_index(name="Fail %")
+                )
+
+                merged = pd.merge(ofail, global_monthly, on="Month", how="outer")
+                fail_fig.add_trace(
+                    go.Scatter(x=merged["Month"], y=merged["Fail %"], name=owner)
+                )
+
+            # Add global average line
+            fail_fig.add_trace(
+                go.Scatter(
+                    x=global_monthly["Month"],
+                    y=global_monthly["Global Fail %"],
+                    name="Global Avg",
+                    line=dict(dash="dot", color="black")
+                )
+            )
+
+            fail_fig.update_layout(
+                title="Monthly Failure Rate by Task Owner (min 300 tasks)",
+                yaxis_title="Failure Rate (%)",
+                xaxis_title="Month",
+                yaxis=dict(range=[0, 40]),
+                height=600
+            )
+
+            task_owner_time_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+        else:
+            task_owner_time_html = "<p><i>No Task Owners with 100+ tasks to plot.</i></p>"
+    else:
+        task_owner_time_html = "<p><i>Missing Task Owner or Completed Date columns.</i></p>"
+
+        # === Bar + Line Chart: Monthly Unique Task Owners and Failure Rate ===
+    summary = (
+        df.groupby("Month")
+          .agg(
+              Unique_Owners=("Task Owner", pd.Series.nunique),
+              Failure_Rate=("Is Fail", "mean")
+          )
+          .reset_index()
+    )
+    summary["Failure_Rate"] = (summary["Failure_Rate"] * 100).round(1)
+
+    if not summary.empty:
+        combo_fig = go.Figure()
+
+        # Bar for unique owners
+        combo_fig.add_trace(go.Bar(
+            x=summary["Month"],
+            y=summary["Unique_Owners"],
+            name="Unique Task Owners",
+            marker_color="lightblue",
+            yaxis="y1"
+        ))
+
+        # Line for failure rate
+        combo_fig.add_trace(go.Scatter(
+            x=summary["Month"],
+            y=summary["Failure_Rate"],
+            name="Failure Rate (%)",
+            yaxis="y2",
+            mode="lines+markers",
+            marker=dict(color="crimson")
+        ))
+
+        combo_fig.update_layout(
+            title="Monthly Failure Rate and Unique Task Owners",
+            xaxis_title="Month",
+            yaxis=dict(
+                title="Unique Task Owners",
+                side="left",
+                showgrid=False
+            ),
+            yaxis2=dict(
+                title="Failure Rate (%)",
+                overlaying="y",
+                side="right",
+                range=[0, 100]
+            ),
+            legend=dict(x=0.90, y=0.99),
+            height=500
+        )
+
+        combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=False)
+    else:
+        combo_html = "<p><i>Insufficient data to render task owner/failure chart.</i></p>"
+
+    return f"""
+    <div id="failureTab" class="main-tab">
+        <h2>Failure Analysis</h2>
+        {assoc_fig.to_html(full_html=False, include_plotlyjs=True)}
+        {assoc_desc}
+        {combo_html}
+        <h3>Failure Rate by State</h3>
+        {heatmap_html}
+        <h3>Failure Rate by PC/PM</h3>
+        {pcpm_bar_html}
+        <h3>PC/PM Task Volume vs. Failure Rate</h3>
+        {dual_axis_html}
+        <h3>Failure Rate by PC/PM Unpaired</h3>
+        {first_name_html}
+        <h3>Monthly Failure Rate</h3>
+        {name_time_html}
+        {task_owner_time_html}
+    </div>
+    """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def generate_global_tab(df):
+    import pandas as pd
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    #print("[DEBUG] Starting generate_global_tab")
+    df = df.copy()
+    df["Is Fail"] = df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
+    df['Month'] = pd.to_datetime(df['Month'].astype(str)).dt.to_period('M')
+    df = df.sort_values('Month')
+    df['Month'] = df['Month'].astype(str)
+
+    #print("[DEBUG] Unique Months in DataFrame:", df['Month'].unique())
+
+    # === Pie Chart for Closure Code Distribution ===
+    pie_df = (
+        df["Closure Code 1"]
+        .fillna("Unknown")
+        .value_counts(normalize=True)
+        .mul(100)
+        .reset_index()
+    )
+    pie_df.columns = ["proportion", "Percentage"]
+    #print("[DEBUG] Pie Chart Categories:\n", pie_df)
+
+    pie = px.pie(pie_df, names="proportion", values="Percentage", title="Global Closure Code Distribution")
+    pie.update_layout(height=450)
+    pie_html = pie.to_html(full_html=False, include_plotlyjs=True)
+
+    # === Aggregated Stats ===
+    stats = df.groupby("Month").agg(
+        Closed_Orders=("Is Fail", "count"),
+        Failures=("Is Fail", "sum")
+    ).reset_index()
+    stats["Failure Rate (%)"] = (stats["Failures"] / stats["Closed_Orders"]) * 100
+    #print("[DEBUG] Monthly Aggregated Stats:\n", stats)
+
+    # === Combo Chart ===
+    combo_fig = go.Figure()
+    combo_fig.add_trace(go.Scatter(
+        x=stats["Month"],
+        y=stats["Closed_Orders"],
+        mode="lines+markers",
+        name="Closed Orders",
+        yaxis="y"
+    ))
+    combo_fig.add_trace(go.Bar(
+        x=stats["Month"],
+        y=stats["Failures"],
+        name="Failed Orders",
+        yaxis="y"
+    ))
+    combo_fig.add_trace(go.Scatter(
+        x=stats["Month"],
+        y=stats["Failure Rate (%)"],
+        name="Failure Rate (%)",
+        mode="lines+markers",
+        yaxis="y2",
+        opacity=0.6,
+        marker_color="crimson",
+        hovertemplate="%{y:.2f}% failure rate<br>Month: %{x}<extra></extra>"
+    ))
+
+    combo_fig.update_layout(
+        title="Closed Orders, Failures, and Failure Rate per Month",
+        barmode="overlay",
+        height=450,
+        xaxis=dict(
+            title="Month",
+            showgrid=False
+        ),
+        yaxis=dict(
+            title="Order Count",
+            showgrid=False
+        ),
+        yaxis2=dict(
+            overlaying="y",
+            side="right",
+            range=[0, 100],
+            showgrid=False,
+            showline=False,
+            showticklabels=False
+        ),
+        legend=dict(x=.90, y=.99, xanchor='right', yanchor='top'),
+        margin=dict(t=50, b=50)
+    )
+
+    combo_html = combo_fig.to_html(full_html=False, include_plotlyjs=True)
+    #print("[DEBUG] Finished generate_global_tab")
+
+    return f"""
+    <div id="globalTab" class="main-tab">
+      <h2>Global Statistics</h2>
+      <hr>{combo_html}
+      <hr>{pie_html}
+    </div>
+    """
