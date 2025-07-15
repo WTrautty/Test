@@ -9,7 +9,7 @@ def generate_individual_tab(df, customer_id="USDA"):
     top_df["Is Fail"] = top_df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
     top_df["Month"] = top_df["Completed Date"].dt.to_period("M").astype(str)
 
-    # ✅ Correct global average: average tasks per technician per month
+    # Global average: average tasks per technician per month
     monthly_per_owner = df.groupby(["Month", "Task Owner"]).size().reset_index(name="Count")
     global_avg = monthly_per_owner.groupby("Month")["Count"].mean().reset_index(name="Average")
 
@@ -93,14 +93,24 @@ def generate_individual_tab(df, customer_id="USDA"):
         fail_fig.update_layout(title=f"{owner} – % Fail Rate", yaxis=dict(range=[0, 100]), height=300)
         fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
-        # Static bar chart: Audit Scores Jan–Jul
+        # Static bar chart: Audit Scores Jan–Jul with dynamic colors
         audit_months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
         audit_scores = [85, 90, 88, 92, 87, 93, 89]  # example static values
+        min_score = min(audit_scores)
+        max_score = max(audit_scores)
+        # Create a color gradient from blue (low) to green (high)
+        audit_colors = [
+            f"rgb({int(0 + 0*(v - min_score)/(max_score - min_score))},"
+            f"{int(100 + 155*(v - min_score)/(max_score - min_score))},"
+            f"{int(255 - 255*(v - min_score)/(max_score - min_score))})"
+            for v in audit_scores
+        ]
+
         audit_fig = go.Figure(
             go.Bar(
                 x=audit_months,
                 y=audit_scores,
-                marker_color="steelblue"
+                marker_color=audit_colors
             )
         )
         audit_fig.update_layout(
