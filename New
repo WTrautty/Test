@@ -1,19 +1,51 @@
 def generate_individual_tab(df, customer_id="USDA"):
+    # === Dynamic Caption Helpers ===
+    def explain_pie_chart(owner):
+        return f"""
+        <div style="font-family:sans-serif; font-size:14px; margin-bottom:5px;">
+          <strong>What this shows:</strong> This pie chart shows the breakdown of task outcomes for <b>{owner}</b>, such as success or failure. Hover to see both the percentage and number of orders.
+        </div>
+        """
+
+    def explain_bar_chart(owner, top_label):
+        return f"""
+        <div style="font-family:sans-serif; font-size:14px; margin-bottom:5px;">
+          <strong>What this shows:</strong> This bar chart compares how <b>{owner}</b>'s task results differ from <b>{top_label}</b>. Green means better, red means worse.
+        </div>
+        """
+
+    def explain_line_chart(owner):
+        return f"""
+        <div style="font-family:sans-serif; font-size:14px; margin-bottom:5px;">
+          <strong>What this shows:</strong> This line graph shows how many tasks <b>{owner}</b> completed each month. It includes comparisons to the top performer and team average.
+        </div>
+        """
+
+    def explain_fail_rate(owner, top_label):
+        return f"""
+        <div style="font-family:sans-serif; font-size:14px; margin-bottom:5px;">
+          <strong>What this shows:</strong> This chart shows what percentage of <b>{owner}</b>'s tasks failed each month. Lower is better. It compares to <b>{top_label}</b> and the global average.
+        </div>
+        """
+
+    def explain_audit_chart():
+        return """
+        <div style="font-family:sans-serif; font-size:14px; margin-bottom:5px;">
+          <strong>What this shows:</strong> These audit scores (Jan–Jul) reflect overall performance across several categories. Higher scores mean better compliance with standards.
+        </div>
+        """
+
     owner_counts = df["Task Owner"].value_counts()
     valid = owner_counts[owner_counts >= TAB_MIN_ENTRIES].index.tolist()
     if not valid:
         return "<div id='individualTab' class='main-tab'><h2>No Individual Reports Available</h2></div>"
 
-    # Prepare top performer dataframe
     top_df = df[df["Task Owner"] == TOP_PERFORMER].copy()
     top_df["Is Fail"] = top_df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
     top_df["Month"] = top_df["Completed Date"].dt.to_period("M").astype(str)
 
-    # Global average: average tasks per technician per month
     monthly_per_owner = df.groupby(["Month", "Task Owner"]).size().reset_index(name="Count")
     global_avg = monthly_per_owner.groupby("Month")["Count"].mean().reset_index(name="Average")
-
-    # Top performer monthly and failure stats
     top_monthly = top_df.groupby("Month").size().reset_index(name="Completed")
     tfail = top_df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Top Fail %")
 
@@ -26,18 +58,29 @@ def generate_individual_tab(df, customer_id="USDA"):
         owner_df["Is Fail"] = owner_df["Closure Code 1"].str.lower().str.contains("fail|failed|failure", na=False)
         owner_df["Month"] = owner_df["Completed Date"].dt.to_period("M").astype(str)
 
-        # Pie chart: closure code distribution
+        # === Pie Chart: Closure Code Distribution (with raw count)
         op = owner_df["Closure Code 1"].value_counts(normalize=True).mul(100)
         tp = top_df["Closure Code 1"].value_counts(normalize=True).mul(100)
         codes = sorted(set(op.index).union(tp.index))
         op = op.reindex(codes, fill_value=0)
         tp = tp.reindex(codes, fill_value=0)
         pie_df = pd.DataFrame({"Closure Code 1": codes, "Owner %": op.values})
-        pie = px.pie(pie_df, names="Closure Code 1", values="Owner %", title=f"{owner}'s Closure Code Distribution")
-        pie.update_layout(height=450)
-        pie_html = pie.to_html(full_html=False, include_plotlyjs=(i == 0))
+        pie_df["Count"] = (op * len(owner_df) / 100).round().astype(int)
 
-        # Bar chart: delta from top performer
+        pie = px.pie(
+            pie_df,
+            names="Closure Code 1",
+            values="Owner %",
+            title=f"{owner}'s Closure Code Distribution",
+            hover_data=["Count"]
+        )
+        pie.update_traces(
+            hovertemplate="<b>%{label}</b><br>%{value:.2f}%<br>Orders: %{customdata[0]}<extra></extra>"
+        )
+        pie.update_layout(height=450)
+        pie_html = explain_pie_chart(owner) + pie.to_html(full_html=False, include_plotlyjs=(i == 0))
+
+        # === Bar Chart: Delta vs Top Performer
         diff = (op - tp).reset_index()
         diff.columns = ["Closure Code 1", "Delta"]
         diff = diff.sort_values("Delta")
@@ -47,80 +90,45 @@ def generate_individual_tab(df, customer_id="USDA"):
             else "blue"
             for c, d in zip(diff["Closure Code 1"], diff["Delta"])
         ]
-        bar = go.Figure(
-            go.Bar(y=diff["Closure Code 1"], x=diff["Delta"], orientation="h", marker_color=colors)
-        )
-        bar.update_layout(
-            title=f"{owner} vs {TOP_LABEL} – Closure Code Δ", xaxis=dict(range=[-20, 20]), height=300
-        )
-        bar_html = bar.to_html(full_html=False, include_plotlyjs=False)
+        bar = go.Figure(go.Bar(y=diff["Closure Code 1"], x=diff["Delta"], orientation="h", marker_color=colors))
+        bar.update_layout(title=f"{owner} vs {TOP_LABEL} – Closure Code Δ", xaxis=dict(range=[-20, 20]), height=300)
+        bar_html = explain_bar_chart(owner, TOP_LABEL) + bar.to_html(full_html=False, include_plotlyjs=False)
 
-        # Line chart: monthly completed tasks
+        # === Line Chart: Monthly Completed Tasks
         own_monthly = owner_df.groupby("Month").size().reset_index(name="Completed")
         line = go.Figure()
         line.add_trace(go.Scatter(x=own_monthly["Month"], y=own_monthly["Completed"], name=owner))
-        line.add_trace(
-            go.Scatter(
-                x=top_monthly["Month"],
-                y=top_monthly["Completed"],
-                name=TOP_LABEL,
-                line=dict(dash="dash"),
-            )
-        )
-        line.add_trace(
-            go.Scatter(
-                x=global_avg["Month"],
-                y=global_avg["Average"],
-                name="Global Avg",
-                line=dict(dash="dot"),
-            )
-        )
+        line.add_trace(go.Scatter(x=top_monthly["Month"], y=top_monthly["Completed"], name=TOP_LABEL, line=dict(dash="dash")))
+        line.add_trace(go.Scatter(x=global_avg["Month"], y=global_avg["Average"], name="Global Avg", line=dict(dash="dot")))
         line.update_layout(title=f"{owner} – Monthly Completed Tasks", height=300)
-        line_html = line.to_html(full_html=False, include_plotlyjs=False)
+        line_html = explain_line_chart(owner) + line.to_html(full_html=False, include_plotlyjs=False)
 
-        # Line chart: fail rate comparison
+        # === Line Chart: Monthly Fail Rate
         ofail = owner_df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Fail %")
         gfail = df.groupby("Month")["Is Fail"].mean().mul(100).reset_index(name="Global Fail %")
         ff = ofail.merge(tfail, on="Month", how="outer").merge(gfail, on="Month", how="outer")
         fail_fig = go.Figure()
         fail_fig.add_trace(go.Scatter(x=ff["Month"], y=ff["Fail %"], name=owner))
-        fail_fig.add_trace(
-            go.Scatter(x=ff["Month"], y=ff["Top Fail %"], name=TOP_LABEL, line=dict(dash="dash"))
-        )
-        fail_fig.add_trace(
-            go.Scatter(x=ff["Month"], y=ff["Global Fail %"], name="Global Avg", line=dict(dash="dot"))
-        )
+        fail_fig.add_trace(go.Scatter(x=ff["Month"], y=ff["Top Fail %"], name=TOP_LABEL, line=dict(dash="dash")))
+        fail_fig.add_trace(go.Scatter(x=ff["Month"], y=ff["Global Fail %"], name="Global Avg", line=dict(dash="dot")))
         fail_fig.update_layout(title=f"{owner} – % Fail Rate", yaxis=dict(range=[0, 100]), height=300)
-        fail_html = fail_fig.to_html(full_html=False, include_plotlyjs=False)
+        fail_html = explain_fail_rate(owner, TOP_LABEL) + fail_fig.to_html(full_html=False, include_plotlyjs=False)
 
-        # Static bar chart: Audit Scores Jan–Jul with dynamic colors
+        # === Audit Scores (Static)
         audit_months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
-        audit_scores = [85, 90, 88, 92, 87, 93, 89]  # example static values
+        audit_scores = [85, 90, 88, 92, 87, 93, 89]
         min_score = min(audit_scores)
         max_score = max(audit_scores)
-        # Create a color gradient from blue (low) to green (high)
         audit_colors = [
-            f"rgb({int(0 + 0*(v - min_score)/(max_score - min_score))},"
+            f"rgb({int(0)},"
             f"{int(100 + 155*(v - min_score)/(max_score - min_score))},"
             f"{int(255 - 255*(v - min_score)/(max_score - min_score))})"
             for v in audit_scores
         ]
+        audit_fig = go.Figure(go.Bar(x=audit_months, y=audit_scores, marker_color=audit_colors))
+        audit_fig.update_layout(title="Audit Scores", yaxis=dict(title="Score (%)", range=[0, 100]), height=300)
+        audit_html = explain_audit_chart() + audit_fig.to_html(full_html=False, include_plotlyjs=False)
 
-        audit_fig = go.Figure(
-            go.Bar(
-                x=audit_months,
-                y=audit_scores,
-                marker_color=audit_colors
-            )
-        )
-        audit_fig.update_layout(
-            title="Audit Scores",
-            yaxis=dict(title="Score (%)", range=[0, 100]),
-            height=300
-        )
-        audit_html = audit_fig.to_html(full_html=False, include_plotlyjs=False)
-
-        # Text block below Audit Scores
         audit_notes = """
         <div style="font-family:sans-serif; font-size:14px; margin-top:10px;">
           <strong>Commonly deducted points:</strong><br>
@@ -132,12 +140,9 @@ def generate_individual_tab(df, customer_id="USDA"):
         </div>
         """
 
-        # Assemble buttons and tabs
-        buttons.append(
-            f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>'
-        )
-        contents.append(
-            f"""
+        # === Assemble Tab Content
+        buttons.append(f'<button class="tablink" onclick="openTab(event, \'{div_id}\')">{owner}{badge}</button>')
+        contents.append(f"""
             <div id="{div_id}" class="tabcontent" style="display:{'block' if i == 0 else 'none'};">
               {pie_html}
               <hr>{bar_html}
@@ -146,8 +151,7 @@ def generate_individual_tab(df, customer_id="USDA"):
               <hr>{audit_html}
               {audit_notes}
             </div>
-            """
-        )
+        """)
 
     return f"""
     <div id="individualTab" class="main-tab">
