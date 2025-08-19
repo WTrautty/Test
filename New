@@ -1,17 +1,79 @@
-bar = go.Figure(go.Bar(
-    y=diff["Closure Code 1"],
-    x=diff["Delta"],
-    orientation="h",
-    marker_color=colors,
-    hovertemplate="<b>%{y}</b><br>Delta: %{x:+.1f}%<extra></extra>"
-))
+#!/usr/bin/env python3
+import argparse
+from pathlib import Path
 
-bar.update_layout(
-    title=f"{owner} vs {TOP_LABEL} – Closure Code Δ",
-    xaxis=dict(
-        range=[-20, 20],
-        ticksuffix="%",
-        title="Δ vs Top Performer"
-    ),
-    height=300
-)
+def check_file(path: Path) -> bool:
+    """
+    Returns True if the file meets the condition:
+    - Find first line containing 'GigabitEthernet0/0/0'
+    - From the NEXT line onward, find the first line that is exactly 'exit' (ignoring leading/trailing spaces, case-insensitive)
+    - Between those two, does '255.255.255.254' appear anywhere?
+    """
+    try:
+        # Read text safely with fallbacks
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            text = path.read_text(encoding="utf-16")
+    except Exception:
+        # Could not read file; skip it
+        return False
+
+    lines = text.splitlines()
+
+    # Find first occurrence of 'GigabitEthernet0/0/0'
+    iface_idx = None
+    for idx, line in enumerate(lines):
+        if "GigabitEthernet0/0/0" in line:
+            iface_idx = idx
+            break
+    if iface_idx is None:
+        return False
+
+    # Find first 'exit' AFTER the interface line
+    exit_idx = None
+    for j in range(iface_idx + 1, len(lines)):
+        # consider '   exit' and case-insensitive; require the line to be just 'exit'
+        if lines[j].strip().lower() == "exit":
+            exit_idx = j
+            break
+    if exit_idx is None or exit_idx <= iface_idx + 1:
+        # no exit found after, or nothing between them
+        return False
+
+    # Check if the target IP/mask appears anywhere between
+    block_text = "\n".join(lines[iface_idx + 1:exit_idx])
+    return "255.255.255.254" in block_text
+
+def main():
+    parser = argparse.ArgumentParser(description="Scan txt files for a specific interface block condition.")
+    parser.add_argument("folder", type=str, help="Root folder to scan recursively.")
+    parser.add_argument("--out", "-o", type=str, default="matching_files.txt",
+                        help="Output txt file to write matching file paths. Default: matching_files.txt")
+    args = parser.parse_args()
+
+    root = Path(args.folder).expanduser().resolve()
+    out_path = Path(args.out).expanduser().resolve()
+
+    if not root.exists() or not root.is_dir():
+        print(f"[ERROR] Folder does not exist or is not a directory: {root}")
+        return
+
+    matches = []
+    for p in root.rglob("*.txt"):
+        try:
+            if p.is_file() and check_file(p):
+                matches.append(str(p.resolve()))
+        except Exception as e:
+            # Keep scanning even if a file causes an error
+            print(f"[WARN] Skipping {p}: {e}")
+
+    # Write results
+    out_path.write_text("\n".join(matches) + ("\n" if matches else ""), encoding="utf-8")
+
+    print(f"[INFO] Scanned folder: {root}")
+    print(f"[INFO] Total .txt files matched: {len(matches)}")
+    print(f"[INFO] Results written to: {out_path}")
+
+if __name__ == "__main__":
+    main()
