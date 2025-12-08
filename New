@@ -57,12 +57,27 @@
 
   <div class="field-group">
     <label for="failureGroup">Failure Group:</label>
-    <input type="text" id="failureGroup" />
+    <select id="failureGroup">
+      <option value="">-- Select Failure Group --</option>
+      <option value="Documentation">Documentation</option>
+      <option value="Process">Process</option>
+      <option value="Technical">Technical</option>
+      <option value="Training">Training</option>
+      <option value="Compliance">Compliance</option>
+    </select>
   </div>
 
   <div class="field-group">
     <label for="failureReason">Failure Reason:</label>
-    <input type="text" id="failureReason" />
+    <select id="failureReason">
+      <option value="">-- Select Failure Reason --</option>
+      <option value="Missing Documentation">Missing Documentation</option>
+      <option value="Incorrect Procedure Followed">Incorrect Procedure Followed</option>
+      <option value="System Configuration Error">System Configuration Error</option>
+      <option value="Insufficient Training">Insufficient Training</option>
+      <option value="Policy Not Followed">Policy Not Followed</option>
+      <option value="Data Entry Error">Data Entry Error</option>
+    </select>
   </div>
 
   <div class="field-group">
@@ -88,8 +103,8 @@
     document.getElementById("generateBtn").addEventListener("click", function () {
       const auditor = document.getElementById("auditor").value.trim();
       const auditee = document.getElementById("auditee").value.trim();
-      const failureGroup = document.getElementById("failureGroup").value.trim();
-      const failureReason = document.getElementById("failureReason").value.trim();
+      const failureGroup = document.getElementById("failureGroup").value;
+      const failureReason = document.getElementById("failureReason").value;
       const icError = document.getElementById("icError").value;
       const failureNotes = document.getElementById("failureNotes").value.trim();
 
