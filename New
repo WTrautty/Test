@@ -28,16 +28,26 @@ def wait_for_prompt(expected, timeout=30):
         crt.Sleep(1000)
     return False
 
+def send_with_paging(cmd, enter_count=5, delay=500):
+    """
+    Sends a command and then spams ENTER a few times
+    to clear any --More-- paging output.
+    """
+    crt.Screen.Send(cmd + "\n")
+    crt.Sleep(1500)
+
+    for _ in range(enter_count):
+        crt.Screen.Send("\n")
+        crt.Sleep(delay)
+
 def run_sdwan_checks():
     """
     Runs the requested SD-WAN / inventory commands on the current console session.
     """
-    # Make screen operations synchronous (recommended for scripting)
     crt.Screen.Synchronous = True
 
-    # Nudge the device to show a fresh prompt
+    # Wake up the prompt
     crt.Screen.Send("\n")
-    # Adjust this expected prompt string if needed (e.g., ">" or hostname)
     wait_for_prompt("#", timeout=5)
 
     commands = [
@@ -48,8 +58,9 @@ def run_sdwan_checks():
     ]
 
     for cmd in commands:
-        crt.Screen.Send(cmd + "\n")
-        # Wait for the device prompt to come back before sending the next command
+        send_with_paging(cmd, enter_count=6, delay=400)
+
+        # Final prompt sync after paging clears
         if not wait_for_prompt("#", timeout=60):
             crt.Dialog.MessageBox(
                 "Timed out waiting for prompt after command:\n\n{}".format(cmd)
