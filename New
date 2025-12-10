@@ -30,8 +30,8 @@ def wait_for_prompt(expected, timeout=30):
 
 def send_with_paging(cmd, enter_count=5, delay=500):
     """
-    Sends a command and then spams ENTER a few times
-    to clear any --More-- paging output.
+    Sends a command and then sends ENTER a few times
+    to clear any --More-- style paging output.
     """
     crt.Screen.Send(cmd + "\n")
     crt.Sleep(1500)
@@ -39,6 +39,27 @@ def send_with_paging(cmd, enter_count=5, delay=500):
     for _ in range(enter_count):
         crt.Screen.Send("\n")
         crt.Sleep(delay)
+
+def check_sdwan_software_version(target_version):
+    """
+    Looks for the target_version in the visible screen buffer.
+    If found, pops up a message box with the version and full line.
+    """
+    try:
+        # Grab the entire visible screen
+        output = crt.Screen.Get(1, 1, crt.Screen.Rows, crt.Screen.Columns)
+    except Exception:
+        return
+
+    if target_version in output:
+        lines = output.splitlines()
+        for line in lines:
+            if target_version in line:
+                msg = "Found version {0} in line:\n\n{1}".format(
+                    target_version, line.strip()
+                )
+                crt.Dialog.MessageBox(msg, "Software Version Found")
+                break
 
 def run_sdwan_checks():
     """
@@ -57,15 +78,21 @@ def run_sdwan_checks():
         "show sdwan running-config | i GigabitEthernet0/1"
     ]
 
+    target_version = "17.12.05.15"
+
     for cmd in commands:
         send_with_paging(cmd, enter_count=6, delay=400)
 
-        # Final prompt sync after paging clears
+        # Wait for prompt to come back after command + paging
         if not wait_for_prompt("#", timeout=60):
             crt.Dialog.MessageBox(
-                "Timed out waiting for prompt after command:\n\n{}".format(cmd)
+                "Timed out waiting for prompt after command:\n\n{0}".format(cmd)
             )
             break
+
+        # Special handling for the show sdwan software command
+        if cmd.startswith("show sdwan software"):
+            check_sdwan_software_version(target_version)
 
     crt.Dialog.MessageBox("SD-WAN checks complete.")
 
