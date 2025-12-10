@@ -29,54 +29,59 @@ def send_with_paging(cmd, enter_count=2, delay=400):
         crt.Screen.Send("\n")
         crt.Sleep(delay)
 
-def check_sdwan_software_version(target_version):
-    """
-    Checks screen output for:
-    - Exact match of target_version
-    - Any other 17.x version
-    - Or none at all
-    """
-    try:
-        output = crt.Screen.Get(1, 1, crt.Screen.Rows, crt.Screen.Columns)
-    except Exception:
-        crt.Dialog.MessageBox("Unable to read screen buffer.")
-        return
+def clear_screen_with_enters(count=2):
+    for _ in range(count):
+        crt.Screen.Send("\n")
+        crt.Sleep(300)
 
-    # Look for exact target version first
+def get_last_150_lines():
+    rows = crt.Screen.Rows
+    start = max(1, rows - 150)
+    return crt.Screen.Get(start, 1, rows, crt.Screen.Columns)
+
+def check_sdwan_software_version_from_tail(target_version):
+    output = get_last_150_lines()
+
+    # Exact expected version
     if target_version in output:
         for line in output.splitlines():
             if target_version in line:
-                msg = "EXPECTED VERSION FOUND\n\nVersion: {}\n\nLine:\n{}".format(
-                    target_version, line.strip()
+                crt.Dialog.MessageBox(
+                    "EXPECTED VERSION FOUND\n\nVersion: {}\n\nLine:\n{}".format(
+                        target_version, line.strip()
+                    ),
+                    "SD-WAN Version Check"
                 )
-                crt.Dialog.MessageBox(msg, "SD-WAN Version Check")
                 return
 
-    # Look for ANY 17.x version next
+    # Any other 17.x version
     match = re.search(r"(17\.\d+\.\d+\.\d+)", output)
     if match:
         found_version = match.group(1)
         for line in output.splitlines():
             if found_version in line:
-                msg = "DIFFERENT 17.x VERSION FOUND\n\nExpected: {}\nFound: {}\n\nLine:\n{}".format(
-                    target_version,
-                    found_version,
-                    line.strip()
+                crt.Dialog.MessageBox(
+                    "DIFFERENT 17.x VERSION FOUND\n\nExpected: {}\nFound: {}\n\nLine:\n{}".format(
+                        target_version,
+                        found_version,
+                        line.strip()
+                    ),
+                    "SD-WAN Version Check"
                 )
-                crt.Dialog.MessageBox(msg, "SD-WAN Version Check")
                 return
 
-    # If nothing starting with 17. exists at all
+    # No 17.x version at all
     crt.Dialog.MessageBox(
-        "NO 17.x SD-WAN VERSION FOUND\n\nCannot locate any software version beginning with 17.",
+        "NO 17.x SD-WAN VERSION FOUND\n\nCould not locate any software version beginning with 17.",
         "SD-WAN Version Check"
     )
 
 def run_sdwan_checks():
     crt.Screen.Synchronous = True
 
-    # Wake the prompt
-    crt.Screen.Send("\n")
+    # Clear buffer at start
+    clear_screen_with_enters(2)
+
     wait_for_prompt("#", timeout=5)
 
     commands = [
@@ -88,19 +93,18 @@ def run_sdwan_checks():
 
     target_version = "17.12.05.15"
 
+    # Run all commands first
     for cmd in commands:
         send_with_paging(cmd)
 
-        # Wait until prompt comes back
         if not wait_for_prompt("#", timeout=60):
             crt.Dialog.MessageBox(
                 "Timed out waiting for prompt after command:\n\n{}".format(cmd)
             )
             break
 
-        # ONLY apply version check to this command
-        if cmd == "show sdwan software":
-            check_sdwan_software_version(target_version)
+    # Version check only at the end
+    check_sdwan_software_version_from_tail(target_version)
 
     crt.Dialog.MessageBox("SD-WAN CHECKS COMPLETE")
 
