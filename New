@@ -3,11 +3,9 @@
 
 import sys
 import os
+import re
 
 def read_current_prompt():
-    """
-    Reads and returns the current prompt text from the screen.
-    """
     return crt.Screen.Get(
         crt.Screen.CurrentRow,
         0,
@@ -16,23 +14,14 @@ def read_current_prompt():
     ).strip()
 
 def wait_for_prompt(expected, timeout=30):
-    """
-    Waits for a specific string in the current prompt.
-    Returns True if the expected string is found within the timeout, otherwise False.
-    """
     expected = expected.lower()
     for _ in range(timeout):
-        current = read_current_prompt().lower()
-        if expected in current:
+        if expected in read_current_prompt().lower():
             return True
         crt.Sleep(1000)
     return False
 
-def send_with_paging(cmd, enter_count=5, delay=500):
-    """
-    Sends a command and then sends ENTER a few times
-    to clear any --More-- style paging output.
-    """
+def send_with_paging(cmd, enter_count=2, delay=400):
     crt.Screen.Send(cmd + "\n")
     crt.Sleep(1500)
 
@@ -42,32 +31,51 @@ def send_with_paging(cmd, enter_count=5, delay=500):
 
 def check_sdwan_software_version(target_version):
     """
-    Looks for the target_version in the visible screen buffer.
-    If found, pops up a message box with the version and full line.
+    Checks screen output for:
+    - Exact match of target_version
+    - Any other 17.x version
+    - Or none at all
     """
     try:
-        # Grab the entire visible screen
         output = crt.Screen.Get(1, 1, crt.Screen.Rows, crt.Screen.Columns)
     except Exception:
+        crt.Dialog.MessageBox("Unable to read screen buffer.")
         return
 
+    # Look for exact target version first
     if target_version in output:
-        lines = output.splitlines()
-        for line in lines:
+        for line in output.splitlines():
             if target_version in line:
-                msg = "Found version {0} in line:\n\n{1}".format(
+                msg = "EXPECTED VERSION FOUND\n\nVersion: {}\n\nLine:\n{}".format(
                     target_version, line.strip()
                 )
-                crt.Dialog.MessageBox(msg, "Software Version Found")
-                break
+                crt.Dialog.MessageBox(msg, "SD-WAN Version Check")
+                return
+
+    # Look for ANY 17.x version next
+    match = re.search(r"(17\.\d+\.\d+\.\d+)", output)
+    if match:
+        found_version = match.group(1)
+        for line in output.splitlines():
+            if found_version in line:
+                msg = "DIFFERENT 17.x VERSION FOUND\n\nExpected: {}\nFound: {}\n\nLine:\n{}".format(
+                    target_version,
+                    found_version,
+                    line.strip()
+                )
+                crt.Dialog.MessageBox(msg, "SD-WAN Version Check")
+                return
+
+    # If nothing starting with 17. exists at all
+    crt.Dialog.MessageBox(
+        "NO 17.x SD-WAN VERSION FOUND\n\nCannot locate any software version beginning with 17.",
+        "SD-WAN Version Check"
+    )
 
 def run_sdwan_checks():
-    """
-    Runs the requested SD-WAN / inventory commands on the current console session.
-    """
     crt.Screen.Synchronous = True
 
-    # Wake up the prompt
+    # Wake the prompt
     crt.Screen.Send("\n")
     wait_for_prompt("#", timeout=5)
 
@@ -81,20 +89,20 @@ def run_sdwan_checks():
     target_version = "17.12.05.15"
 
     for cmd in commands:
-        send_with_paging(cmd, enter_count=6, delay=400)
+        send_with_paging(cmd)
 
-        # Wait for prompt to come back after command + paging
+        # Wait until prompt comes back
         if not wait_for_prompt("#", timeout=60):
             crt.Dialog.MessageBox(
-                "Timed out waiting for prompt after command:\n\n{0}".format(cmd)
+                "Timed out waiting for prompt after command:\n\n{}".format(cmd)
             )
             break
 
-        # Special handling for the show sdwan software command
-        if cmd.startswith("show sdwan software"):
+        # ONLY apply version check to this command
+        if cmd == "show sdwan software":
             check_sdwan_software_version(target_version)
 
-    crt.Dialog.MessageBox("SD-WAN checks complete.")
+    crt.Dialog.MessageBox("SD-WAN CHECKS COMPLETE")
 
 def main():
     run_sdwan_checks()
