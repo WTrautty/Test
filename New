@@ -85,7 +85,7 @@
       </div>
 
       <div class="field-group">
-        <label for="failureGroup">Failure Group:</label>
+        <label for="failureGroup">Failure Group 1:</label>
         <select id="failureGroup">
           <option value="">-- Select Failure Group --</option>
           <option value="Scrub Failures">Scrub Failures</option>
@@ -97,7 +97,7 @@
       </div>
 
       <div class="field-group">
-        <label for="failureReason">Failure Reason:</label>
+        <label for="failureReason">Failure Reason 1:</label>
         <select id="failureReason">
           <option value="">-- Select Failure Reason --</option>
           <option value="Missing Documentation">Missing Documentation</option>
@@ -109,6 +109,20 @@
         </select>
       </div>
 
+      <div class="field-group" id="fgCountField">
+        <label for="fgCount"># of Failure Groups:</label>
+        <select id="fgCount">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
+      </div>
+
+      <!-- Extra Failure Group/Reason pairs -->
+      <div id="extraFailureContainer"></div>
+
       <div class="field-group">
         <label for="icError">IC Error: (Y/N)</label>
         <select id="icError">
@@ -118,21 +132,9 @@
         </select>
       </div>
 
-      <div class="field-group" id="icCountField">
-        <label for="icCount"># of Manager/IC Pairs:</label>
-        <select id="icCount">
-          <option value="0">0</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-        </select>
-      </div>
-
-      <!-- CONDITIONAL MANAGER + IC FIELDS -->
+      <!-- Single Manager + IC (shown only if IC Error = Y) -->
       <div class="field-group" id="managerField">
-        <label for="manager">Manager 1:</label>
+        <label for="manager">Manager:</label>
         <select id="manager">
           <option value="">-- Select Manager --</option>
           <option value="Manager One">Manager One</option>
@@ -142,16 +144,13 @@
       </div>
 
       <div class="field-group" id="icNameField">
-        <label for="icName">IC 1:</label>
+        <label for="icName">IC:</label>
         <select id="icName">
           <option value="">-- Select IC --</option>
           <option value="Carlos Ramirez">Carlos Ramirez</option>
           <option value="Dana Nguyen">Dana Nguyen</option>
         </select>
       </div>
-
-      <!-- Extra manager/IC pairs will be appended here -->
-      <div id="extraIcContainer"></div>
 
       <div class="field-group">
         <label for="failureNotes">Failure Notes:</label>
@@ -325,14 +324,14 @@
     // ========= DOM REFS (set in init) =========
     let failureGroupSelect,
         failureReasonSelect,
+        fgCountField,
+        fgCountSelect,
+        extraFailureContainer,
         icErrorSelect,
         managerField,
         icNameField,
         managerSelect,
         icNameSelect,
-        icCountField,
-        icCountSelect,
-        extraIcContainer,
         outputTextarea,
         recoveryInput,
         decodedOutput,
@@ -342,54 +341,83 @@
         htmlExportTextarea;
 
     // ========= RENDER HELPERS =========
-    function renderFailureGroups() {
-      const prev = failureGroupSelect.value;
-      failureGroupSelect.innerHTML = "";
+    function populateFailureGroupSelect(selectEl, selectedVal) {
+      selectEl.innerHTML = "";
       const placeholder = document.createElement("option");
       placeholder.value = "";
       placeholder.textContent = "-- Select Failure Group --";
-      failureGroupSelect.appendChild(placeholder);
+      selectEl.appendChild(placeholder);
 
       failureGroups.forEach(g => {
         const opt = document.createElement("option");
         opt.value = g;
         opt.textContent = g;
-        failureGroupSelect.appendChild(opt);
+        selectEl.appendChild(opt);
       });
 
-      if (failureGroups.includes(prev)) {
-        failureGroupSelect.value = prev;
+      if (selectedVal && failureGroups.includes(selectedVal)) {
+        selectEl.value = selectedVal;
+      } else {
+        selectEl.value = "";
       }
     }
 
-    function renderFailureReasons() {
-      const selectedGroup = failureGroupSelect.value;
-      const prev = failureReasonSelect.value;
-
-      failureReasonSelect.innerHTML = "";
+    function populateFailureReasonSelect(groupValue, selectEl, selectedVal) {
+      selectEl.innerHTML = "";
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = selectedGroup
+      placeholder.textContent = groupValue
         ? "-- Select Failure Reason --"
         : "-- Select Failure Group first --";
-      failureReasonSelect.appendChild(placeholder);
+      selectEl.appendChild(placeholder);
 
-      const list = selectedGroup && failureReasonMap[selectedGroup]
-        ? failureReasonMap[selectedGroup]
+      const list = groupValue && failureReasonMap[groupValue]
+        ? failureReasonMap[groupValue]
         : [];
 
       list.forEach(r => {
         const opt = document.createElement("option");
         opt.value = r;
         opt.textContent = r;
-        failureReasonSelect.appendChild(opt);
+        selectEl.appendChild(opt);
       });
 
-      if (list.includes(prev)) {
-        failureReasonSelect.value = prev;
+      if (selectedVal && list.includes(selectedVal)) {
+        selectEl.value = selectedVal;
       } else {
-        failureReasonSelect.value = "";
+        selectEl.value = "";
       }
+    }
+
+    function renderFailureGroups() {
+      populateFailureGroupSelect(failureGroupSelect, failureGroupSelect.value);
+    }
+
+    function renderFailureReasons() {
+      populateFailureReasonSelect(
+        failureGroupSelect.value,
+        failureReasonSelect,
+        failureReasonSelect.value
+      );
+    }
+
+    function renderManageTextareas() {
+      // Failure groups: one per line
+      manageFailureGroups.value = failureGroups.join("\n");
+
+      // Failure reasons by group: "Group: r1, r2"
+      const frLines = [];
+      for (const [grp, reasons] of Object.entries(failureReasonMap)) {
+        frLines.push(grp + ": " + (reasons || []).join(", "));
+      }
+      manageFailureReasons.value = frLines.join("\n");
+
+      // ICs by manager
+      const lines = [];
+      for (const [mgr, ics] of Object.entries(icManagers)) {
+        lines.push(mgr + ": " + ics.join(", "));
+      }
+      manageICMapping.value = lines.join("\n");
     }
 
     function populateManagerSelect(selectEl, selectedManager) {
@@ -448,107 +476,72 @@
       populateIcSelect(mgr, icNameSelect, prevIC);
     }
 
-    function renderManageTextareas() {
-      // Failure groups: one per line
-      manageFailureGroups.value = failureGroups.join("\n");
-
-      // Failure reasons by group: "Group: r1, r2"
-      const frLines = [];
-      for (const [grp, reasons] of Object.entries(failureReasonMap)) {
-        frLines.push(grp + ": " + (reasons || []).join(", "));
-      }
-      manageFailureReasons.value = frLines.join("\n");
-
-      // ICs by manager
-      const lines = [];
-      for (const [mgr, ics] of Object.entries(icManagers)) {
-        lines.push(mgr + ": " + ics.join(", "));
-      }
-      manageICMapping.value = lines.join("\n");
-    }
-
-    function updateIcSections() {
-      const count = icErrorSelect.value === "Y"
-        ? parseInt(icCountSelect.value || "0", 10)
-        : 0;
+    function updateFailureSections() {
+      const count = parseInt(fgCountSelect.value || "1", 10) || 1;
 
       // Capture current selections to preserve them
-      const prevManagers = [];
-      const prevIcs = [];
+      const prevGroups = [];
+      const prevReasons = [];
 
-      // Pair 1 (existing controls)
-      prevManagers[0] = managerSelect.value;
-      prevIcs[0] = icNameSelect.value;
+      // Pair 1 (base controls)
+      prevGroups[0] = failureGroupSelect.value;
+      prevReasons[0] = failureReasonSelect.value;
 
       for (let i = 2; i <= 5; i++) {
-        const mgrEl = document.getElementById("manager_" + i);
-        const icEl = document.getElementById("icName_" + i);
-        if (mgrEl) prevManagers[i - 1] = mgrEl.value;
-        if (icEl) prevIcs[i - 1] = icEl.value;
+        const fgEl = document.getElementById("failureGroup_" + i);
+        const frEl = document.getElementById("failureReason_" + i);
+        if (fgEl) prevGroups[i - 1] = fgEl.value;
+        if (frEl) prevReasons[i - 1] = frEl.value;
       }
 
-      // Show/hide count + first pair
-      if (icErrorSelect.value === "Y" && count > 0) {
-        icCountField.classList.remove("hidden");
-        managerField.classList.remove("hidden");
-        icNameField.classList.remove("hidden");
-      } else if (icErrorSelect.value === "Y") {
-        icCountField.classList.remove("hidden");
-        managerField.classList.add("hidden");
-        icNameField.classList.add("hidden");
-      } else {
-        icCountField.classList.add("hidden");
-        managerField.classList.add("hidden");
-        icNameField.classList.add("hidden");
-        icCountSelect.value = "0";
-      }
+      // Re-render base pair
+      populateFailureGroupSelect(failureGroupSelect, prevGroups[0] || "");
+      populateFailureReasonSelect(
+        failureGroupSelect.value,
+        failureReasonSelect,
+        prevReasons[0] || ""
+      );
 
       // Clear extra pairs
-      extraIcContainer.innerHTML = "";
+      extraFailureContainer.innerHTML = "";
 
       if (count <= 1) {
-        // Just ensure pair 1 is populated correctly
-        renderManagers();
         return;
       }
-
-      // Re-render pair 1 with preserved values
-      populateManagerSelect(managerSelect, prevManagers[0] || "");
-      populateIcSelect(managerSelect.value, icNameSelect, prevIcs[0] || "");
 
       // Build extra pairs (2..count)
       for (let i = 2; i <= count; i++) {
         const wrapper = document.createElement("div");
-        wrapper.className = "field-group ic-pair";
+        wrapper.className = "field-group failure-pair";
 
-        const mgrLabel = document.createElement("label");
-        mgrLabel.setAttribute("for", "manager_" + i);
-        mgrLabel.textContent = "Manager " + i + ":";
-        wrapper.appendChild(mgrLabel);
+        const fgLabel = document.createElement("label");
+        fgLabel.setAttribute("for", "failureGroup_" + i);
+        fgLabel.textContent = "Failure Group " + i + ":";
+        wrapper.appendChild(fgLabel);
 
-        const mgrSelect = document.createElement("select");
-        mgrSelect.id = "manager_" + i;
-        wrapper.appendChild(mgrSelect);
+        const fgSelect = document.createElement("select");
+        fgSelect.id = "failureGroup_" + i;
+        wrapper.appendChild(fgSelect);
 
-        const icLabel = document.createElement("label");
-        icLabel.setAttribute("for", "icName_" + i);
-        icLabel.textContent = "IC " + i + ":";
-        wrapper.appendChild(icLabel);
+        const frLabel = document.createElement("label");
+        frLabel.setAttribute("for", "failureReason_" + i);
+        frLabel.textContent = "Failure Reason " + i + ":";
+        wrapper.appendChild(frLabel);
 
-        const icSelect = document.createElement("select");
-        icSelect.id = "icName_" + i;
-        wrapper.appendChild(icSelect);
+        const frSelect = document.createElement("select");
+        frSelect.id = "failureReason_" + i;
+        wrapper.appendChild(frSelect);
 
-        extraIcContainer.appendChild(wrapper);
+        extraFailureContainer.appendChild(wrapper);
 
-        const prevMgr = prevManagers[i - 1] || "";
-        const prevIcVal = prevIcs[i - 1] || "";
+        const prevGroup = prevGroups[i - 1] || "";
+        const prevReason = prevReasons[i - 1] || "";
 
-        populateManagerSelect(mgrSelect, prevMgr);
-        populateIcSelect(prevMgr, icSelect, prevIcVal);
+        populateFailureGroupSelect(fgSelect, prevGroup);
+        populateFailureReasonSelect(fgSelect.value, frSelect, prevReason);
 
-        mgrSelect.addEventListener("change", function () {
-          populateIcSelect(mgrSelect.value, icSelect, "");
+        fgSelect.addEventListener("change", function () {
+          populateFailureReasonSelect(fgSelect.value, frSelect, "");
         });
       }
     }
@@ -556,7 +549,8 @@
     function renderAll() {
       renderFailureGroups();
       renderFailureReasons();
-      updateIcSections();
+      renderManagers();
+      updateFailureSections();
       renderManageTextareas();
     }
 
@@ -614,14 +608,14 @@
       // Grab DOM elements
       failureGroupSelect   = document.getElementById("failureGroup");
       failureReasonSelect  = document.getElementById("failureReason");
+      fgCountField         = document.getElementById("fgCountField");
+      fgCountSelect        = document.getElementById("fgCount");
+      extraFailureContainer= document.getElementById("extraFailureContainer");
       icErrorSelect        = document.getElementById("icError");
       managerField         = document.getElementById("managerField");
       icNameField          = document.getElementById("icNameField");
       managerSelect        = document.getElementById("manager");
       icNameSelect         = document.getElementById("icName");
-      icCountField         = document.getElementById("icCountField");
-      icCountSelect        = document.getElementById("icCount");
-      extraIcContainer     = document.getElementById("extraIcContainer");
       outputTextarea       = document.getElementById("output");
       recoveryInput        = document.getElementById("recoveryInput");
       decodedOutput        = document.getElementById("decodedOutput");
@@ -634,83 +628,81 @@
       renderAll();
       updateHtmlExport();
 
-      // IC Error toggle
-      icErrorSelect.addEventListener("change", function () {
-        if (this.value !== "Y") {
-          managerSelect.value = "";
-          icNameSelect.value = "";
-          icCountSelect.value = "0";
-        }
-        updateIcSections();
-      });
-
-      // Manager -> IC linkage for pair 1
-      managerSelect.addEventListener("change", function () {
-        renderIcNames();
-      });
-
-      // Failure group -> reasons linkage
+      // Failure group -> reasons linkage for base pair
       failureGroupSelect.addEventListener("change", function () {
         renderFailureReasons();
       });
 
-      // Change in IC count
-      icCountSelect.addEventListener("change", function () {
-        updateIcSections();
+      // Change in # of Failure Groups
+      fgCountSelect.addEventListener("change", function () {
+        updateFailureSections();
+      });
+
+      // IC Error toggle (show/hide Manager + IC)
+      icErrorSelect.addEventListener("change", function () {
+        if (this.value === "Y") {
+          managerField.classList.remove("hidden");
+          icNameField.classList.remove("hidden");
+        } else {
+          managerField.classList.add("hidden");
+          icNameField.classList.add("hidden");
+          managerSelect.value = "";
+          icNameSelect.value = "";
+        }
+      });
+
+      // Manager -> IC linkage for single pair
+      managerSelect.addEventListener("change", function () {
+        renderIcNames();
       });
 
       // Generate + encode
       document.getElementById("generateBtn").addEventListener("click", function () {
-        const auditor      = document.getElementById("auditor").value.trim();
-        const failureGroup = failureGroupSelect.value;
-        const failureReason= failureReasonSelect.value;
-        const icError      = icErrorSelect.value;
-        const failureNotes = document.getElementById("failureNotes").value.trim();
+        const auditor       = document.getElementById("auditor").value.trim();
+        const baseGroup     = failureGroupSelect.value;
+        const baseReason    = failureReasonSelect.value;
+        const fgCount       = parseInt(fgCountSelect.value || "1", 10) || 1;
+        const icError       = icErrorSelect.value;
+        const manager       = managerSelect.value;
+        const icName        = icNameSelect.value;
+        const failureNotes  = document.getElementById("failureNotes").value.trim();
 
         const safeNotes = failureNotes.replace(/\r?\n/g, "\\n");
 
-        // How many manager/IC pairs?
-        const icCount = icError === "Y"
-          ? parseInt(document.getElementById("icCount").value || "0", 10)
-          : 0;
+        // Collect up to 5 Failure Group/Reason pairs
+        const groups = [];
+        const reasons = [];
+        groups[0] = baseGroup;
+        reasons[0] = baseReason;
 
-        const parts = [
-          auditor,
-          failureGroup,
-          failureReason,
-          icError,
-          String(icCount)
-        ];
-
-        // Gather up to 5 manager/IC pairs
-        const managers = [];
-        const ics = [];
-
-        // Pair 1 (existing controls)
-        if (icCount > 0) {
-          managers[0] = managerSelect.value.trim();
-          ics[0] = icNameSelect.value.trim();
-        }
-
-        // Pairs 2..5
         for (let i = 2; i <= 5; i++) {
-          const mgrEl = document.getElementById("manager_" + i);
-          const icEl = document.getElementById("icName_" + i);
-          if (i <= icCount && mgrEl && icEl) {
-            managers[i - 1] = mgrEl.value.trim();
-            ics[i - 1] = icEl.value.trim();
+          const fgEl = document.getElementById("failureGroup_" + i);
+          const frEl = document.getElementById("failureReason_" + i);
+          if (i <= fgCount && fgEl && frEl) {
+            groups[i - 1] = fgEl.value;
+            reasons[i - 1] = frEl.value;
           } else {
-            managers[i - 1] = "";
-            ics[i - 1] = "";
+            groups[i - 1] = "";
+            reasons[i - 1] = "";
           }
         }
 
-        // Push managers/ICs into payload (fixed length)
-        for (let i = 0; i < 5; i++) {
-          parts.push(managers[i] || "", ics[i] || "");
+        const parts = [
+          auditor,
+          groups[0] || "",
+          reasons[0] || "",
+          icError,
+          manager,
+          icName,
+          String(fgCount)
+        ];
+
+        // Groups 2..5
+        for (let i = 1; i < 5; i++) {
+          parts.push(groups[i] || "", reasons[i] || "");
         }
 
-        // Finally, notes
+        // Notes
         parts.push(safeNotes);
 
         const recoveryPayload = parts.join("|");
@@ -757,105 +749,107 @@
         const decoded = decodeText(encoded);
         const parts = decoded.split("|");
 
-        let auditorDec       = parts[0] || "";
-        let failureGroupDec  = parts[1] || "";
-        let failureReasonDec = parts[2] || "";
-        let icErrorDec       = parts[3] || "";
-        let icCountDec       = 0;
-        const managersDec = [];
-        const icsDec = [];
-        let safeNotesDec     = "";
+        const failureGroupsDec = [];
+        const failureReasonsDec = [];
 
-        // New format: auditor,fg,fr,icError,icCount, [mgr/ic x5], notes
-        if (parts.length >= 16) {
-          icCountDec = parseInt(parts[4] || "0", 10) || 0;
+        const auditorDec       = parts[0] || "";
+        failureGroupsDec[0]    = parts[1] || "";
+        failureReasonsDec[0]   = parts[2] || "";
+        const icErrorDec       = parts[3] || "";
+        const managerDec       = parts[4] || "";
+        const icNameDec        = parts[5] || "";
+        const fgCountDecRaw    = parts[6] || "1";
 
-          for (let i = 0; i < 5; i++) {
-            const baseIdx = 5 + i * 2;
-            managersDec[i] = parts[baseIdx] || "";
-            icsDec[i] = parts[baseIdx + 1] || "";
-          }
-
-          safeNotesDec = parts[15] || "";
-        } else {
-          // Backward-compatible: single manager/IC pair
-          managersDec[0] = parts[4] || "";
-          icsDec[0]      = parts[5] || "";
-          safeNotesDec   = parts[6] || "";
-          icCountDec     = icErrorDec === "Y" ? 1 : 0;
+        let fgCountDec = parseInt(fgCountDecRaw, 10);
+        if (isNaN(fgCountDec) || fgCountDec < 1) {
+          fgCountDec = 1;
+        } else if (fgCountDec > 5) {
+          fgCountDec = 5;
         }
 
-        const failureNotesDec  = safeNotesDec.replace(/\\n/g, "\n");
+        let idxBase = 7;
+        for (let i = 1; i < 5; i++) {
+          failureGroupsDec[i]  = parts[idxBase]     || "";
+          failureReasonsDec[i] = parts[idxBase + 1] || "";
+          idxBase += 2;
+        }
+
+        const safeNotesDec = parts[15] || "";
+        const failureNotesDec = safeNotesDec.replace(/\\n/g, "\n");
 
         // Repopulate left form
         document.getElementById("auditor").value = auditorDec;
-        failureGroupSelect.value                 = failureGroupDec;
-        renderFailureReasons();
-        failureReasonSelect.value                = failureReasonDec;
-        icErrorSelect.value                      = icErrorDec;
+        icErrorSelect.value = icErrorDec;
         document.getElementById("failureNotes").value = failureNotesDec;
 
-        // IC/Manager pairs
-        if (icErrorDec === "Y" && icCountDec > 0) {
-          icCountSelect.value = String(Math.min(Math.max(icCountDec, 1), 5));
-        } else {
-          icCountSelect.value = "0";
-        }
-        updateIcSections();
-
+        // Manager/IC visibility & values
         if (icErrorDec === "Y") {
-          const countToApply = Math.min(Math.max(icCountDec, 1), 5);
+          managerField.classList.remove("hidden");
+          icNameField.classList.remove("hidden");
 
-          for (let i = 0; i < countToApply; i++) {
-            const mgrName   = managersDec[i] || "";
-            const icNameVal = icsDec[i] || "";
+          if (!icManagers[managerDec] && managerDec) {
+            icManagers[managerDec] = [];
+            renderManagers();
+          }
+          managerSelect.value = managerDec;
+          renderIcNames();
 
-            if (mgrName) {
-              if (!icManagers[mgrName]) {
-                icManagers[mgrName] = [];
-              }
-            }
-
-            let mgrEl, icEl;
-            if (i === 0) {
-              mgrEl = managerSelect;
-              icEl  = icNameSelect;
-            } else {
-              mgrEl = document.getElementById("manager_" + (i + 1));
-              icEl  = document.getElementById("icName_" + (i + 1));
-            }
-
-            if (mgrEl && icEl) {
-              populateManagerSelect(mgrEl, mgrName);
-
-              if (mgrName) {
-                if (icNameVal && !icManagers[mgrName].includes(icNameVal)) {
-                  icManagers[mgrName].push(icNameVal);
-                }
-                populateIcSelect(mgrName, icEl, icNameVal);
-              } else {
-                populateIcSelect("", icEl, "");
-              }
+          if (managerDec) {
+            icManagers[managerDec] = icManagers[managerDec] || [];
+            if (icNameDec && !icManagers[managerDec].includes(icNameDec)) {
+              icManagers[managerDec].push(icNameDec);
+              renderIcNames();
             }
           }
+
+          icNameSelect.value = icNameDec || "";
         } else {
-          updateIcSections();
+          managerField.classList.add("hidden");
+          icNameField.classList.add("hidden");
+          managerSelect.value = "";
+          icNameSelect.value = "";
+        }
+
+        // Failure group count
+        fgCountSelect.value = String(fgCountDec);
+        updateFailureSections();
+
+        // Base failure pair
+        failureGroupSelect.value = failureGroupsDec[0] || "";
+        renderFailureReasons();
+        failureReasonSelect.value = failureReasonsDec[0] || "";
+
+        // Extra failure pairs
+        const countToApply = fgCountDec;
+        for (let i = 2; i <= countToApply; i++) {
+          const fgEl = document.getElementById("failureGroup_" + i);
+          const frEl = document.getElementById("failureReason_" + i);
+          const grpVal = failureGroupsDec[i - 1] || "";
+          const reaVal = failureReasonsDec[i - 1] || "";
+
+          if (fgEl) {
+            populateFailureGroupSelect(fgEl, grpVal);
+          }
+          if (frEl) {
+            populateFailureReasonSelect(grpVal, frEl, reaVal);
+          }
         }
 
         let decodedText =
           "Auditor: " + auditorDec + "\n" +
-          "Failure Group: " + failureGroupDec + "\n" +
-          "Failure Reason: " + failureReasonDec + "\n" +
           "IC Error: " + icErrorDec + "\n";
 
-        if (icErrorDec === "Y" && icCountDec > 0) {
-          decodedText += "Manager/IC Pairs:\n";
-          for (let i = 0; i < icCountDec && i < 5; i++) {
-            if (managersDec[i] || icsDec[i]) {
-              decodedText += "  " + (i + 1) + ") " +
-                (managersDec[i] || "[no manager]") + " - " +
-                (icsDec[i] || "[no IC]") + "\n";
-            }
+        if (icErrorDec === "Y") {
+          decodedText += "Manager: " + (managerDec || "[none]") + "\n" +
+                         "IC: " + (icNameDec || "[none]") + "\n";
+        }
+
+        decodedText += "Failure Groups:\n";
+        for (let i = 0; i < fgCountDec && i < 5; i++) {
+          if (failureGroupsDec[i] || failureReasonsDec[i]) {
+            decodedText += "  " + (i + 1) + ") " +
+              (failureGroupsDec[i] || "[no group]") + " - " +
+              (failureReasonsDec[i] || "[no reason]") + "\n";
           }
         }
 
