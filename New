@@ -1,114 +1,645 @@
-# $language = "Python"
-# $interface = "1.0"
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8">
+  <title>Audit Template Generator</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1100px;
+      margin: 30px auto;
+      padding: 0 15px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .container {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+    .column {
+      flex: 1;
+      min-width: 0;
+    }
+    .field-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    input[type="text"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 6px;
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      margin-top: 10px;
+      margin-right: 6px;
+    }
+    .hidden {
+      display: none;
+    }
+    #output,
+    #decodedOutput,
+    #htmlExport {
+      margin-top: 10px;
+    }
+    #manageSection {
+      margin-top: 30px;
+      border-top: 1px solid #ccc;
+      padding-top: 20px;
+    }
+    @media (max-width: 800px) {
+      .container {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Audit Template Generator</h1>
 
-import sys
-import os
-import re
+  <div class="container">
+    <!-- LEFT COLUMN: MAIN FORM & OUTPUT -->
+    <div class="column">
+      <h2>Main Entry</h2>
 
-def read_current_prompt():
-    return crt.Screen.Get(
-        crt.Screen.CurrentRow,
-        0,
-        crt.Screen.CurrentRow,
-        crt.Screen.CurrentColumn
-    ).strip()
+      <div class="field-group">
+        <label for="auditor">Auditor:</label>
+        <input type="text" id="auditor">
+      </div>
 
-def wait_for_prompt(expected, timeout=30):
-    expected = expected.lower()
-    for _ in range(timeout):
-        if expected in read_current_prompt().lower():
-            return True
-        crt.Sleep(1000)
-    return False
+      <div class="field-group">
+        <label for="failureGroup">Failure Group:</label>
+        <select id="failureGroup"><option value="">-- Select Failure Group --</option><option value="Scrub Failures">Scrub Failures</option><option value="Process">Process</option><option value="Technical">Technical</option><option value="Training">Training</option><option value="Provisioning">Provisioning</option></select>
+      </div>
 
-def send_with_paging(cmd, enter_count=2, delay=400):
-    crt.Screen.Send(cmd + "\n")
-    crt.Sleep(1500)
+      <div class="field-group">
+        <label for="failureReason">Failure Reason:</label>
+        <select id="failureReason"><option value="">-- Select Failure Reason --</option><option value="Missing Documentation">Missing Documentation</option><option value="Incorrect Procedure Followed">Incorrect Procedure Followed</option><option value="System Configuration Error">System Configuration Error</option><option value="Insufficient Training">Insufficient Training</option><option value="Policy Not Followed">Policy Not Followed</option><option value="Data Entry Error">Data Entry Error</option></select>
+      </div>
 
-    for _ in range(enter_count):
-        crt.Screen.Send("\n")
-        crt.Sleep(delay)
+      <div class="field-group">
+        <label for="icError">IC Error: (Y/N)</label>
+        <select id="icError">
+          <option value="">-- Select --</option>
+          <option value="Y">Y</option>
+          <option value="N">N</option>
+        </select>
+      </div>
 
-def clear_screen_with_enters(count=2):
-    for _ in range(count):
-        crt.Screen.Send("\n")
-        crt.Sleep(300)
+      <!-- CONDITIONAL MANAGER + IC FIELDS -->
+      <div class="field-group" id="managerField">
+        <label for="manager">Manager:</label>
+        <select id="manager"><option value="">-- Select Manager --</option><option value="Manager One">Manager One</option><option value="Manager Two">Manager Two</option><option value="Manager Three">Manager Three</option></select>
+      </div>
 
-def get_last_150_lines():
-    rows = crt.Screen.Rows
-    start = max(1, rows - 150)
-    return crt.Screen.Get(start, 1, rows, crt.Screen.Columns)
+      <div class="field-group" id="icNameField">
+        <label for="icName">IC:</label>
+        <select id="icName"><option value="">-- Select IC --</option><option value="Carlos Ramirez">Carlos Ramirez</option><option value="Dana Nguyen">Dana Nguyen</option></select>
+      </div>
 
-def check_sdwan_software_version_from_tail(target_version):
-    output = get_last_150_lines()
+      <div class="field-group">
+        <label for="failureNotes">Failure Notes:</label>
+        <textarea id="failureNotes"></textarea>
+      </div>
 
-    # Exact expected version
-    if target_version in output:
-        for line in output.splitlines():
-            if target_version in line:
-                crt.Dialog.MessageBox(
-                    "EXPECTED VERSION FOUND\n\nVersion: {}\n\nLine:\n{}".format(
-                        target_version, line.strip()
-                    ),
-                    "SD-WAN Version Check"
-                )
-                return
+      <button id="generateBtn">Generate Template</button>
+      <button id="copyBtn" type="button">Copy Output</button>
 
-    # Any other 17.x version
-    match = re.search(r"(17\.\d+\.\d+\.\d+)", output)
-    if match:
-        found_version = match.group(1)
-        for line in output.splitlines():
-            if found_version in line:
-                crt.Dialog.MessageBox(
-                    "DIFFERENT 17.x VERSION FOUND\n\nExpected: {}\nFound: {}\n\nLine:\n{}".format(
-                        target_version,
-                        found_version,
-                        line.strip()
-                    ),
-                    "SD-WAN Version Check"
-                )
-                return
+      <h2>Output</h2>
+      <textarea id="output" readonly="" style="height: 270px;"></textarea>
+    </div>
 
-    # No 17.x version at all
-    crt.Dialog.MessageBox(
-        "NO 17.x SD-WAN VERSION FOUND\n\nCould not locate any software version beginning with 17.",
-        "SD-WAN Version Check"
-    )
+    <!-- RIGHT COLUMN: DECODER -->
+    <div class="column">
+      <h2>Decoder</h2>
+      <p>
+        You can paste the entire output from the left.<br>
+        Only the text after <code>----- RECOVERY CODE -----</code> will be decoded.
+      </p>
 
-def run_sdwan_checks():
-    crt.Screen.Synchronous = True
+      <div class="field-group">
+        <label for="recoveryInput">Recovery Code or Full Output:</label>
+        <textarea id="recoveryInput" placeholder="Paste encoded section or full left-side output here"></textarea>
+      </div>
 
-    # Clear buffer at start
-    clear_screen_with_enters(2)
+      <button type="button" id="decodeBtn">Decode</button>
+      <button type="button" id="copyDecodedBtn">Copy Decoded</button>
 
-    wait_for_prompt("#", timeout=5)
+      <h3>Decoded Details</h3>
+      <textarea id="decodedOutput" readonly=""></textarea>
+    </div>
+  </div>
 
-    commands = [
-        "show sdwan software",
-        "show inv",
-        "show sdwan running-config | i Engine",
-        "show sdwan running-config | i GigabitEthernet0/1"
-    ]
+  <!-- BOTTOM SECTION: MANAGE LISTS & HTML EXPORT -->
+  <div id="manageSection">
+    <h2>Manage Lists</h2>
+    <p>Update the available Failure Groups, Failure Reasons, and ICs grouped by Manager. Use one value per line.</p>
 
-    target_version = "17.12.05.15"
+    <div class="field-group">
+      <label for="manageFailureGroups">Failure Groups (one per line):</label>
+      <textarea id="manageFailureGroups"></textarea>
+    </div>
 
-    # Run all commands first
-    for cmd in commands:
-        send_with_paging(cmd)
+    <div class="field-group">
+      <label for="manageFailureReasons">Failure Reasons (one per line):</label>
+      <textarea id="manageFailureReasons"></textarea>
+    </div>
 
-        if not wait_for_prompt("#", timeout=60):
-            crt.Dialog.MessageBox(
-                "Timed out waiting for prompt after command:\n\n{}".format(cmd)
-            )
-            break
+    <div class="field-group">
+      <label for="manageICMapping">ICs by Manager (one manager per line, format: <br>
+        <code>Manager Name: IC One, IC Two, IC Three</code>):</label>
+      <textarea id="manageICMapping"></textarea>
+    </div>
 
-    # Version check only at the end
-    check_sdwan_software_version_from_tail(target_version)
+    <button id="applyListsBtn" type="button">Apply Lists</button>
+    <button id="refreshHtmlBtn" type="button">Refresh HTML Export</button>
+    <button id="copyHtmlBtn" type="button">Copy HTML Export</button>
 
-    crt.Dialog.MessageBox("SD-WAN CHECKS COMPLETE")
+    <h3>HTML Export</h3>
+    <p>This is the full HTML of this page with your current lists baked in. Copy it and paste over the file in your editor to update the shared version.</p>
+    <textarea id="htmlExport" readonly=""></textarea>
+  </div>
 
-def main():
-    run_sdwan_checks()
+  <script id="mainScript">
+    // ========= CONFIG & CIPHER =========
+    const SHIFT = 7;
 
-main()
+    // These will be overwritten in HTML Export with your updated lists
+    const defaultFailureGroups = [
+  "Scrub Failures",
+  "Process",
+  "Technical",
+  "Training",
+  "Provisioning"
+];
+
+    const defaultFailureReasons = [
+  "Missing Documentation",
+  "Incorrect Procedure Followed",
+  "System Configuration Error",
+  "Insufficient Training",
+  "Policy Not Followed",
+  "Data Entry Error"
+];
+
+    const defaultIcManagers = {
+  "Manager One": [
+    "Alex Johnson",
+    "Melissa Brown"
+  ],
+  "Manager Two": [
+    "Carlos Ramirez",
+    "Dana Nguyen"
+  ],
+  "Manager Three": [
+    "Ethan Patel",
+    "Fatima Khan",
+    "Greg Thompson",
+    "Hannah Lee"
+  ]
+};
+
+    // Working copies
+    let failureGroups = defaultFailureGroups.slice();
+    let failureReasons = defaultFailureReasons.slice();
+    let icManagers = JSON.parse(JSON.stringify(defaultIcManagers));
+
+    // Cipher helpers
+    function encodeText(str, shift) {
+      if (shift === undefined) shift = SHIFT;
+      let result = "";
+      for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        if (c >= 65 && c <= 90) {          // A-Z
+          result += String.fromCharCode(((c - 65 + shift) % 26) + 65);
+        } else if (c >= 97 && c <= 122) {  // a-z
+          result += String.fromCharCode(((c - 97 + shift) % 26) + 97);
+        } else if (c >= 48 && c <= 57) {   // 0-9
+          result += String.fromCharCode(((c - 48 + shift) % 10) + 48);
+        } else {
+          result += str[i];
+        }
+      }
+      return result;
+    }
+
+    function decodeText(str, shift) {
+      if (shift === undefined) shift = SHIFT;
+      let result = "";
+      for (let i = 0; i < str.length; i++) {
+        const c = str.charCodeAt(i);
+        if (c >= 65 && c <= 90) {
+          result += String.fromCharCode(((c - 65 - shift + 26 * 10) % 26) + 65);
+        } else if (c >= 97 && c <= 122) {
+          result += String.fromCharCode(((c - 97 - shift + 26 * 10) % 26) + 97);
+        } else if (c >= 48 && c <= 57) {
+          result += String.fromCharCode(((c - 48 - shift + 10 * 10) % 10) + 48);
+        } else {
+          result += str[i];
+        }
+      }
+      return result;
+    }
+
+    // ========= DOM REFS (set in init) =========
+    let failureGroupSelect,
+        failureReasonSelect,
+        icErrorSelect,
+        managerField,
+        icNameField,
+        managerSelect,
+        icNameSelect,
+        outputTextarea,
+        recoveryInput,
+        decodedOutput,
+        manageFailureGroups,
+        manageFailureReasons,
+        manageICMapping,
+        htmlExportTextarea;
+
+    // ========= RENDER HELPERS =========
+    function renderFailureGroups() {
+      const prev = failureGroupSelect.value;
+      failureGroupSelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "-- Select Failure Group --";
+      failureGroupSelect.appendChild(placeholder);
+
+      failureGroups.forEach(g => {
+        const opt = document.createElement("option");
+        opt.value = g;
+        opt.textContent = g;
+        failureGroupSelect.appendChild(opt);
+      });
+
+      if (failureGroups.includes(prev)) {
+        failureGroupSelect.value = prev;
+      }
+    }
+
+    function renderFailureReasons() {
+      const prev = failureReasonSelect.value;
+      failureReasonSelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "-- Select Failure Reason --";
+      failureReasonSelect.appendChild(placeholder);
+
+      failureReasons.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r;
+        opt.textContent = r;
+        failureReasonSelect.appendChild(opt);
+      });
+
+      if (failureReasons.includes(prev)) {
+        failureReasonSelect.value = prev;
+      }
+    }
+
+    function renderManagers() {
+      const prev = managerSelect.value;
+      managerSelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "-- Select Manager --";
+      managerSelect.appendChild(placeholder);
+
+      Object.keys(icManagers).forEach(mgr => {
+        const opt = document.createElement("option");
+        opt.value = mgr;
+        opt.textContent = mgr;
+        managerSelect.appendChild(opt);
+      });
+
+      if (Object.keys(icManagers).includes(prev)) {
+        managerSelect.value = prev;
+      } else {
+        managerSelect.value = "";
+      }
+
+      renderIcNames();
+    }
+
+    function renderIcNames() {
+      const mgr = managerSelect.value;
+      const prevIC = icNameSelect.value;
+      icNameSelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = mgr ? "-- Select IC --" : "-- Select Manager first --";
+      icNameSelect.appendChild(placeholder);
+
+      const list = mgr && icManagers[mgr] ? icManagers[mgr] : [];
+      list.forEach(ic => {
+        const opt = document.createElement("option");
+        opt.value = ic;
+        opt.textContent = ic;
+        icNameSelect.appendChild(opt);
+      });
+
+      if (list.includes(prevIC)) {
+        icNameSelect.value = prevIC;
+      } else {
+        icNameSelect.value = "";
+      }
+    }
+
+    function renderManageTextareas() {
+      manageFailureGroups.value  = failureGroups.join("\n");
+      manageFailureReasons.value = failureReasons.join("\n");
+
+      const lines = [];
+      for (const [mgr, ics] of Object.entries(icManagers)) {
+        lines.push(mgr + ": " + ics.join(", "));
+      }
+      manageICMapping.value = lines.join("\n");
+    }
+
+    function renderAll() {
+      renderFailureGroups();
+      renderFailureReasons();
+      renderManagers();
+      renderManageTextareas();
+    }
+
+    // ========= HTML EXPORT (FULL PAGE) =========
+    function updateHtmlExport() {
+      const scriptTag = document.getElementById("mainScript");
+      if (!scriptTag || !htmlExportTextarea) return;
+
+      let code = scriptTag.textContent;
+
+      const fgCode = "const defaultFailureGroups = " +
+        JSON.stringify(failureGroups, null, 2) + ";";
+      const frCode = "const defaultFailureReasons = " +
+        JSON.stringify(failureReasons, null, 2) + ";";
+      const imCode = "const defaultIcManagers = " +
+        JSON.stringify(icManagers, null, 2) + ";";
+
+      code = code.replace(/const defaultFailureGroups =[\s\S]*?;/, fgCode);
+      code = code.replace(/const defaultFailureReasons =[\s\S]*?;/, frCode);
+      code = code.replace(/const defaultIcManagers =[\s\S]*?;/, imCode);
+
+      scriptTag.textContent = code;
+
+      const fullHtml = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+      htmlExportTextarea.value = fullHtml;
+    }
+
+    // ========= PARSE IC MAPPING TEXTAREA =========
+    function parseIcMapping(text) {
+      const mapping = {};
+      const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+
+      lines.forEach(line => {
+        const parts = line.split(":");
+        if (!parts[0]) return;
+        const manager = parts[0].trim();
+        const rest = parts.slice(1).join(":");
+        const icList = rest
+          .split(",")
+          .map(s => s.trim())
+          .filter(Boolean);
+        if (manager && icList.length) {
+          mapping[manager] = icList;
+        }
+      });
+
+      return mapping;
+    }
+
+    // ========= INIT & EVENT HOOKUP =========
+    function init() {
+      // Grab DOM elements
+      failureGroupSelect   = document.getElementById("failureGroup");
+      failureReasonSelect  = document.getElementById("failureReason");
+      icErrorSelect        = document.getElementById("icError");
+      managerField         = document.getElementById("managerField");
+      icNameField          = document.getElementById("icNameField");
+      managerSelect        = document.getElementById("manager");
+      icNameSelect         = document.getElementById("icName");
+      outputTextarea       = document.getElementById("output");
+      recoveryInput        = document.getElementById("recoveryInput");
+      decodedOutput        = document.getElementById("decodedOutput");
+      manageFailureGroups  = document.getElementById("manageFailureGroups");
+      manageFailureReasons = document.getElementById("manageFailureReasons");
+      manageICMapping      = document.getElementById("manageICMapping");
+      htmlExportTextarea   = document.getElementById("htmlExport");
+
+      // Initial render
+      renderAll();
+      updateHtmlExport();
+
+      // IC Error toggle
+      icErrorSelect.addEventListener("change", function () {
+        if (this.value === "Y") {
+          managerField.classList.remove("hidden");
+          icNameField.classList.remove("hidden");
+        } else {
+          managerField.classList.add("hidden");
+          icNameField.classList.add("hidden");
+          managerSelect.value = "";
+          icNameSelect.value = "";
+        }
+      });
+
+      // Manager -> IC linkage
+      managerSelect.addEventListener("change", function () {
+        renderIcNames();
+      });
+
+      // Generate + encode
+      document.getElementById("generateBtn").addEventListener("click", function () {
+        const auditor      = document.getElementById("auditor").value.trim();
+        const failureGroup = failureGroupSelect.value;
+        const failureReason= failureReasonSelect.value;
+        const icError      = icErrorSelect.value;
+        const manager      = managerSelect.value;
+        const icName       = icNameSelect.value;
+        const failureNotes = document.getElementById("failureNotes").value.trim();
+
+        const safeNotes = failureNotes.replace(/\r?\n/g, "\\n");
+
+        const recoveryPayload = [
+          auditor,
+          failureGroup,
+          failureReason,
+          icError,
+          manager,
+          icName,
+          safeNotes
+        ].join("|");
+
+        const encodedLine = encodeText(recoveryPayload);
+
+        const outputText =
+          "Auditor: " + auditor + "\n\n" +
+          "Failure Notes:\n" + failureNotes + "\n\n" +
+          "----- RECOVERY CODE -----\n" +
+          encodedLine;
+
+        outputTextarea.value = outputText;
+      });
+
+      // Copy output
+      document.getElementById("copyBtn").addEventListener("click", function () {
+        if (!outputTextarea.value) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(outputTextarea.value).catch(function () {
+            outputTextarea.select();
+            document.execCommand("copy");
+          });
+        } else {
+          outputTextarea.select();
+          document.execCommand("copy");
+        }
+      });
+
+      // Decode (uses ONLY content after marker)
+      document.getElementById("decodeBtn").addEventListener("click", function () {
+        const raw = recoveryInput.value;
+        if (!raw.trim()) return;
+
+        const marker = "----- RECOVERY CODE -----";
+        let encoded = raw;
+        const idx = raw.indexOf(marker);
+        if (idx !== -1) {
+          encoded = raw.substring(idx + marker.length).trim();
+        } else {
+          encoded = raw.trim();
+        }
+        if (!encoded) return;
+
+        const decoded = decodeText(encoded);
+        const parts = decoded.split("|");
+
+        const auditorDec       = parts[0] || "";
+        const failureGroupDec  = parts[1] || "";
+        const failureReasonDec = parts[2] || "";
+        const icErrorDec       = parts[3] || "";
+        const managerDec       = parts[4] || "";
+        const icNameDec        = parts[5] || "";
+        const safeNotesDec     = parts[6] || "";
+        const failureNotesDec  = safeNotesDec.replace(/\\n/g, "\n");
+
+        // Repopulate left form
+        document.getElementById("auditor").value      = auditorDec;
+        failureGroupSelect.value                      = failureGroupDec;
+        failureReasonSelect.value                     = failureReasonDec;
+        icErrorSelect.value                           = icErrorDec;
+        document.getElementById("failureNotes").value = failureNotesDec;
+
+        if (icErrorDec === "Y") {
+          managerField.classList.remove("hidden");
+          icNameField.classList.remove("hidden");
+
+          if (!icManagers[managerDec] && managerDec) {
+            icManagers[managerDec] = [];
+            renderManagers();
+          }
+          managerSelect.value = managerDec;
+          renderIcNames();
+
+          if (managerDec) {
+            icManagers[managerDec] = icManagers[managerDec] || [];
+            if (icNameDec && !icManagers[managerDec].includes(icNameDec)) {
+              icManagers[managerDec].push(icNameDec);
+              renderIcNames();
+            }
+          }
+
+          icNameSelect.value = icNameDec || "";
+        } else {
+          managerField.classList.add("hidden");
+          icNameField.classList.add("hidden");
+          managerSelect.value = "";
+          icNameSelect.value = "";
+        }
+
+        let decodedText =
+          "Auditor: " + auditorDec + "\n" +
+          "Failure Group: " + failureGroupDec + "\n" +
+          "Failure Reason: " + failureReasonDec + "\n" +
+          "IC Error: " + icErrorDec + "\n";
+
+        if (icErrorDec === "Y") {
+          decodedText += "Manager: " + managerDec + "\n" +
+                         "IC: " + icNameDec + "\n";
+        }
+
+        decodedText += "\nFailure Notes:\n" + failureNotesDec;
+
+        decodedOutput.value = decodedText;
+      });
+
+      // Copy decoded
+      document.getElementById("copyDecodedBtn").addEventListener("click", function () {
+        if (!decodedOutput.value) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(decodedOutput.value).catch(function () {
+            decodedOutput.select();
+            document.execCommand("copy");
+          });
+        } else {
+          decodedOutput.select();
+          document.execCommand("copy");
+        }
+      });
+
+      // Apply lists
+      document.getElementById("applyListsBtn").addEventListener("click", function () {
+        const fgLines = manageFailureGroups.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const frLines = manageFailureReasons.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        const icMap   = parseIcMapping(manageICMapping.value);
+
+        if (fgLines.length) failureGroups = fgLines;
+        if (frLines.length) failureReasons = frLines;
+        if (Object.keys(icMap).length) icManagers = icMap;
+
+        renderAll();
+        updateHtmlExport();
+      });
+
+      // Refresh HTML export manually
+      document.getElementById("refreshHtmlBtn").addEventListener("click", function () {
+        updateHtmlExport();
+      });
+
+      // Copy HTML export
+      document.getElementById("copyHtmlBtn").addEventListener("click", function () {
+        if (!htmlExportTextarea.value) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(htmlExportTextarea.value).catch(function () {
+            htmlExportTextarea.select();
+            document.execCommand("copy");
+          });
+        } else {
+          htmlExportTextarea.select();
+          document.execCommand("copy");
+        }
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+
+
+</body></html>
