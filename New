@@ -71,10 +71,14 @@ def parse_payload_from_remarks(remarks: str) -> dict:
       Auditor,
       IC Error,
       Failure Group 1..5,
+      Failure Reason 1..5,
       Manager 1..5,
       IC 1..5,
       Failure Notes
-    Handles both the older 16-field format and the newer 25-field format.
+
+    Handles both:
+    - New 25-field format
+    - Older 16-field format (like: Wyatt|Concert|Equipment|N|||1|||||||||Concert...)
     """
     # Initialize all fields as empty strings
     result = {
@@ -85,6 +89,11 @@ def parse_payload_from_remarks(remarks: str) -> dict:
         "Failure Group 3": "",
         "Failure Group 4": "",
         "Failure Group 5": "",
+        "Failure Reason 1": "",
+        "Failure Reason 2": "",
+        "Failure Reason 3": "",
+        "Failure Reason 4": "",
+        "Failure Reason 5": "",
         "Manager 1": "",
         "Manager 2": "",
         "Manager 3": "",
@@ -208,19 +217,9 @@ def parse_payload_from_remarks(remarks: str) -> dict:
     result["Auditor"]  = auditor
     result["IC Error"] = ic_error
 
-    # Failure Group i = "Group - Reason" (if both present)
     for i in range(5):
-        g = groups[i].strip() if groups[i] else ""
-        r = reasons[i].strip() if reasons[i] else ""
-        if g and r:
-            val = f"{g} - {r}"
-        elif g:
-            val = g
-        elif r:
-            val = r
-        else:
-            val = ""
-        result[f"Failure Group {i+1}"] = val
+        result[f"Failure Group {i+1}"]  = (groups[i] or "").strip()
+        result[f"Failure Reason {i+1}"] = (reasons[i] or "").strip()
 
     for i in range(5):
         result[f"Manager {i+1}"] = managers[i] or ""
@@ -245,12 +244,7 @@ def main():
     parsed = df["Complete Remarks"].apply(parse_payload_from_remarks)
     parsed_df = pd.DataFrame(parsed.tolist())
 
-    # Optionally keep the raw decoded pipe text for debugging
-    # df["Decoded Raw"] = df["Complete Remarks"].apply(
-    #     lambda x: decode_text(extract_encoded_string(x)) if pd.notna(x) else ""
-    # )
-
-    # Merge parsed fields into original dataframe
+    # Merge parsed fields into original dataframe (adds or overwrites columns)
     for col in parsed_df.columns:
         df[col] = parsed_df[col]
 
