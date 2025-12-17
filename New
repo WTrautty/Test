@@ -1,100 +1,10 @@
-import pandas as pd
-
-# ==== CONFIGURE THIS PATH ====
-INPUT_FILE = r"C:\path\to\your\audit_export.xlsx"   # <-- change this
-
-SHEET_NAME = "export"
-MARKER = "----- RECOVERY CODE -----"
-SHIFT = 7
+Wyatt Trautman|Concert|Equipment|N|||1|||||||||Concert didn't bring Laptop
 
 
-def decode_text(s: str, shift: int = SHIFT) -> str:
-    """
-    Decode a string using the same Caesar-like cipher
-    as the HTML tool (letters and digits shifted by -shift).
-    Non-alphanumerics are left untouched.
-    """
-    if s is None:
-        return ""
+Auditor: Wyatt Trautman
+IC Error: N
+Failure Groups:
+  1) Concert - Equipment
 
-    s = str(s)
-    result_chars = []
-
-    for ch in s:
-        code = ord(ch)
-
-        # A-Z
-        if 65 <= code <= 90:
-            decoded = ((code - 65 - shift) % 26) + 65
-            result_chars.append(chr(decoded))
-
-        # a-z
-        elif 97 <= code <= 122:
-            decoded = ((code - 97 - shift) % 26) + 97
-            result_chars.append(chr(decoded))
-
-        # 0-9
-        elif 48 <= code <= 57:
-            decoded = ((code - 48 - shift) % 10) + 48
-            result_chars.append(chr(decoded))
-
-        else:
-          # punctuation, pipes, etc. unchanged
-          result_chars.append(ch)
-
-    return "".join(result_chars)
-
-
-def extract_and_decode(remarks: str) -> str:
-    """
-    From a 'Complete Remarks' cell, find the encoded line
-    after MARKER (if present), decode it, and return the
-    decoded text. If MARKER is not present, attempts to
-    decode the whole cell.
-    """
-    if pd.isna(remarks):
-        return ""
-
-    text = str(remarks)
-
-    # Find the marker, similar to your HTML decoder
-    idx = text.find(MARKER)
-    if idx != -1:
-        encoded = text[idx + len(MARKER):].strip()
-    else:
-        encoded = text.strip()
-
-    if not encoded:
-        return ""
-
-    decoded = decode_text(encoded)
-    return decoded
-
-
-def main():
-    # Read just the export sheet
-    df = pd.read_excel(INPUT_FILE, sheet_name=SHEET_NAME)
-
-    if "Complete Remarks" not in df.columns:
-        raise KeyError(
-            f'"Complete Remarks" column not found in sheet "{SHEET_NAME}". '
-            f"Available columns: {list(df.columns)}"
-        )
-
-    # Create/overwrite "Decoded" column
-    df["Decoded"] = df["Complete Remarks"].apply(extract_and_decode)
-
-    # Write back to the SAME file, replacing only the 'export' sheet
-    with pd.ExcelWriter(
-        INPUT_FILE,
-        engine="openpyxl",
-        mode="a",
-        if_sheet_exists="replace"
-    ) as writer:
-        df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
-
-    print(f'Updated "{SHEET_NAME}" sheet in: {INPUT_FILE}')
-
-
-if __name__ == "__main__":
-    main()
+Failure Notes:
+Concert didn't bring Laptop
