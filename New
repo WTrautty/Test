@@ -1,263 +1,182 @@
-import pandas as pd
+import csv
+import re
+from datetime import datetime
 
-# ==== CONFIGURE THIS PATH ====
-INPUT_FILE = r"C:\path\to\your\audit_export.xlsx"   # <-- change this
-
-SHEET_NAME = "export"
-MARKER = "----- RECOVERY CODE -----"
-SHIFT = 7
+import win32com.client
 
 
-def decode_text(s: str, shift: int = SHIFT) -> str:
-    """
-    Decode a string using the same Caesar-like cipher
-    as the HTML tool (letters and digits shifted by -shift).
-    Non-alphanumerics are left untouched.
-    """
+# =========================
+# CONFIG (edit these)
+# =========================
+
+SEARCH_WORD = "Success"  # subject contains this (case-insensitive)
+
+# Where to read mail from:
+# - Most people want "Sent Items"
+# - If you truly meant Outbox, change FOLDER_NAME to "Outbox" (but that usually contains unsent mail)
+MAILBOX_NAME = None      # None = default mailbox; or set like "Your Name" / "you@company.com"
+FOLDER_NAME = "Sent Items"
+
+# Only process most recent N messages (helps performance). Set to None to process all.
+MAX_ITEMS = 5000
+
+OUTPUT_CSV_PATH = r"C:\Temp\success_emails_parsed.csv"
+
+# Everything before this marker is ignored in the body.
+# Set to None if you do NOT want a start marker.
+START_MARKER = "----- RECOVERY CODE -----"
+
+# Delimiters to extract (these become column headers without the trailing ":")
+# Example: body contains "Auditor: Wyatt", "IC Error: N", etc.
+DELIMITERS = [
+    "Auditor:",
+    "IC Error:",
+    "Failure Groups:",
+    "Failure Notes:",
+]
+
+
+# =========================
+# Parsing helpers
+# =========================
+
+def header_from_delim(delim: str) -> str:
+    # Turn "Auditor:" into "Auditor"
+    return delim.rstrip(":").strip()
+
+def normalize_text(s: str) -> str:
     if s is None:
         return ""
+    # Keep content but make it CSV-friendly
+    return s.replace("\r\n", "\n").replace("\r", "\n").strip()
 
-    s = str(s)
-    result_chars = []
+def slice_from_start_marker(body: str, start_marker: str | None) -> str:
+    body = body or ""
+    if not start_marker:
+        return body
+    idx = body.lower().find(start_marker.lower())
+    if idx == -1:
+        return body  # marker not found -> keep whole body (or change to "" if you prefer)
+    return body[idx:]  # include marker and everything after
 
-    for ch in s:
-        code = ord(ch)
-
-        # A-Z
-        if 65 <= code <= 90:
-            decoded = ((code - 65 - shift) % 26) + 65
-            result_chars.append(chr(decoded))
-
-        # a-z
-        elif 97 <= code <= 122:
-            decoded = ((code - 97 - shift) % 26) + 97
-            result_chars.append(chr(decoded))
-
-        # 0-9
-        elif 48 <= code <= 57:
-            decoded = ((code - 48 - shift) % 10) + 48
-            result_chars.append(chr(decoded))
-
-        else:
-            # punctuation, pipes, etc. unchanged
-            result_chars.append(ch)
-
-    return "".join(result_chars)
-
-
-def extract_encoded_string(remarks: str) -> str:
+def extract_sections(body: str, delimiters: list[str]) -> dict:
     """
-    From a 'Complete Remarks' cell, find the encoded line
-    after MARKER (if present), return that raw encoded string.
-    If MARKER is not present, treat the whole cell as encoded.
+    Extract text for each delimiter from body.
+    Strategy:
+      - Find each delimiter position (case-insensitive)
+      - Section value is text from end of this delimiter to start of next delimiter (or end of body)
     """
-    if pd.isna(remarks):
-        return ""
+    text = body or ""
+    lower = text.lower()
 
-    text = str(remarks)
-    idx = text.find(MARKER)
-    if idx != -1:
-        encoded = text[idx + len(MARKER):].strip()
+    # Find all delimiter occurrences
+    hits = []
+    for d in delimiters:
+        pos = lower.find(d.lower())
+        if pos != -1:
+            hits.append((pos, d))
+
+    # Sort by where they appear in the body
+    hits.sort(key=lambda x: x[0])
+
+    # If a delimiter is missing, we still output blank for that column
+    results = {header_from_delim(d): "" for d in delimiters}
+
+    for i, (start_pos, delim) in enumerate(hits):
+        start_val = start_pos + len(delim)
+        end_val = hits[i + 1][0] if i + 1 < len(hits) else len(text)
+        value = text[start_val:end_val].strip()
+
+        # Optional cleanup: remove leading ":" or whitespace if someone wrote "Auditor::"
+        value = re.sub(r"^\s*:\s*", "", value).strip()
+
+        results[header_from_delim(delim)] = normalize_text(value)
+
+    return results
+
+
+# =========================
+# Outlook read + CSV export
+# =========================
+
+def get_outlook_folder(namespace, mailbox_name: str | None, folder_name: str):
+    """
+    Returns the Outlook MAPIFolder for the mailbox/folder requested.
+    """
+    if mailbox_name:
+        root = namespace.Folders.Item(mailbox_name)
     else:
-        encoded = text.strip()
+        # Default mailbox root
+        root = namespace.Folders.Item(1)
 
-    return encoded
-
-
-def parse_payload_from_remarks(remarks: str) -> dict:
-    """
-    Takes the raw 'Complete Remarks' cell, extracts and decodes the cipher,
-    then returns a dict with the desired output columns:
-      Auditor,
-      IC Error,
-      Failure Group 1..5,
-      Failure Reason 1..5,
-      Manager 1..5,
-      IC 1..5,
-      Failure Notes
-
-    Handles both:
-    - New 25-field format
-    - Older 16-field format (like: Wyatt|Concert|Equipment|N|||1|||||||||Concert...)
-    """
-    # Initialize all fields as empty strings
-    result = {
-        "Auditor": "",
-        "IC Error": "",
-        "Failure Group 1": "",
-        "Failure Group 2": "",
-        "Failure Group 3": "",
-        "Failure Group 4": "",
-        "Failure Group 5": "",
-        "Failure Reason 1": "",
-        "Failure Reason 2": "",
-        "Failure Reason 3": "",
-        "Failure Reason 4": "",
-        "Failure Reason 5": "",
-        "Manager 1": "",
-        "Manager 2": "",
-        "Manager 3": "",
-        "Manager 4": "",
-        "Manager 5": "",
-        "IC 1": "",
-        "IC 2": "",
-        "IC 3": "",
-        "IC 4": "",
-        "IC 5": "",
-        "Failure Notes": "",
-    }
-
-    encoded = extract_encoded_string(remarks)
-    if not encoded:
-        return result
-
-    decoded = decode_text(encoded)
-    if not decoded:
-        return result
-
-    parts = decoded.split("|")
-
-    # Helper to safely get part by index
-    def p(i):
-        return parts[i] if i < len(parts) else ""
-
-    # New format (25 fields or more):
-    # 0: auditor
-    # 1: fgCount
-    # 2-11: [FG0, FR0, FG1, FR1, ... FG4, FR4] (10 slots)
-    # 12: icError
-    # 13: icCount
-    # 14-23: [Mgr0, IC0, ... Mgr4, IC4] (10 slots)
-    # 24: notes
-    if len(parts) >= 25:
-        auditor    = p(0)
-        fg_count_s = p(1)
-        try:
-            fg_count = int(fg_count_s)
-        except ValueError:
-            fg_count = 0
-        fg_count = max(0, min(5, fg_count))
-
-        groups = [""] * 5
-        reasons = [""] * 5
-        idx = 2
-        for i in range(5):
-            groups[i] = p(idx)
-            reasons[i] = p(idx + 1)
-            idx += 2
-
-        ic_error    = p(12)
-        ic_count_s  = p(13)
-        try:
-            ic_count = int(ic_count_s)
-        except ValueError:
-            ic_count = 0
-        ic_count = max(0, min(5, ic_count))
-
-        managers = [""] * 5
-        ics      = [""] * 5
-        idx = 14
-        for i in range(5):
-            managers[i] = p(idx)
-            ics[i]      = p(idx + 1)
-            idx += 2
-
-        notes = p(24).replace("\\n", "\n")
-
-    else:
-        # Older 16-field format (like your example):
-        # 0: auditor
-        # 1: FG1
-        # 2: FR1
-        # 3: icError
-        # 4: manager
-        # 5: icName
-        # 6: fgCount
-        # 7: FG2
-        # 8: FR2
-        # 9: FG3
-        # 10: FR3
-        # 11: FG4
-        # 12: FR4
-        # 13: FG5
-        # 14: FR5
-        # 15: notes
-        auditor    = p(0)
-        ic_error   = p(3)
-        fg_count_s = p(6)
-        try:
-            fg_count = int(fg_count_s)
-        except ValueError:
-            fg_count = 0
-        fg_count = max(0, min(5, fg_count))
-
-        groups  = [""] * 5
-        reasons = [""] * 5
-        groups[0]  = p(1)
-        reasons[0] = p(2)
-
-        groups[1]  = p(7)
-        reasons[1] = p(8)
-        groups[2]  = p(9)
-        reasons[2] = p(10)
-        groups[3]  = p(11)
-        reasons[3] = p(12)
-        groups[4]  = p(13)
-        reasons[4] = p(14)
-
-        managers = [""] * 5
-        ics      = [""] * 5
-        managers[0] = p(4)
-        ics[0]      = p(5)
-        # Managers 2..5, ICs 2..5 remain empty in old format
-
-        notes = p(15).replace("\\n", "\n")
-
-    # Fill result dict
-    result["Auditor"]  = auditor
-    result["IC Error"] = ic_error
-
-    for i in range(5):
-        result[f"Failure Group {i+1}"]  = (groups[i] or "").strip()
-        result[f"Failure Reason {i+1}"] = (reasons[i] or "").strip()
-
-    for i in range(5):
-        result[f"Manager {i+1}"] = managers[i] or ""
-        result[f"IC {i+1}"]      = ics[i] or ""
-
-    result["Failure Notes"] = notes
-
-    return result
-
+    return root.Folders.Item(folder_name)
 
 def main():
-    # Read just the export sheet
-    df = pd.read_excel(INPUT_FILE, sheet_name=SHEET_NAME)
+    outlook = win32com.client.Dispatch("Outlook.Application")
+    namespace = outlook.GetNamespace("MAPI")
 
-    if "Complete Remarks" not in df.columns:
-        raise KeyError(
-            f'"Complete Remarks" column not found in sheet "{SHEET_NAME}". '
-            f"Available columns: {list(df.columns)}"
-        )
+    folder = get_outlook_folder(namespace, MAILBOX_NAME, FOLDER_NAME)
 
-    # Parse all rows into structured fields
-    parsed = df["Complete Remarks"].apply(parse_payload_from_remarks)
-    parsed_df = pd.DataFrame(parsed.tolist())
+    items = folder.Items
+    # Sort newest first (SentOn exists for sent mail)
+    try:
+        items.Sort("[SentOn]", True)
+    except Exception:
+        # Some folders may not support SentOn sorting; ignore if so
+        pass
 
-    # Merge parsed fields into original dataframe (adds or overwrites columns)
-    for col in parsed_df.columns:
-        df[col] = parsed_df[col]
+    # Build CSV headers
+    parsed_headers = [header_from_delim(d) for d in DELIMITERS]
+    fieldnames = ["Subject", "DateSent"] + parsed_headers
 
-    # Write back to the SAME file, replacing only the 'export' sheet
-    with pd.ExcelWriter(
-        INPUT_FILE,
-        engine="openpyxl",
-        mode="a",
-        if_sheet_exists="replace"
-    ) as writer:
-        df.to_excel(writer, sheet_name=SHEET_NAME, index=False)
+    count_written = 0
+    count_scanned = 0
 
-    print(f'Updated "{SHEET_NAME}" sheet in: {INPUT_FILE}')
+    with open(OUTPUT_CSV_PATH, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+
+        for item in items:
+            # Stop if we hit MAX_ITEMS
+            if MAX_ITEMS is not None and count_scanned >= MAX_ITEMS:
+                break
+
+            count_scanned += 1
+
+            # Only MailItem (Class 43)
+            try:
+                if item.Class != 43:
+                    continue
+            except Exception:
+                continue
+
+            subject = getattr(item, "Subject", "") or ""
+            if SEARCH_WORD.lower() not in subject.lower():
+                continue
+
+            sent_on = getattr(item, "SentOn", None)
+            if sent_on:
+                # Outlook COM datetime -> python datetime
+                date_str = datetime.fromtimestamp(int(sent_on.timestamp())).strftime("%m/%d/%Y") \
+                    if hasattr(sent_on, "timestamp") else sent_on.strftime("%m/%d/%Y")
+            else:
+                date_str = ""
+
+            body = getattr(item, "Body", "") or ""
+            body = slice_from_start_marker(body, START_MARKER)
+
+            sections = extract_sections(body, DELIMITERS)
+
+            row = {
+                "Subject": normalize_text(subject),
+                "DateSent": date_str,
+                **sections,
+            }
+            writer.writerow(row)
+            count_written += 1
+
+    print(f"Done. Scanned: {count_scanned}, Exported: {count_written}")
+    print(f"CSV saved to: {OUTPUT_CSV_PATH}")
 
 
 if __name__ == "__main__":
