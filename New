@@ -1,3 +1,38 @@
+import io
+import pandas as pd
+from sqlalchemy import create_engine
+
+from office365.sharepoint.client_context import ClientContext
+from office365.runtime.auth.user_credential import UserCredential
+
+# ---- SharePoint settings ----
+SITE_URL = "https://YOURTENANT.sharepoint.com/sites/YOURSITE"
+FILE_SERVER_RELATIVE_URL = "/sites/YOURSITE/Shared Documents/Folder/YourFile.xlsx"
+USERNAME = "you@yourtenant.com"
+PASSWORD = "your_password"  # consider using env var instead
+
+# ---- SQLite settings ----
+SQLITE_PATH = "local.db"
+TABLE_NAME = "my_table"     # change as needed
+SHEET_NAME = 0              # 0 = first sheet, or "Sheet1"
+
+# 1) Download Excel bytes from SharePoint
+ctx = ClientContext(SITE_URL).with_credentials(UserCredential(USERNAME, PASSWORD))
+file = ctx.web.get_file_by_server_relative_url(FILE_SERVER_RELATIVE_URL)
+download = file.open_binary_stream()
+ctx.execute_query()
+excel_bytes = download.value
+
+# 2) Read Excel into a DataFrame
+df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name=SHEET_NAME)
+
+# 3) Write into SQLite
+engine = create_engine(f"sqlite:///{SQLITE_PATH}")
+df.to_sql(TABLE_NAME, engine, if_exists="replace", index=False)
+
+print(f"Loaded {len(df):,} rows into {SQLITE_PATH} -> table '{TABLE_NAME}'")
+
+
 import csv
 import re
 from datetime import datetime
