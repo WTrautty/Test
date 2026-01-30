@@ -1,217 +1,218 @@
-import io
+import os
+import time
+import sqlite3
+from pathlib import Path
+
 import pandas as pd
-from sqlalchemy import create_engine
 
-from office365.sharepoint.client_context import ClientContext
-from office365.runtime.auth.user_credential import UserCredential
-
-# ---- SharePoint settings ----
-SITE_URL = "https://YOURTENANT.sharepoint.com/sites/YOURSITE"
-FILE_SERVER_RELATIVE_URL = "/sites/YOURSITE/Shared Documents/Folder/YourFile.xlsx"
-USERNAME = "you@yourtenant.com"
-PASSWORD = "your_password"  # consider using env var instead
-
-# ---- SQLite settings ----
-SQLITE_PATH = "local.db"
-TABLE_NAME = "my_table"     # change as needed
-SHEET_NAME = 0              # 0 = first sheet, or "Sheet1"
-
-# 1) Download Excel bytes from SharePoint
-ctx = ClientContext(SITE_URL).with_credentials(UserCredential(USERNAME, PASSWORD))
-file = ctx.web.get_file_by_server_relative_url(FILE_SERVER_RELATIVE_URL)
-download = file.open_binary_stream()
-ctx.execute_query()
-excel_bytes = download.value
-
-# 2) Read Excel into a DataFrame
-df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name=SHEET_NAME)
-
-# 3) Write into SQLite
-engine = create_engine(f"sqlite:///{SQLITE_PATH}")
-df.to_sql(TABLE_NAME, engine, if_exists="replace", index=False)
-
-print(f"Loaded {len(df):,} rows into {SQLITE_PATH} -> table '{TABLE_NAME}'")
-
-
-import csv
-import re
-from datetime import datetime
-
+# Requires: pywin32  (pip install pywin32)
 import win32com.client
 
 
-# =========================
-# CONFIG (edit these)
-# =========================
+# -----------------------------
+# CONFIG
+# -----------------------------
+EXCEL_PATH = r"C:\Users\YourUser\OneDrive - YourOrg\YourLibrary\source_workbook.xlsx"
 
-SEARCH_WORD = "Success"  # subject contains this (case-insensitive)
+# OneDrive-synced folder that maps to the SharePoint document library
+# Example: C:\Users\You\OneDrive - OrgName\Shared Documents\SomeFolder
+SHAREPOINT_SYNC_FOLDER = r"C:\Users\YourUser\OneDrive - YourOrg\Shared Documents\PowerBI_Staging"
 
-# Where to read mail from:
-# - Most people want "Sent Items"
-# - If you truly meant Outbox, change FOLDER_NAME to "Outbox" (but that usually contains unsent mail)
-MAILBOX_NAME = None      # None = default mailbox; or set like "Your Name" / "you@company.com"
-FOLDER_NAME = "Sent Items"
+DB_NAME = "staging.db"
+DB_PATH = str(Path(SHAREPOINT_SYNC_FOLDER) / DB_NAME)
 
-# Only process most recent N messages (helps performance). Set to None to process all.
-MAX_ITEMS = 5000
-
-OUTPUT_CSV_PATH = r"C:\Temp\success_emails_parsed.csv"
-
-# Everything before this marker is ignored in the body.
-# Set to None if you do NOT want a start marker.
-START_MARKER = "----- RECOVERY CODE -----"
-
-# Delimiters to extract (these become column headers without the trailing ":")
-# Example: body contains "Auditor: Wyatt", "IC Error: N", etc.
-DELIMITERS = [
-    "Auditor:",
-    "IC Error:",
-    "Failure Groups:",
-    "Failure Notes:",
+# You can load either:
+#   A) three worksheets by name:
+SHEETS_TO_EXPORT = [
+    ("Sheet1", "table_sheet1"),
+    ("Sheet2", "table_sheet2"),
+    ("Sheet3", "table_sheet3"),
 ]
 
+# OR
+#   B) three Excel "Tables" (ListObjects) by name instead of sheets
+#      If you prefer that, set USE_EXCEL_TABLES=True and list table names here.
+USE_EXCEL_TABLES = False
+EXCEL_TABLES_TO_EXPORT = [
+    ("Table1", "table1"),
+    ("Table2", "table2"),
+    ("Table3", "table3"),
+]
 
-# =========================
-# Parsing helpers
-# =========================
+# Refresh settings
+REFRESH_TIMEOUT_SECONDS = 30 * 60  # 30 minutes
+POLL_SECONDS = 2
 
-def header_from_delim(delim: str) -> str:
-    # Turn "Auditor:" into "Auditor"
-    return delim.rstrip(":").strip()
 
-def normalize_text(s: str) -> str:
-    if s is None:
-        return ""
-    # Keep content but make it CSV-friendly
-    return s.replace("\r\n", "\n").replace("\r", "\n").strip()
-
-def slice_from_start_marker(body: str, start_marker: str | None) -> str:
-    body = body or ""
-    if not start_marker:
-        return body
-    idx = body.lower().find(start_marker.lower())
-    if idx == -1:
-        return body  # marker not found -> keep whole body (or change to "" if you prefer)
-    return body[idx:]  # include marker and everything after
-
-def extract_sections(body: str, delimiters: list[str]) -> dict:
+# -----------------------------
+# EXCEL REFRESH
+# -----------------------------
+def refresh_excel_workbook(excel_path: str) -> None:
     """
-    Extract text for each delimiter from body.
-    Strategy:
-      - Find each delimiter position (case-insensitive)
-      - Section value is text from end of this delimiter to start of next delimiter (or end of body)
+    Opens workbook in Excel, triggers RefreshAll, waits until all async queries finish, then saves & closes.
+    Works best for Power Query / external connections.
     """
-    text = body or ""
-    lower = text.lower()
+    excel = win32com.client.DispatchEx("Excel.Application")
+    excel.Visible = False
+    excel.DisplayAlerts = False
+    excel.AskToUpdateLinks = False
 
-    # Find all delimiter occurrences
-    hits = []
-    for d in delimiters:
-        pos = lower.find(d.lower())
-        if pos != -1:
-            hits.append((pos, d))
-
-    # Sort by where they appear in the body
-    hits.sort(key=lambda x: x[0])
-
-    # If a delimiter is missing, we still output blank for that column
-    results = {header_from_delim(d): "" for d in delimiters}
-
-    for i, (start_pos, delim) in enumerate(hits):
-        start_val = start_pos + len(delim)
-        end_val = hits[i + 1][0] if i + 1 < len(hits) else len(text)
-        value = text[start_val:end_val].strip()
-
-        # Optional cleanup: remove leading ":" or whitespace if someone wrote "Auditor::"
-        value = re.sub(r"^\s*:\s*", "", value).strip()
-
-        results[header_from_delim(delim)] = normalize_text(value)
-
-    return results
-
-
-# =========================
-# Outlook read + CSV export
-# =========================
-
-def get_outlook_folder(namespace, mailbox_name: str | None, folder_name: str):
-    """
-    Returns the Outlook MAPIFolder for the mailbox/folder requested.
-    """
-    if mailbox_name:
-        root = namespace.Folders.Item(mailbox_name)
-    else:
-        # Default mailbox root
-        root = namespace.Folders.Item(1)
-
-    return root.Folders.Item(folder_name)
-
-def main():
-    outlook = win32com.client.Dispatch("Outlook.Application")
-    namespace = outlook.GetNamespace("MAPI")
-
-    folder = get_outlook_folder(namespace, MAILBOX_NAME, FOLDER_NAME)
-
-    items = folder.Items
-    # Sort newest first (SentOn exists for sent mail)
+    wb = None
     try:
-        items.Sort("[SentOn]", True)
-    except Exception:
-        # Some folders may not support SentOn sorting; ignore if so
-        pass
+        wb = excel.Workbooks.Open(excel_path, UpdateLinks=0, ReadOnly=False)
 
-    # Build CSV headers
-    parsed_headers = [header_from_delim(d) for d in DELIMITERS]
-    fieldnames = ["Subject", "DateSent"] + parsed_headers
+        # Trigger refresh (Power Query, connections, pivots, etc.)
+        wb.RefreshAll()
 
-    count_written = 0
-    count_scanned = 0
+        # Wait for completion
+        start = time.time()
+        while True:
+            # For Power Query / background refresh:
+            try:
+                # This blocks until async queries finish
+                excel.CalculateUntilAsyncQueriesDone()
+            except Exception:
+                # Not always available / may fail depending on Excel version.
+                pass
 
-    with open(OUTPUT_CSV_PATH, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
-        writer.writeheader()
+            # Check if any connections are still refreshing
+            refreshing = False
+            try:
+                for conn in wb.Connections:
+                    try:
+                        if conn.OLEDBConnection.Refreshing:
+                            refreshing = True
+                            break
+                    except Exception:
+                        # Some connection types don't support OLEDBConnection
+                        pass
+            except Exception:
+                pass
 
-        for item in items:
-            # Stop if we hit MAX_ITEMS
-            if MAX_ITEMS is not None and count_scanned >= MAX_ITEMS:
+            if not refreshing:
                 break
 
-            count_scanned += 1
+            if (time.time() - start) > REFRESH_TIMEOUT_SECONDS:
+                raise TimeoutError(f"Excel refresh exceeded {REFRESH_TIMEOUT_SECONDS} seconds.")
 
-            # Only MailItem (Class 43)
+            time.sleep(POLL_SECONDS)
+
+        # Save results
+        wb.Save()
+
+    finally:
+        if wb is not None:
             try:
-                if item.Class != 43:
-                    continue
+                wb.Close(SaveChanges=True)
             except Exception:
-                continue
+                pass
+        try:
+            excel.Quit()
+        except Exception:
+            pass
 
-            subject = getattr(item, "Subject", "") or ""
-            if SEARCH_WORD.lower() not in subject.lower():
-                continue
 
-            sent_on = getattr(item, "SentOn", None)
-            if sent_on:
-                # Outlook COM datetime -> python datetime
-                date_str = datetime.fromtimestamp(int(sent_on.timestamp())).strftime("%m/%d/%Y") \
-                    if hasattr(sent_on, "timestamp") else sent_on.strftime("%m/%d/%Y")
-            else:
-                date_str = ""
+# -----------------------------
+# EXPORT TO SQLITE
+# -----------------------------
+def dataframe_to_sqlite(df: pd.DataFrame, conn: sqlite3.Connection, table_name: str) -> None:
+    """
+    Writes df to SQLite, replacing the table each run.
+    """
+    # Normalize column names a bit (optional but helpful)
+    df.columns = [str(c).strip().replace("\n", " ").replace("\r", " ") for c in df.columns]
 
-            body = getattr(item, "Body", "") or ""
-            body = slice_from_start_marker(body, START_MARKER)
+    # Write
+    df.to_sql(table_name, conn, if_exists="replace", index=False)
 
-            sections = extract_sections(body, DELIMITERS)
 
-            row = {
-                "Subject": normalize_text(subject),
-                "DateSent": date_str,
-                **sections,
-            }
-            writer.writerow(row)
-            count_written += 1
+def export_excel_to_sqlite(excel_path: str, db_path: str) -> None:
+    """
+    Reads Excel (already refreshed), exports specified sheets or tables to SQLite.
+    """
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Done. Scanned: {count_scanned}, Exported: {count_written}")
-    print(f"CSV saved to: {OUTPUT_CSV_PATH}")
+    # Connect SQLite
+    with sqlite3.connect(db_path) as conn:
+        # Improve write reliability and speed
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+
+        if USE_EXCEL_TABLES:
+            # Read Excel Tables via pandas:
+            # pandas doesn't directly read ListObjects by name without helper logic.
+            # The most reliable approach (no COM) is: put each table on its own sheet
+            # OR use COM to extract table ranges. We'll do COM extraction if enabled.
+            excel = win32com.client.DispatchEx("Excel.Application")
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            wb = None
+            try:
+                wb = excel.Workbooks.Open(excel_path, UpdateLinks=0, ReadOnly=True)
+
+                for excel_table_name, sqlite_table_name in EXCEL_TABLES_TO_EXPORT:
+                    df = extract_excel_table_as_dataframe(wb, excel_table_name)
+                    dataframe_to_sqlite(df, conn, sqlite_table_name)
+
+            finally:
+                if wb is not None:
+                    try:
+                        wb.Close(SaveChanges=False)
+                    except Exception:
+                        pass
+                try:
+                    excel.Quit()
+                except Exception:
+                    pass
+
+        else:
+            # Read worksheets by name (simple & reliable)
+            for sheet_name, sqlite_table_name in SHEETS_TO_EXPORT:
+                df = pd.read_excel(excel_path, sheet_name=sheet_name, engine="openpyxl")
+                dataframe_to_sqlite(df, conn, sqlite_table_name)
+
+
+def extract_excel_table_as_dataframe(wb, table_name: str) -> pd.DataFrame:
+    """
+    Extract a ListObject (Excel Table) by name from any sheet using COM, return as DataFrame.
+    """
+    for ws in wb.Worksheets:
+        try:
+            for lo in ws.ListObjects:
+                if str(lo.Name).strip().lower() == table_name.strip().lower():
+                    # Get range values (includes headers)
+                    values = lo.Range.Value
+                    headers = list(values[0])
+                    rows = list(values[1:])
+                    return pd.DataFrame(rows, columns=headers)
+        except Exception:
+            continue
+
+    raise ValueError(f"Excel table '{table_name}' not found in workbook.")
+
+
+# -----------------------------
+# MAIN
+# -----------------------------
+def main():
+    if not os.path.exists(EXCEL_PATH):
+        raise FileNotFoundError(f"Excel file not found: {EXCEL_PATH}")
+
+    if not os.path.isdir(SHAREPOINT_SYNC_FOLDER):
+        raise FileNotFoundError(
+            f"OneDrive/SharePoint sync folder not found: {SHAREPOINT_SYNC_FOLDER}\n"
+            f"Make sure the SharePoint library is synced locally via OneDrive."
+        )
+
+    print("1) Refreshing Excel workbook...")
+    refresh_excel_workbook(EXCEL_PATH)
+    print("   Refresh complete.")
+
+    print("2) Exporting refreshed Excel data to SQLite DB...")
+    export_excel_to_sqlite(EXCEL_PATH, DB_PATH)
+    print(f"   DB written to: {DB_PATH}")
+
+    print("Done. OneDrive will sync the .db to SharePoint automatically.")
 
 
 if __name__ == "__main__":
