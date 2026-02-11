@@ -1,219 +1,332 @@
 import os
-import time
-import sqlite3
+import sys
+import json
+import hashlib
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-# Requires: pywin32  (pip install pywin32)
-import win32com.client
-
-
-# -----------------------------
+# ----------------------------
 # CONFIG
-# -----------------------------
-EXCEL_PATH = r"C:\Users\YourUser\OneDrive - YourOrg\YourLibrary\source_workbook.xlsx"
+# ----------------------------
+EXCEL_PATH = r"/path/to/your/workbook.xlsx"   # <-- CHANGE THIS
+KEY_COL = "NSC Code"
 
-# OneDrive-synced folder that maps to the SharePoint document library
-# Example: C:\Users\You\OneDrive - OrgName\Shared Documents\SomeFolder
-SHAREPOINT_SYNC_FOLDER = r"C:\Users\YourUser\OneDrive - YourOrg\Shared Documents\PowerBI_Staging"
+OUTPUT_DIR = None  # None => same folder as workbook
+SNAPSHOT_BASENAME = ".nsc_snapshot.json"      # stored next to workbook by default
 
-DB_NAME = "staging.db"
-DB_PATH = str(Path(SHAREPOINT_SYNC_FOLDER) / DB_NAME)
+# If True, tries to refresh via Excel application (Windows-only)
+TRY_EXCEL_REFRESH = True
 
-# You can load either:
-#   A) three worksheets by name:
-SHEETS_TO_EXPORT = [
-    ("Sheet1", "table_sheet1"),
-    ("Sheet2", "table_sheet2"),
-    ("Sheet3", "table_sheet3"),
-]
+# Columns to ignore when comparing (examples: timestamps, volatile calc columns)
+IGNORE_COLS = set()  # e.g. {"Last Updated", "Refreshed At"}
 
-# OR
-#   B) three Excel "Tables" (ListObjects) by name instead of sheets
-#      If you prefer that, set USE_EXCEL_TABLES=True and list table names here.
-USE_EXCEL_TABLES = False
-EXCEL_TABLES_TO_EXPORT = [
-    ("Table1", "table1"),
-    ("Table2", "table2"),
-    ("Table3", "table3"),
-]
-
-# Refresh settings
-REFRESH_TIMEOUT_SECONDS = 30 * 60  # 30 minutes
-POLL_SECONDS = 2
-
-
-# -----------------------------
-# EXCEL REFRESH
-# -----------------------------
-def refresh_excel_workbook(excel_path: str) -> None:
+# ----------------------------
+# OPTIONAL: Excel refresh (Windows)
+# ----------------------------
+def refresh_workbook_windows(excel_path: str) -> bool:
     """
-    Opens workbook in Excel, triggers RefreshAll, waits until all async queries finish, then saves & closes.
-    Works best for Power Query / external connections.
+    Refreshes workbook connections/calculations by opening Excel via COM automation.
+    Returns True if refresh succeeded, False otherwise.
     """
-    excel = win32com.client.DispatchEx("Excel.Application")
-    excel.Visible = False
-    excel.DisplayAlerts = False
-    excel.AskToUpdateLinks = False
-
-    wb = None
     try:
-        wb = excel.Workbooks.Open(excel_path, UpdateLinks=0, ReadOnly=False)
+        import win32com.client  # pip install pywin32
+        excel = win32com.client.DispatchEx("Excel.Application")
+        excel.Visible = False
+        excel.DisplayAlerts = False
 
-        # Trigger refresh (Power Query, connections, pivots, etc.)
+        wb = excel.Workbooks.Open(os.path.abspath(excel_path))
+        # Refresh connections / queries
         wb.RefreshAll()
+        # Let Excel finish background refresh
+        excel.CalculateUntilAsyncQueriesDone()
 
-        # Wait for completion
-        start = time.time()
-        while True:
-            # For Power Query / background refresh:
-            try:
-                # This blocks until async queries finish
-                excel.CalculateUntilAsyncQueriesDone()
-            except Exception:
-                # Not always available / may fail depending on Excel version.
-                pass
-
-            # Check if any connections are still refreshing
-            refreshing = False
-            try:
-                for conn in wb.Connections:
-                    try:
-                        if conn.OLEDBConnection.Refreshing:
-                            refreshing = True
-                            break
-                    except Exception:
-                        # Some connection types don't support OLEDBConnection
-                        pass
-            except Exception:
-                pass
-
-            if not refreshing:
-                break
-
-            if (time.time() - start) > REFRESH_TIMEOUT_SECONDS:
-                raise TimeoutError(f"Excel refresh exceeded {REFRESH_TIMEOUT_SECONDS} seconds.")
-
-            time.sleep(POLL_SECONDS)
-
-        # Save results
         wb.Save()
+        wb.Close(SaveChanges=True)
+        excel.Quit()
+        return True
+    except Exception as e:
+        print(f"[WARN] Excel refresh not available or failed: {e}")
+        return False
 
-    finally:
-        if wb is not None:
-            try:
-                wb.Close(SaveChanges=True)
-            except Exception:
-                pass
-        try:
-            excel.Quit()
-        except Exception:
-            pass
+# ----------------------------
+# Snapshot I/O
+# ----------------------------
+def snapshot_path_for(excel_path: Path) -> Path:
+    return excel_path.parent / SNAPSHOT_BASENAME
 
+def load_snapshot(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
-# -----------------------------
-# EXPORT TO SQLITE
-# -----------------------------
-def dataframe_to_sqlite(df: pd.DataFrame, conn: sqlite3.Connection, table_name: str) -> None:
+def save_snapshot(path: Path, data: dict) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    tmp.replace(path)
+
+# ----------------------------
+# Data normalize & diff helpers
+# ----------------------------
+def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    # Standardize column names (strip) but keep original names mostly intact
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+
+    # Remove completely empty rows
+    df = df.dropna(how="all")
+
+    # Ensure key col exists
+    if KEY_COL not in df.columns:
+        return df
+
+    # Normalize NSC Code as string (trim)
+    df[KEY_COL] = df[KEY_COL].astype(str).str.strip()
+
+    # Normalize all object-like cells (trim whitespace)
+    for c in df.columns:
+        if c == KEY_COL:
+            continue
+        if pd.api.types.is_object_dtype(df[c]) or pd.api.types.is_string_dtype(df[c]):
+            df[c] = df[c].astype(str).str.replace("\r\n", "\n").str.strip()
+        # Keep NaN as NaN, not "nan"
+        df.loc[df[c].isin(["nan", "NaT"]), c] = pd.NA
+
+    return df
+
+def add_occurrence_key(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Writes df to SQLite, replacing the table each run.
+    Handles duplicate NSC Code rows by adding an occurrence index per NSC per sheet.
+    Creates a stable composite key: f"{NSC Code}__{occ}"
     """
-    # Normalize column names a bit (optional but helpful)
-    df.columns = [str(c).strip().replace("\n", " ").replace("\r", " ") for c in df.columns]
+    df = df.copy()
+    if KEY_COL not in df.columns:
+        df["_composite_key"] = pd.RangeIndex(len(df)).astype(str)
+        return df
 
-    # Write
-    df.to_sql(table_name, conn, if_exists="replace", index=False)
+    df["_nsc_occ"] = df.groupby(KEY_COL).cumcount()
+    df["_composite_key"] = df[KEY_COL].astype(str) + "__" + df["_nsc_occ"].astype(str)
+    return df
 
-
-def export_excel_to_sqlite(excel_path: str, db_path: str) -> None:
+def row_fingerprint(row: dict, compare_cols: list[str]) -> str:
     """
-    Reads Excel (already refreshed), exports specified sheets or tables to SQLite.
+    Hashes compare columns for quick equality check.
     """
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    parts = []
+    for c in compare_cols:
+        v = row.get(c, None)
+        parts.append("" if pd.isna(v) else str(v))
+    joined = "\u241F".join(parts)  # unit separator-ish
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
-    # Connect SQLite
-    with sqlite3.connect(db_path) as conn:
-        # Improve write reliability and speed
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-
-        if USE_EXCEL_TABLES:
-            # Read Excel Tables via pandas:
-            # pandas doesn't directly read ListObjects by name without helper logic.
-            # The most reliable approach (no COM) is: put each table on its own sheet
-            # OR use COM to extract table ranges. We'll do COM extraction if enabled.
-            excel = win32com.client.DispatchEx("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            wb = None
-            try:
-                wb = excel.Workbooks.Open(excel_path, UpdateLinks=0, ReadOnly=True)
-
-                for excel_table_name, sqlite_table_name in EXCEL_TABLES_TO_EXPORT:
-                    df = extract_excel_table_as_dataframe(wb, excel_table_name)
-                    dataframe_to_sqlite(df, conn, sqlite_table_name)
-
-            finally:
-                if wb is not None:
-                    try:
-                        wb.Close(SaveChanges=False)
-                    except Exception:
-                        pass
-                try:
-                    excel.Quit()
-                except Exception:
-                    pass
-
-        else:
-            # Read worksheets by name (simple & reliable)
-            for sheet_name, sqlite_table_name in SHEETS_TO_EXPORT:
-                df = pd.read_excel(excel_path, sheet_name=sheet_name, engine="openpyxl")
-                dataframe_to_sqlite(df, conn, sqlite_table_name)
-
-
-def extract_excel_table_as_dataframe(wb, table_name: str) -> pd.DataFrame:
+def df_to_snapshot(df: pd.DataFrame, sheet_name: str) -> dict:
     """
-    Extract a ListObject (Excel Table) by name from any sheet using COM, return as DataFrame.
+    Convert a sheet dataframe into snapshot dict:
+      { composite_key: { "sheet":..., "NSC Code":..., "values":{col:val...}, "hash":... } }
     """
-    for ws in wb.Worksheets:
-        try:
-            for lo in ws.ListObjects:
-                if str(lo.Name).strip().lower() == table_name.strip().lower():
-                    # Get range values (includes headers)
-                    values = lo.Range.Value
-                    headers = list(values[0])
-                    rows = list(values[1:])
-                    return pd.DataFrame(rows, columns=headers)
-        except Exception:
+    df = normalize_df(df)
+    df = add_occurrence_key(df)
+
+    # Compare all columns except helper + ignored
+    compare_cols = [c for c in df.columns if c not in { "_nsc_occ", "_composite_key" } and c not in IGNORE_COLS]
+    # Ensure key column exists in compare set (fine if not, but helpful)
+    if KEY_COL in df.columns and KEY_COL not in compare_cols:
+        compare_cols = [KEY_COL] + compare_cols
+
+    snap = {}
+    for _, r in df.iterrows():
+        ck = str(r["_composite_key"])
+        values = {c: (None if pd.isna(r.get(c)) else r.get(c)) for c in compare_cols}
+        fp = row_fingerprint(values, compare_cols)
+        snap[ck] = {
+            "sheet": sheet_name,
+            "nsc_code": values.get(KEY_COL),
+            "values": values,
+            "hash": fp,
+        }
+    return snap
+
+def diff_snapshots(old_sheet: dict, new_sheet: dict) -> list[dict]:
+    """
+    Returns list of change records for one sheet.
+    Each record: sheet, nsc_code, change_type, column, old_value, new_value, composite_key
+    """
+    changes = []
+
+    old_keys = set(old_sheet.keys())
+    new_keys = set(new_sheet.keys())
+
+    added = new_keys - old_keys
+    removed = old_keys - new_keys
+    common = old_keys & new_keys
+
+    for ck in sorted(added):
+        rec = new_sheet[ck]
+        changes.append({
+            "Sheet": rec["sheet"],
+            "NSC Code": rec.get("nsc_code"),
+            "Change Type": "ADDED_ROW",
+            "Column": None,
+            "Old Value": None,
+            "New Value": None,
+            "Composite Key": ck,
+        })
+
+    for ck in sorted(removed):
+        rec = old_sheet[ck]
+        changes.append({
+            "Sheet": rec["sheet"],
+            "NSC Code": rec.get("nsc_code"),
+            "Change Type": "REMOVED_ROW",
+            "Column": None,
+            "Old Value": None,
+            "New Value": None,
+            "Composite Key": ck,
+        })
+
+    for ck in sorted(common):
+        o = old_sheet[ck]
+        n = new_sheet[ck]
+
+        # quick skip if hashes match
+        if o.get("hash") == n.get("hash"):
             continue
 
-    raise ValueError(f"Excel table '{table_name}' not found in workbook.")
+        ovals = o.get("values", {})
+        nvals = n.get("values", {})
+        all_cols = sorted(set(ovals.keys()) | set(nvals.keys()))
 
+        for c in all_cols:
+            ov = ovals.get(c, None)
+            nv = nvals.get(c, None)
 
-# -----------------------------
-# MAIN
-# -----------------------------
+            # Treat None/NaN equivalently
+            if (ov is None or (isinstance(ov, float) and pd.isna(ov))) and (nv is None or (isinstance(nv, float) and pd.isna(nv))):
+                continue
+            if str(ov) != str(nv):
+                changes.append({
+                    "Sheet": n["sheet"],
+                    "NSC Code": n.get("nsc_code") or o.get("nsc_code"),
+                    "Change Type": "MODIFIED_CELL",
+                    "Column": c,
+                    "Old Value": ov,
+                    "New Value": nv,
+                    "Composite Key": ck,
+                })
+
+    return changes
+
+# ----------------------------
+# Main
+# ----------------------------
 def main():
-    if not os.path.exists(EXCEL_PATH):
-        raise FileNotFoundError(f"Excel file not found: {EXCEL_PATH}")
+    excel_path = Path(EXCEL_PATH).expanduser().resolve()
+    if not excel_path.exists():
+        print(f"[ERROR] Excel file not found: {excel_path}")
+        sys.exit(1)
 
-    if not os.path.isdir(SHAREPOINT_SYNC_FOLDER):
-        raise FileNotFoundError(
-            f"OneDrive/SharePoint sync folder not found: {SHAREPOINT_SYNC_FOLDER}\n"
-            f"Make sure the SharePoint library is synced locally via OneDrive."
-        )
+    if TRY_EXCEL_REFRESH and sys.platform.startswith("win"):
+        print("[INFO] Attempting Excel refresh via COM...")
+        refreshed = refresh_workbook_windows(str(excel_path))
+        print(f"[INFO] Refresh result: {refreshed}")
+    else:
+        if TRY_EXCEL_REFRESH:
+            print("[INFO] Skipping Excel refresh (only supported on Windows with Excel installed).")
 
-    print("1) Refreshing Excel workbook...")
-    refresh_excel_workbook(EXCEL_PATH)
-    print("   Refresh complete.")
+    out_dir = Path(OUTPUT_DIR).expanduser().resolve() if OUTPUT_DIR else excel_path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("2) Exporting refreshed Excel data to SQLite DB...")
-    export_excel_to_sqlite(EXCEL_PATH, DB_PATH)
-    print(f"   DB written to: {DB_PATH}")
+    snapshot_file = snapshot_path_for(excel_path)
+    old_snapshot = load_snapshot(snapshot_file)
 
-    print("Done. OneDrive will sync the .db to SharePoint automatically.")
+    # Read workbook
+    print("[INFO] Reading workbook sheets...")
+    xls = pd.ExcelFile(excel_path)
+    new_snapshot = {"__meta__": {"excel_path": str(excel_path), "run_utc": datetime.utcnow().isoformat()}}
 
+    all_changes = []
+
+    for sheet in xls.sheet_names:
+        try:
+            df = pd.read_excel(xls, sheet_name=sheet, dtype=object)
+        except Exception as e:
+            print(f"[WARN] Could not read sheet '{sheet}': {e}")
+            continue
+
+        # If no key col, still snapshot/diff but will be row-index based
+        sheet_snap = df_to_snapshot(df, sheet)
+        new_snapshot[sheet] = sheet_snap
+
+        old_sheet_snap = old_snapshot.get(sheet, {})
+        # If old snapshot is missing this sheet, treat all rows as added
+        if not old_sheet_snap:
+            for ck, rec in sheet_snap.items():
+                all_changes.append({
+                    "Sheet": sheet,
+                    "NSC Code": rec.get("nsc_code"),
+                    "Change Type": "ADDED_ROW (NEW_SHEET_OR_FIRST_RUN)",
+                    "Column": None,
+                    "Old Value": None,
+                    "New Value": None,
+                    "Composite Key": ck,
+                })
+        else:
+            all_changes.extend(diff_snapshots(old_sheet_snap, sheet_snap))
+
+    # Build report
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = out_dir / f"excel_change_report_{ts}.xlsx"
+
+    changes_df = pd.DataFrame(all_changes)
+    if changes_df.empty:
+        # Still output a report saying no changes
+        changes_df = pd.DataFrame([{
+            "Sheet": None, "NSC Code": None, "Change Type": "NO_CHANGES_DETECTED",
+            "Column": None, "Old Value": None, "New Value": None, "Composite Key": None
+        }])
+
+    # Summary
+    summary_rows = []
+    for (sheet, ctype), grp in changes_df.groupby(["Sheet", "Change Type"], dropna=False):
+        summary_rows.append({
+            "Sheet": sheet,
+            "Change Type": ctype,
+            "Count": int(len(grp))
+        })
+    summary_df = pd.DataFrame(summary_rows).sort_values(["Sheet", "Change Type"], na_position="last")
+
+    # Per-sheet detail tabs (optional but handy)
+    per_sheet = {}
+    for sheet in xls.sheet_names:
+        per_sheet[sheet] = changes_df[changes_df["Sheet"] == sheet].copy()
+
+    with pd.ExcelWriter(report_path, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        changes_df.to_excel(writer, sheet_name="All Changes", index=False)
+
+        # Write per-sheet tabs, but keep names Excel-safe and limit count if huge
+        for sheet, sdf in per_sheet.items():
+            if sdf.empty:
+                continue
+            safe = "".join(ch for ch in sheet if ch not in r'[]:*?/\\')
+            safe = safe[:31] if safe else "Sheet"
+            # Avoid collision with existing names
+            tab_name = safe
+            i = 1
+            while tab_name in writer.sheets:
+                suffix = f"_{i}"
+                tab_name = (safe[:31-len(suffix)] + suffix) if len(safe) + len(suffix) > 31 else safe + suffix
+                i += 1
+            sdf.to_excel(writer, sheet_name=tab_name, index=False)
+
+    # Save snapshot for next run
+    save_snapshot(snapshot_file, new_snapshot)
+
+    print(f"[DONE] Report written: {report_path}")
+    print(f"[DONE] Snapshot saved: {snapshot_file}")
 
 if __name__ == "__main__":
     main()
